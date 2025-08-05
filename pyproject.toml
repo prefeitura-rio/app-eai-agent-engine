@@ -1,0 +1,24 @@
+[project]
+name = "app-eai-agent-google-engine"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "cloudpickle>=3.1.1",
+    "google-cloud-aiplatform[agent-engines,langchain]>=1.106.0",
+    "langchain>=0.3.27",
+    "langchain-core>=0.3.72",
+    "langchain-google-cloud-sql-pg>=0.14.1",
+    "langchain-google-genai>=2.1.9",
+    "langchain-mcp-adapters>=0.1.9",
+]
+
+
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
