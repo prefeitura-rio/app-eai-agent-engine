@@ -11,7 +11,6 @@ from vertexai.agent_engines import (
     StreamQueryable,
 )
 from src.agent.prompt import SYSTEM_PROMPT
-from src.agent.tools import mcp_tools
 
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
@@ -20,7 +19,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         *,
         model: str = "gemini-2.5-flash",
         system_prompt: str = SYSTEM_PROMPT,
-        tools: Sequence[Callable] = mcp_tools,
+        tools: Sequence[Callable] = None,
         temperature: float = 0.7,
     ):
         self._model: str = model
@@ -33,7 +32,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
         llm_with_tools = llm.bind_tools(tools=self._tools)
         self._graph = create_react_agent(
-            llm_with_tools, self._tools, prompt=self._system_prompt
+            model=llm_with_tools, tools=self._tools, prompt=self._system_prompt
         )
 
     def query(self, **kwargs) -> dict[str, Any] | Any:
