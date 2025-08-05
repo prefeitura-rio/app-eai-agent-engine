@@ -14,7 +14,6 @@ from vertexai.agent_engines import (
     StreamQueryable,
 )
 from src.agent.prompt import SYSTEM_PROMPT
-from src.agent.tools import mcp_tools
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from src.config import env
@@ -26,7 +25,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         *,
         model: str = "gemini-2.5-flash",
         system_prompt: str = SYSTEM_PROMPT,
-        tools: Sequence[Callable] = mcp_tools,
+        tools: Sequence[Callable] = None,
         temperature: float = 0.7,
         pg_uri: str = env.PG_URI,
     ):
