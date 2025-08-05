@@ -4,7 +4,7 @@ from src.agent.agent import Agent
 from src.config import env
 import vertexai
 from vertexai import agent_engines
-from src.agent.tools import get_mcp_tools
+from src.agent.tools import mcp_tools
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -12,14 +12,12 @@ vertexai.init(
     staging_bucket=env.GCS_BUCKET_STAGING,
 )
 
-tools = asyncio.run(get_mcp_tools())
-
 
 def deploy():
     local_agent = Agent(
         model="gemini-2.5-flash",
         system_prompt=SYSTEM_PROMPT,
-        tools=tools,
+        tools=mcp_tools,
         temperature=0.7,
     )
     return agent_engines.create(
@@ -34,6 +32,7 @@ def deploy():
             "langchain-google-genai>=2.1.9",
             "langchain-google-vertexai>=2.0.28",
         ],
+        extra_packages=["./src"],
         gcs_dir_name=env.GCS_BUCKET,
         display_name="EAI Agent",
         env_vars={

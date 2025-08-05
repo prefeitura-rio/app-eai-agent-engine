@@ -27,3 +27,6 @@ async def get_mcp_tools() -> List[BaseTool]:
     )
     tools = await client.get_tools()
     return tools
+
+
+mcp_tools = asyncio.run(get_mcp_tools())
