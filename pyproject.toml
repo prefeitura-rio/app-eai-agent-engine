@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "cloudpickle>=3.1.1",
-    "google-cloud-aiplatform[agent-engines,langchain]>=1.106.0",
+    "google-cloud-aiplatform[adk,ag2,agent-engines,langchain,llama-index]>=1.106.0",
     "langchain>=0.3.27",
     "langchain-core>=0.3.72",
     "langchain-google-cloud-sql-pg>=0.14.1",

@@ -12,6 +12,7 @@ MPC_API_TOKEN = getenv_or_action("MPC_API_TOKEN")
 
 GEMINI_API_KEY = getenv_or_action("GEMINI_API_KEY")
 PROJECT_ID = getenv_or_action("PROJECT_ID")
+PROJECT_NUMBER = getenv_or_action("PROJECT_NUMBER")
 LOCATION = getenv_or_action("LOCATION")
 INSTANCE = getenv_or_action("INSTANCE")
 DATABASE = getenv_or_action("DATABASE")
