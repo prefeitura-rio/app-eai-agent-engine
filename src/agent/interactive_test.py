@@ -28,63 +28,108 @@ remote_agent = get_agent(reasoning_engine_id)
 local_agent = Agent(model="gemini-2.5-flash")
 local_agent.set_up()
 
-def parse_agent_response(response):
+def parse_agent_response(response, is_local=False):
     """Parse the agent response and show all steps."""
     print("\n" + "="*60)
     print("🤖 AGENT EXECUTION STEPS")
     print("="*60)
     
-    if 'messages' not in response:
-        print("❌ Unexpected response format")
-        return
-    
-    messages = response['messages']
-    
-    for i, message in enumerate(messages):
-        if 'kwargs' not in message:
-            continue
-            
-        msg_type = message.get('kwargs', {}).get('type', 'unknown')
-        content = message.get('kwargs', {}).get('content', '')
+    if is_local:
+        # Local agent returns LangChain message objects directly
+        messages = response.get('messages', [])
         
-        if msg_type == 'human':
-            print(f"\n👤 USER MESSAGE #{i+1}:")
-            print(f"   {content}")
+        for i, message in enumerate(messages):
+            msg_type = message.__class__.__name__
             
-        elif msg_type == 'ai':
-            print(f"\n🤖 AI RESPONSE #{i+1}:")
-            
-            # Check for tool calls
-            tool_calls = message.get('kwargs', {}).get('tool_calls', [])
-            if tool_calls:
-                print("   🔧 TOOL CALLS:")
-                for tool_call in tool_calls:
-                    tool_name = tool_call.get('name', 'unknown')
-                    tool_args = tool_call.get('args', {})
-                    print(f"      📞 Calling: {tool_name}")
-                    print(f"      📋 Arguments: {json.dumps(tool_args, indent=8)}")
-            
-            # Show AI content if any
-            if content:
-                print(f"   💬 Response: {content}")
+            if 'HumanMessage' in msg_type:
+                print(f"\n👤 USER MESSAGE #{i+1}:")
+                print(f"   {message.content}")
                 
-            # Show usage metadata
-            usage = message.get('kwargs', {}).get('usage_metadata', {})
-            if usage:
-                total_tokens = usage.get('total_tokens', 0)
-                input_tokens = usage.get('input_tokens', 0)
-                output_tokens = usage.get('output_tokens', 0)
-                print(f"   📊 Tokens: {input_tokens} in, {output_tokens} out, {total_tokens} total")
+            elif 'AIMessage' in msg_type:
+                print(f"\n🤖 AI RESPONSE #{i+1}:")
                 
-        elif msg_type == 'tool':
-            print(f"\n🔧 TOOL RESPONSE #{i+1}:")
-            tool_name = message.get('kwargs', {}).get('name', 'unknown')
-            tool_content = message.get('kwargs', {}).get('content', '')
-            tool_status = message.get('kwargs', {}).get('status', 'unknown')
+                # Check for tool calls
+                tool_calls = getattr(message, 'tool_calls', [])
+                if tool_calls:
+                    print("   🔧 TOOL CALLS:")
+                    for tool_call in tool_calls:
+                        tool_name = tool_call.get('name', 'unknown')
+                        tool_args = tool_call.get('args', {})
+                        print(f"      📞 Calling: {tool_name}")
+                        print(f"      📋 Arguments: {json.dumps(tool_args, indent=8)}")
+                
+                # Show AI content if any
+                if message.content:
+                    print(f"   💬 Response: {message.content}")
+                    
+                # Show usage metadata
+                usage = getattr(message, 'usage_metadata', {})
+                if usage:
+                    total_tokens = usage.get('total_tokens', 0)
+                    input_tokens = usage.get('input_tokens', 0)
+                    output_tokens = usage.get('output_tokens', 0)
+                    print(f"   📊 Tokens: {input_tokens} in, {output_tokens} out, {total_tokens} total")
+                    
+            elif 'ToolMessage' in msg_type:
+                print(f"\n🔧 TOOL RESPONSE #{i+1}:")
+                tool_name = getattr(message, 'name', 'unknown')
+                tool_content = message.content
+                
+                print(f"   🛠️  Tool: {tool_name}")
+                print(f"   📄 Response: {tool_content}")
+    else:
+        # Remote agent returns parsed format with kwargs
+        if 'messages' not in response:
+            print("❌ Unexpected response format")
+            return
+        
+        messages = response['messages']
+        
+        for i, message in enumerate(messages):
+            if 'kwargs' not in message:
+                continue
+                
+            msg_type = message.get('kwargs', {}).get('type', 'unknown')
+            content = message.get('kwargs', {}).get('content', '')
             
-            print(f"   🛠️  Tool: {tool_name}")
-            print(f"   📊 Status: {tool_status}")
-            print(f"   📄 Response: {tool_content}")
+            if msg_type == 'human':
+                print(f"\n👤 USER MESSAGE #{i+1}:")
+                print(f"   {content}")
+                
+            elif msg_type == 'ai':
+                print(f"\n🤖 AI RESPONSE #{i+1}:")
+                
+                # Check for tool calls
+                tool_calls = message.get('kwargs', {}).get('tool_calls', [])
+                if tool_calls:
+                    print("   🔧 TOOL CALLS:")
+                    for tool_call in tool_calls:
+                        tool_name = tool_call.get('name', 'unknown')
+                        tool_args = tool_call.get('args', {})
+                        print(f"      📞 Calling: {tool_name}")
+                        print(f"      📋 Arguments: {json.dumps(tool_args, indent=8)}")
+                
+                # Show AI content if any
+                if content:
+                    print(f"   💬 Response: {content}")
+                    
+                # Show usage metadata
+                usage = message.get('kwargs', {}).get('usage_metadata', {})
+                if usage:
+                    total_tokens = usage.get('total_tokens', 0)
+                    input_tokens = usage.get('input_tokens', 0)
+                    output_tokens = usage.get('output_tokens', 0)
+                    print(f"   📊 Tokens: {input_tokens} in, {output_tokens} out, {total_tokens} total")
+                    
+            elif msg_type == 'tool':
+                print(f"\n🔧 TOOL RESPONSE #{i+1}:")
+                tool_name = message.get('kwargs', {}).get('name', 'unknown')
+                tool_content = message.get('kwargs', {}).get('content', '')
+                tool_status = message.get('kwargs', {}).get('status', 'unknown')
+                
+                print(f"   🛠️  Tool: {tool_name}")
+                print(f"   📊 Status: {tool_status}")
+                print(f"   📄 Response: {tool_content}")
 
 async def interactive_chat(use_local=False):
     """Start an interactive chat session."""
@@ -125,11 +170,12 @@ async def interactive_chat(use_local=False):
                 # Use async_query for both agents
                 if use_local:
                     result = await local_agent.async_query(input=data)
+                    print(result)
                 else:
                     result = await remote_agent.async_query(input=data)
                 
                 # Parse and display the result
-                parse_agent_response(result)
+                parse_agent_response(result, is_local=use_local)
                 
             except Exception as e:
                 print(f"\n❌ Error: {str(e)}")
