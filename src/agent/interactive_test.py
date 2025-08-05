@@ -170,13 +170,13 @@ async def interactive_chat(use_local=False):
             # Prepare the data
             data = {
                 "messages": [{"role": "user", "content": user_input}],
-                "configurable": {"thread_id": "1"},
             }
+            config = {"configurable": {"thread_id": "asd"}}
 
             try:
                 # Use async_query for both agents
                 if use_local:
-                    result = await local_agent.async_query(input=data)
+                    result = await local_agent.async_query(input=data, config=config)
                 else:
                     result = await remote_agent.async_query(input=data)
                 print(result)

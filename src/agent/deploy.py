@@ -30,6 +30,7 @@ def deploy():
             "langchain-mcp-adapters>=0.1.9",
             "app-eai-agent-google-engine",
             "pydantic==2.11.7",
+            "langgraph-checkpoint-postgres==2.0.23",
         ],
         extra_packages=["./src"],
         gcs_dir_name=env.GCS_BUCKET,
@@ -37,6 +38,7 @@ def deploy():
         env_vars={
             "MCP_SERVER_URL": env.MPC_SERVER_URL,
             "MCP_SERVER_TOKEN": env.MPC_API_TOKEN,
+            "PG_URI": env.PG_URI,
         },
         service_account="989726518247-compute@developer.gserviceaccount.com",
     )
