@@ -22,7 +22,7 @@ def get_agent(reasoning_engine_id: str):
     )
 
 
-reasoning_engine_id = "6861014129973395456"
+reasoning_engine_id = "8507079793777311744"
 
 # Initialize agents
 remote_agent = get_agent(reasoning_engine_id)
@@ -178,7 +178,7 @@ async def interactive_chat(use_local=False):
                 if use_local:
                     result = await local_agent.async_query(input=data, config=config)
                 else:
-                    result = await remote_agent.async_query(input=data)
+                    result = await remote_agent.async_query(input=data, config=config)
                 print(result)
                 # Parse and display the result
                 parse_agent_response(result, is_local=use_local)
