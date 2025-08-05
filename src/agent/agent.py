@@ -10,6 +10,7 @@ from langchain_core.tools import BaseTool
 from langchain_google_vertexai import ChatVertexAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from vertexai import agent_engines
+from vertexai.agent_engines import AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable
 
 def getenv_or_action(
     env_name: str, *, action: str = "raise", default: str = None
@@ -92,7 +93,7 @@ vertexai.init(
     staging_bucket=GCS_BUCKET_STAGING,
 )
 
-class Agent:
+class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     def __init__(
         self,
         *,

@@ -18,10 +18,7 @@ vertexai.init(
 def get_agent(reasoning_engine_id: str):
     return agent_engines.get(f"projects/{env.PROJECT_NUMBER}/locations/{env.LOCATION}/reasoningEngines/{reasoning_engine_id}")
 
-# reasoning_engine_id = "9065526147571253248"
-# reasoning_engine_id = "8937595770656260096"
-# reasoning_engine_id = "2972155851738972160"
-reasoning_engine_id = "6196733184936247296"
+reasoning_engine_id = "8312299109893537792"
 
 # Initialize agents
 remote_agent = get_agent(reasoning_engine_id)
@@ -78,7 +75,7 @@ def parse_agent_response(response, is_local=False):
                 print(f"   🛠️  Tool: {tool_name}")
                 print(f"   📄 Response: {tool_content}")
     else:
-        # Remote agent returns parsed format with kwargs
+        # Remote agent returns direct message objects
         if 'messages' not in response:
             print("❌ Unexpected response format")
             return
@@ -86,11 +83,8 @@ def parse_agent_response(response, is_local=False):
         messages = response['messages']
         
         for i, message in enumerate(messages):
-            if 'kwargs' not in message:
-                continue
-                
-            msg_type = message.get('kwargs', {}).get('type', 'unknown')
-            content = message.get('kwargs', {}).get('content', '')
+            msg_type = message.get('type', 'unknown')
+            content = message.get('content', '')
             
             if msg_type == 'human':
                 print(f"\n👤 USER MESSAGE #{i+1}:")
@@ -100,7 +94,7 @@ def parse_agent_response(response, is_local=False):
                 print(f"\n🤖 AI RESPONSE #{i+1}:")
                 
                 # Check for tool calls
-                tool_calls = message.get('kwargs', {}).get('tool_calls', [])
+                tool_calls = message.get('tool_calls', [])
                 if tool_calls:
                     print("   🔧 TOOL CALLS:")
                     for tool_call in tool_calls:
@@ -114,7 +108,7 @@ def parse_agent_response(response, is_local=False):
                     print(f"   💬 Response: {content}")
                     
                 # Show usage metadata
-                usage = message.get('kwargs', {}).get('usage_metadata', {})
+                usage = message.get('usage_metadata', {})
                 if usage:
                     total_tokens = usage.get('total_tokens', 0)
                     input_tokens = usage.get('input_tokens', 0)
@@ -123,9 +117,9 @@ def parse_agent_response(response, is_local=False):
                     
             elif msg_type == 'tool':
                 print(f"\n🔧 TOOL RESPONSE #{i+1}:")
-                tool_name = message.get('kwargs', {}).get('name', 'unknown')
-                tool_content = message.get('kwargs', {}).get('content', '')
-                tool_status = message.get('kwargs', {}).get('status', 'unknown')
+                tool_name = message.get('name', 'unknown')
+                tool_content = message.get('content', '')
+                tool_status = message.get('status', 'unknown')
                 
                 print(f"   🛠️  Tool: {tool_name}")
                 print(f"   📊 Status: {tool_status}")
@@ -170,7 +164,6 @@ async def interactive_chat(use_local=False):
                 # Use async_query for both agents
                 if use_local:
                     result = await local_agent.async_query(input=data)
-                    print(result)
                 else:
                     result = await remote_agent.async_query(input=data)
                 
