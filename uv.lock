@@ -99,6 +99,7 @@ dependencies = [
     { name = "langchain-core" },
     { name = "langchain-google-cloud-sql-pg" },
     { name = "langchain-google-genai" },
+    { name = "langchain-google-vertexai" },
     { name = "langchain-mcp-adapters" },
 ]
 
@@ -110,6 +111,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=0.3.72" },
     { name = "langchain-google-cloud-sql-pg", specifier = ">=0.14.1" },
     { name = "langchain-google-genai", specifier = ">=2.1.9" },
+    { name = "langchain-google-vertexai", specifier = ">=2.0.28" },
     { name = "langchain-mcp-adapters", specifier = ">=0.1.9" },
 ]
 
