@@ -5,6 +5,8 @@ from sys import argv
 
 import vertexai
 from vertexai import agent_engines
+from src.tools import mcp_tools
+from src.prompt import SYSTEM_PROMPT
 
 from src.config import env
 from engine.agent import Agent
@@ -22,11 +24,15 @@ def get_agent(reasoning_engine_id: str):
     )
 
 
-reasoning_engine_id = "6447105176720375808"
-
+reasoning_engine_id = "2024570342642548736"
+user_id = "asd_3"
 # Initialize agents
 remote_agent = get_agent(reasoning_engine_id)
-local_agent = Agent(model="gemini-2.5-flash")
+local_agent = Agent(
+    model="gemini-2.5-flash",
+    system_prompt=SYSTEM_PROMPT,
+    tools=mcp_tools,
+)
 local_agent.set_up()
 
 
@@ -172,7 +178,7 @@ async def interactive_chat(use_local=False):
                 "messages": [{"role": "human", "content": user_input}],
             }
 
-            config = {"configurable": {"thread_id": "asd"}}
+            config = {"configurable": {"thread_id": user_id}}
             try:
                 # Use async_query for both agents
                 if use_local:

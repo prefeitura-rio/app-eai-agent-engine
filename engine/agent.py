@@ -1,8 +1,9 @@
-from typing import Any, Callable, Iterator, Sequence
+from typing import Any, Callable, Iterator, Sequence, Optional
 from langchain_core.load import dumpd
 from langchain.load.dump import dumpd
 from langgraph.prebuilt import create_react_agent
 from langchain_google_vertexai import ChatVertexAI
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from vertexai.agent_engines import (
     AsyncQueryable,
     AsyncStreamQueryable,
@@ -59,16 +60,22 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     def _create_llm_with_tools(self):
         """Create and configure the LLM with tools."""
+
+    def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
+        """Create and configure the React Agent."""
         llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
-        return llm.bind_tools(tools=self._tools)
+        llm_with_tools = llm.bind_tools(tools=self._tools)
+        self._graph = create_react_agent(
+            llm_with_tools,
+            self._tools,
+            prompt=self._system_prompt,
+            checkpointer=checkpointer,
+        )
 
     async def _ensure_async_setup(self):
         """Ensure async components are set up."""
         if self._setup_complete_async:
             return
-
-        llm_with_tools = self._create_llm_with_tools()
-
         engine = await PostgresEngine.afrom_instance(
             project_id=self._project_id,
             region=self._region,
@@ -77,22 +84,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             user=self._database_user,
             password=self._database_password,
         )
-
-        self._checkpointer_async = PostgresSaver.create_sync(engine=engine)
-        self._graph = create_react_agent(
-            llm_with_tools,
-            self._tools,
-            prompt=self._system_prompt,
-            checkpointer=self._checkpointer_async,
-        )
+        self._create_react_agent(checkpointer=PostgresSaver.create_sync(engine=engine))
         self._setup_complete_async = True
 
     def _ensure_sync_setup(self):
         """Ensure sync components are set up."""
         if self._setup_complete_sync:
             return
-
-        llm_with_tools = self._create_llm_with_tools()
 
         engine = PostgresEngine.from_instance(
             project_id=self._project_id,
@@ -102,34 +100,71 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             user=self._database_user,
             password=self._database_password,
         )
-
-        self._checkpointer_sync = PostgresSaver.create_sync(engine=engine)
-        self._graph = create_react_agent(
-            llm_with_tools,
-            self._tools,
-            prompt=self._system_prompt,
-            checkpointer=self._checkpointer_sync,
-        )
+        self._create_react_agent(checkpointer=PostgresSaver.create_sync(engine=engine))
         self._setup_complete_sync = True
 
     async def async_query(self, **kwargs) -> dict[str, Any] | Any:
-        """Asynchronous query execution."""
+        """Asynchronous query execution with filtered current interaction."""
         await self._ensure_async_setup()
-        return await self._graph.ainvoke(**kwargs)
+        result = await self._graph.ainvoke(**kwargs)
+        return self._filter_current_interaction(result)
 
     async def async_stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
-        """Asynchronous streaming query execution."""
+        """Asynchronous streaming query execution with filtered chunks."""
         await self._ensure_async_setup()
         async for chunk in self._graph.astream(**kwargs):
-            yield dumpd(chunk)
+            filtered_chunk = self._filter_streaming_chunk(chunk)
+            yield dumpd(filtered_chunk)
 
     def query(self, **kwargs) -> dict[str, Any] | Any:
-        """Synchronous query execution."""
+        """Synchronous query execution with filtered current interaction."""
         self._ensure_sync_setup()
-        return self._graph.invoke(**kwargs)
+        result = self._graph.invoke(**kwargs)
+        return self._filter_current_interaction(result)
 
     def stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
-        """Synchronous streaming query execution."""
+        """Synchronous streaming query execution with filtered chunks."""
         self._ensure_sync_setup()
         for chunk in self._graph.stream(**kwargs):
-            yield dumpd(chunk)
+            filtered_chunk = self._filter_streaming_chunk(chunk)
+            yield dumpd(filtered_chunk)
+
+    def _filter_current_interaction(self, result: dict) -> dict:
+        """
+        Filtra apenas as mensagens da interação atual.
+        Retorna apenas as mensagens desde a última HumanMessage até o final.
+        """
+        if "messages" not in result:
+            return result
+
+        messages = result["messages"]
+        if not messages:
+            return result
+
+        # Encontra o índice da última mensagem humana
+        last_human_index = -1
+        for i in range(len(messages) - 1, -1, -1):
+            if isinstance(messages[i], HumanMessage):
+                last_human_index = i
+                break
+
+        # Se não encontrou mensagem humana, retorna tudo
+        if last_human_index == -1:
+            return result
+
+        # Filtra apenas as mensagens da interação atual
+        current_interaction_messages = messages[last_human_index:]
+
+        # Cria uma cópia do resultado com apenas as mensagens filtradas
+        filtered_result = result.copy()
+        filtered_result["messages"] = current_interaction_messages
+
+        return filtered_result
+
+    def _filter_streaming_chunk(self, chunk: dict) -> dict:
+        """
+        Filtra chunks de streaming para incluir apenas mensagens da interação atual.
+        """
+        if isinstance(chunk, dict) and "messages" in chunk:
+            return self._filter_current_interaction(chunk)
+        return chunk
