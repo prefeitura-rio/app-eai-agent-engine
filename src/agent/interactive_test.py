@@ -8,6 +8,8 @@ from vertexai import agent_engines
 
 from src.config import env
 from src.agent.agent import Agent
+from langchain_core.messages import HumanMessage
+from langchain_core.load import dumpd
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -22,7 +24,7 @@ def get_agent(reasoning_engine_id: str):
     )
 
 
-reasoning_engine_id = "4470024940304728064"
+reasoning_engine_id = "3564801415203258368"
 
 # Initialize agents
 remote_agent = get_agent(reasoning_engine_id)
@@ -169,10 +171,10 @@ async def interactive_chat(use_local=False):
 
             # Prepare the data
             data = {
-                "messages": [{"role": "user", "content": user_input}],
+                "messages": [{"role": "human", "content": user_input}],
             }
-            config = {"configurable": {"thread_id": "asd"}}
 
+            config = {"configurable": {"thread_id": "asd"}}
             try:
                 # Use async_query for both agents
                 if use_local:

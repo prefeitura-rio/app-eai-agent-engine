@@ -116,17 +116,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         )
         self._setup_complete_sync = True
 
-    def query(self, **kwargs) -> dict[str, Any] | Any:
-        """Synchronous query execution."""
-        self._ensure_sync_setup()
-        return self._graph.invoke(**kwargs)
-
-    def stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
-        """Synchronous streaming query execution."""
-        self._ensure_sync_setup()
-        for chunk in self._graph.stream(**kwargs):
-            yield dumpd(chunk)
-
     async def async_query(self, **kwargs) -> dict[str, Any] | Any:
         """Asynchronous query execution."""
         await self._ensure_async_setup()
@@ -136,4 +125,15 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         """Asynchronous streaming query execution."""
         await self._ensure_async_setup()
         async for chunk in self._graph.astream(**kwargs):
+            yield dumpd(chunk)
+
+    def query(self, **kwargs) -> dict[str, Any] | Any:
+        """Synchronous query execution."""
+        self._ensure_sync_setup()
+        return self._graph.invoke(**kwargs)
+
+    def stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
+        """Synchronous streaming query execution."""
+        self._ensure_sync_setup()
+        for chunk in self._graph.stream(**kwargs):
             yield dumpd(chunk)
