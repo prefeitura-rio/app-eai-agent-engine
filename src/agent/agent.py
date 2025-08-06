@@ -14,9 +14,11 @@ from vertexai.agent_engines import (
     StreamQueryable,
 )
 from src.agent.prompt import SYSTEM_PROMPT
-from langgraph.checkpoint.postgres import PostgresSaver
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from src.config import env
+from langchain_google_cloud_sql_pg import (
+    PostgresEngine,
+    PostgresSaver,
+)
 
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
@@ -27,80 +29,111 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         system_prompt: str = SYSTEM_PROMPT,
         tools: Sequence[Callable] = None,
         temperature: float = 0.7,
-        pg_uri: str = env.PG_URI,
+        project_id: str = env.PROJECT_ID,
+        region: str = env.LOCATION,
+        instance_name: str = env.INSTANCE,
+        database_name: str = env.DATABASE,
+        database_user: str = env.DATABASE_USER,
+        database_password: str = env.DATABASE_PASSWORD,
     ):
-        self._model: str = model
-        self._tools: Sequence[Callable] = tools
-        self._graph: CompiledGraph = None
-        self._system_prompt: str = system_prompt
-        self._temperature: float = temperature
-        self._pg_uri: str = pg_uri
-        self._checkpointer = None
-        self._checkpointer_cm = None  # Store the context manager separately
-        self._setup_complete = False
+        self._model = model
+        self._tools = tools or []
+        self._system_prompt = system_prompt
+        self._temperature = temperature
+
+        # Database configuration
+        self._project_id = project_id
+        self._region = region
+        self._instance_name = instance_name
+        self._database_name = database_name
+        self._database_user = database_user
+        self._database_password = database_password
+
+        # Runtime components - initialized lazily
+        self._graph = None
+        self._checkpointer_async = None
+        self._checkpointer_sync = None
+        self._setup_complete_async = False
+        self._setup_complete_sync = False
 
     def set_up(self):
-        # Just mark that we want to set up, actual setup happens in _ensure_setup
-        self._setup_complete = False
+        """Mark that setup is needed - actual setup happens lazily."""
+        self._setup_complete_async = False
+        self._setup_complete_sync = False
 
-    async def _ensure_setup(self):
-        if not self._setup_complete:
-            llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
-            llm_with_tools = llm.bind_tools(tools=self._tools)
+    def _create_llm_with_tools(self):
+        """Create and configure the LLM with tools."""
+        llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
+        return llm.bind_tools(tools=self._tools)
 
-            # Create AsyncPostgresSaver with JsonPlusSerializer for proper message serialization
-            self._checkpointer_cm = AsyncPostgresSaver.from_conn_string(self._pg_uri)
-            # Enter the context manager to get the actual checkpointer instance
-            self._checkpointer = await self._checkpointer_cm.__aenter__()
+    async def _ensure_async_setup(self):
+        """Ensure async components are set up."""
+        if self._setup_complete_async:
+            return
 
-            self._graph = create_react_agent(
-                llm_with_tools,
-                self._tools,
-                prompt=self._system_prompt,
-                checkpointer=self._checkpointer,
-            )
-            self._setup_complete = True
+        llm_with_tools = self._create_llm_with_tools()
 
-    def _ensure_setup_sync(self):
-        # For sync methods, use synchronous PostgresSaver
-        if not self._setup_complete:
-            llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
-            llm_with_tools = llm.bind_tools(tools=self._tools)
+        engine = await PostgresEngine.afrom_instance(
+            project_id=self._project_id,
+            region=self._region,
+            instance=self._instance_name,
+            database=self._database_name,
+            user=self._database_user,
+            password=self._database_password,
+        )
 
-            # Use synchronous PostgresSaver for sync methods with proper serialization
-            checkpointer = PostgresSaver.from_conn_string(self._pg_uri)
+        self._checkpointer_async = PostgresSaver.create_sync(engine=engine)
+        self._graph = create_react_agent(
+            llm_with_tools,
+            self._tools,
+            prompt=self._system_prompt,
+            checkpointer=self._checkpointer_async,
+        )
+        self._setup_complete_async = True
 
-            self._graph = create_react_agent(
-                llm_with_tools,
-                self._tools,
-                prompt=self._system_prompt,
-                checkpointer=checkpointer,
-            )
-            self._setup_complete = True
+    def _ensure_sync_setup(self):
+        """Ensure sync components are set up."""
+        if self._setup_complete_sync:
+            return
+
+        llm_with_tools = self._create_llm_with_tools()
+
+        engine = PostgresEngine.from_instance(
+            project_id=self._project_id,
+            region=self._region,
+            instance=self._instance_name,
+            database=self._database_name,
+            user=self._database_user,
+            password=self._database_password,
+        )
+
+        self._checkpointer_sync = PostgresSaver.create_sync(engine=engine)
+        self._graph = create_react_agent(
+            llm_with_tools,
+            self._tools,
+            prompt=self._system_prompt,
+            checkpointer=self._checkpointer_sync,
+        )
+        self._setup_complete_sync = True
 
     def query(self, **kwargs) -> dict[str, Any] | Any:
-        self._ensure_setup_sync()
+        """Synchronous query execution."""
+        self._ensure_sync_setup()
         return self._graph.invoke(**kwargs)
 
     def stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
-        self._ensure_setup_sync()
+        """Synchronous streaming query execution."""
+        self._ensure_sync_setup()
         for chunk in self._graph.stream(**kwargs):
             yield dumpd(chunk)
 
     async def async_query(self, **kwargs) -> dict[str, Any] | Any:
-        await self._ensure_setup()
-        print(kwargs)
+        """Asynchronous query execution."""
+        await self._ensure_async_setup()
         return await self._graph.ainvoke(**kwargs)
 
     async def async_stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
-        await self._ensure_setup()
+        """Asynchronous streaming query execution."""
+        await self._ensure_async_setup()
         async for chunk in self._graph.astream(**kwargs):
             yield dumpd(chunk)
-
-    async def __aenter__(self):
-        await self._ensure_setup()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._checkpointer_cm:
-            await self._checkpointer_cm.__aexit__(exc_type, exc_val, exc_tb)

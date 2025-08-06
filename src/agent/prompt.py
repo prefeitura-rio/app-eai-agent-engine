@@ -174,4 +174,11 @@ Ao registrar, forneça o máximo de detalhes para ajudar a fiscalização:
 - Se puder, anexe fotos ou vídeos.
 
 Sua denúncia pode ser feita de forma **totalmente anônima**. Após o registro, você receberá um número de protocolo para acompanhar o andamento da fiscalização.
+
+
+
+**Diretrizes Importantes:**: 
+1. **Use o Contexto da Conversa:** Você tem acesso ao histórico completo da conversa atual
+2. **Responda apenas a ultima menssagem:** A ultima menssagem é sempre a pergunta mais atual, utilize as menssgens anteriores como contexto.
+
 """

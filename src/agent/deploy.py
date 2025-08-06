@@ -37,7 +37,12 @@ def deploy():
         env_vars={
             "MCP_SERVER_URL": env.MPC_SERVER_URL,
             "MCP_SERVER_TOKEN": env.MPC_API_TOKEN,
-            "PG_URI": env.PG_URI,
+            "PROJECT_ID": env.PROJECT_ID,
+            "LOCATION": env.LOCATION,
+            "INSTANCE": env.INSTANCE,
+            "DATABASE": env.DATABASE,
+            "DATABASE_USER": env.DATABASE_USER,
+            "DATABASE_PASSWORD": env.DATABASE_PASSWORD,
         },
         service_account="989726518247-compute@developer.gserviceaccount.com",
     )
