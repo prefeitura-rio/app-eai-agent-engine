@@ -1,10 +1,6 @@
 from typing import Any, Callable, Iterator, Sequence
-import asyncio
-from langchain_core.load.serializable import Serializable
-from langchain_core.load import dumpd, loads
-
+from langchain_core.load import dumpd
 from langchain.load.dump import dumpd
-from langgraph.graph.graph import CompiledGraph
 from langgraph.prebuilt import create_react_agent
 from langchain_google_vertexai import ChatVertexAI
 from vertexai.agent_engines import (
@@ -13,8 +9,8 @@ from vertexai.agent_engines import (
     Queryable,
     StreamQueryable,
 )
-from src.agent.prompt import SYSTEM_PROMPT
-from src.config import env
+
+from os import getenv
 from langchain_google_cloud_sql_pg import (
     PostgresEngine,
     PostgresSaver,
@@ -26,15 +22,15 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self,
         *,
         model: str = "gemini-2.5-flash",
-        system_prompt: str = SYSTEM_PROMPT,
+        system_prompt: str = None,
         tools: Sequence[Callable] = None,
         temperature: float = 0.7,
-        project_id: str = env.PROJECT_ID,
-        region: str = env.LOCATION,
-        instance_name: str = env.INSTANCE,
-        database_name: str = env.DATABASE,
-        database_user: str = env.DATABASE_USER,
-        database_password: str = env.DATABASE_PASSWORD,
+        project_id: str = getenv("PROJECT_ID"),
+        region: str = getenv("LOCATION"),
+        instance_name: str = getenv("INSTANCE"),
+        database_name: str = getenv("DATABASE"),
+        database_user: str = getenv("DATABASE_USER"),
+        database_password: str = getenv("DATABASE_PASSWORD"),
     ):
         self._model = model
         self._tools = tools or []

@@ -7,9 +7,7 @@ import vertexai
 from vertexai import agent_engines
 
 from src.config import env
-from src.agent.agent import Agent
-from langchain_core.messages import HumanMessage
-from langchain_core.load import dumpd
+from engine.agent import Agent
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -24,7 +22,7 @@ def get_agent(reasoning_engine_id: str):
     )
 
 
-reasoning_engine_id = "3564801415203258368"
+reasoning_engine_id = "6447105176720375808"
 
 # Initialize agents
 remote_agent = get_agent(reasoning_engine_id)
