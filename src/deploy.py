@@ -31,7 +31,7 @@ def deploy():
             "langchain-google-genai>=2.1.9",
             "langchain-google-vertexai>=2.0.28",
             "langchain-mcp-adapters>=0.1.9",
-            "langgraph>=0.6.3",
+            "langgraph>=0.6.4",
             "pydantic>=2.11.7",
         ],
         extra_packages=["./engine"],

@@ -1,7 +1,10 @@
 from typing import Any, Iterator, List, Optional, AsyncIterable
 from langchain.load.dump import dumpd
-from langgraph.prebuilt import create_react_agent
-from langgraph.prebuilt.chat_agent_executor import _validate_chat_history
+
+# from langgraph.prebuilt import create_react_agent
+
+# use custom graph without _validate_chat_history
+from engine.custom_react_agent import create_react_agent
 from langchain_google_vertexai import ChatVertexAI
 from langchain_core.tools import BaseTool
 from langchain_core.messages import HumanMessage
@@ -60,7 +63,8 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
         """Create and configure the React Agent."""
         llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
-        llm_with_tools = llm.bind_tools(tools=self._tools, parallel_tool_calls=False)
+        # llm_with_tools = llm.bind_tools(tools=self._tools, parallel_tool_calls=False)
+        llm_with_tools = llm.bind_tools(tools=self._tools)
         self._graph = create_react_agent(
             model=llm_with_tools,
             tools=self._tools,
