@@ -4,7 +4,7 @@ import httpx
 import asyncio
 
 
-async def get_system_prompt_from_api(agent_type: str = "agentic_search") -> str:
+async def get_system_prompt_from_api(agent_type: str = "agentic_search") -> dict:
     """Obtém o system prompt via API"""
     try:
         base_url = getattr(env, "EAI_AGENT_URL", "http://localhost:8000")
@@ -24,19 +24,25 @@ async def get_system_prompt_from_api(agent_type: str = "agentic_search") -> str:
             logger.info(
                 f"System prompt obtido via API. version: {data['version']} | agent_type: {data['agent_type']}"
             )
-            return data["prompt"]
+            return data
 
     except Exception as e:
         logger.warning(
             f"Erro ao obter system prompt via API: {str(e)}. Usando fallback."
         )
         # Fallback para prompt padrão
-        return f"""You are an AI assistant for the {agent_type} role.
-Follow these guidelines:
-1. Answer concisely but accurately
-2. Use tools when necessary
-3. Focus on providing factual information
-4. Be helpful, harmless, and honest"""
+        system_prompt = f"""
+        You are an AI assistant for the {agent_type} role.
+        Follow these guidelines:
+        1. Answer concisely but accurately
+        2. Use tools when necessary
+        3. Focus on providing factual information
+        4. Be helpful, harmless, and honest
+        """
+        return {
+            "prompt": system_prompt,
+            "version": "FallBack",
+        }
 
 
-SYSTEM_PROMPT = asyncio.run(get_system_prompt_from_api())
+prompt_data = asyncio.run(get_system_prompt_from_api())
