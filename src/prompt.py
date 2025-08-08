@@ -21,7 +21,9 @@ async def get_system_prompt_from_api(agent_type: str = "agentic_search") -> str:
             response.raise_for_status()
             data = response.json()
 
-            logger.info(f"System prompt obtido via API para agent_type: {agent_type}")
+            logger.info(
+                f"System prompt obtido via API. version: {data['version']} | agent_type: {data['agent_type']}"
+            )
             return data["prompt"]
 
     except Exception as e:
