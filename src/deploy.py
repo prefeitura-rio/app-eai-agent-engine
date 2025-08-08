@@ -1,9 +1,10 @@
-from src.tools import mcp_tools
-from src.prompt import SYSTEM_PROMPT
 from src.config import env
 import vertexai
 from vertexai import agent_engines
+from src.config import env
+from src.prompt import SYSTEM_PROMPT
 from engine.agent import Agent
+from src.tools import mcp_tools
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -16,6 +17,7 @@ def deploy():
     local_agent = Agent(
         model="gemini-2.5-flash",
         system_prompt=SYSTEM_PROMPT,
+        temperature=0.7,
         tools=mcp_tools,
     )
     return agent_engines.create(
@@ -35,16 +37,14 @@ def deploy():
         extra_packages=["./engine"],
         gcs_dir_name=env.GCS_BUCKET,
         display_name="EAI Agent",
-        env_vars={
-            # "MCP_SERVER_URL": env.MPC_SERVER_URL,
-            # "MCP_SERVER_TOKEN": env.MPC_API_TOKEN,
-            "PROJECT_ID": env.PROJECT_ID,
-            "LOCATION": env.LOCATION,
-            "INSTANCE": env.INSTANCE,
-            "DATABASE": env.DATABASE,
-            "DATABASE_USER": env.DATABASE_USER,
-            "DATABASE_PASSWORD": env.DATABASE_PASSWORD,
-        },
+        # env_vars={
+        #     "PROJECT_ID": env.PROJECT_ID,
+        #     "LOCATION": env.LOCATION,
+        #     "INSTANCE": env.INSTANCE,
+        #     "DATABASE": env.DATABASE,
+        #     "DATABASE_USER": env.DATABASE_USER,
+        #     "DATABASE_PASSWORD": env.DATABASE_PASSWORD,
+        # },
         service_account="989726518247-compute@developer.gserviceaccount.com",
     )
 

@@ -21,6 +21,6 @@ DATABASE_PASSWORD = getenv_or_action("DATABASE_PASSWORD")
 GCS_BUCKET = getenv_or_action("GCS_BUCKET")
 GCS_BUCKET_STAGING = getenv_or_action("GCS_BUCKET_STAGING")
 
-DATABASE_PASSWORD = getenv_or_action("DATABASE_PASSWORD")
+REASONING_ENGINE_ID = getenv_or_action("REASONING_ENGINE_ID")
 
 PG_URI = getenv_or_action("PG_URI", action="ignore")

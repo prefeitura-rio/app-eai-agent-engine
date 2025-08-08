@@ -1,9 +1,9 @@
-from typing import Any, Callable, Iterator, Sequence, Optional
-from langchain_core.load import dumpd
+from typing import Any, Iterator, List, Optional, AsyncIterable
 from langchain.load.dump import dumpd
 from langgraph.prebuilt import create_react_agent
 from langchain_google_vertexai import ChatVertexAI
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.tools import BaseTool
+from langchain_core.messages import HumanMessage
 from vertexai.agent_engines import (
     AsyncQueryable,
     AsyncStreamQueryable,
@@ -19,19 +19,19 @@ from langchain_google_cloud_sql_pg import (
 
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
+    """
+    An agent for sync/async/streaming queries with state persisted in PostgreSQL.
+
+    Components are initialized lazily on the first query.
+    """
+
     def __init__(
         self,
         *,
         model: str = "gemini-2.5-flash",
-        system_prompt: str = None,
-        tools: Sequence[Callable] = None,
+        system_prompt: str = "YOU ALWAYS RESPOND: `SYSTEM PROMPT NOT SET`",
+        tools: List[BaseTool] = [],
         temperature: float = 0.7,
-        project_id: str = getenv("PROJECT_ID"),
-        region: str = getenv("LOCATION"),
-        instance_name: str = getenv("INSTANCE"),
-        database_name: str = getenv("DATABASE"),
-        database_user: str = getenv("DATABASE_USER"),
-        database_password: str = getenv("DATABASE_PASSWORD"),
     ):
         self._model = model
         self._tools = tools or []
@@ -39,17 +39,15 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._temperature = temperature
 
         # Database configuration
-        self._project_id = project_id
-        self._region = region
-        self._instance_name = instance_name
-        self._database_name = database_name
-        self._database_user = database_user
-        self._database_password = database_password
+        self._project_id = getenv("PROJECT_ID", "")
+        self._region = getenv("LOCATION", "")
+        self._instance_name = getenv("INSTANCE", "")
+        self._database_name = getenv("DATABASE", "")
+        self._database_user = getenv("DATABASE_USER", "")
+        self._database_password = getenv("DATABASE_PASSWORD", "")
 
         # Runtime components - initialized lazily
         self._graph = None
-        self._checkpointer_async = None
-        self._checkpointer_sync = None
         self._setup_complete_async = False
         self._setup_complete_sync = False
 
@@ -57,9 +55,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         """Mark that setup is needed - actual setup happens lazily."""
         self._setup_complete_async = False
         self._setup_complete_sync = False
-
-    def _create_llm_with_tools(self):
-        """Create and configure the LLM with tools."""
 
     def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
         """Create and configure the React Agent."""
@@ -83,16 +78,16 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             database=self._database_name,
             user=self._database_user,
             password=self._database_password,
+            engine_args={"pool_pre_ping": True, "pool_recycle": 300},
         )
         checkpointer = await PostgresSaver.create(engine=engine)
         self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_async = True
-        self._engine_async = True
 
     def _ensure_sync_setup(self):
         """Ensure sync components are set up."""
         if self._setup_complete_sync:
-            return
+            return self._graph
         engine = PostgresEngine.from_instance(
             project_id=self._project_id,
             region=self._region,
@@ -100,73 +95,73 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             database=self._database_name,
             user=self._database_user,
             password=self._database_password,
+            engine_args={"pool_pre_ping": True, "pool_recycle": 300},
         )
         checkpointer = PostgresSaver.create_sync(engine=engine)
         self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_sync = True
+        return self._graph
 
     async def async_query(self, **kwargs) -> dict[str, Any] | Any:
         """Asynchronous query execution with filtered current interaction."""
         await self._ensure_async_setup()
+        if self._graph is None:
+            raise ValueError(
+                "Graph is not initialized. Call _ensure_async_setup first."
+            )
         result = await self._graph.ainvoke(**kwargs)
         return self._filter_current_interaction(result)
 
-    async def async_stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
+    async def async_stream_query(self, **kwargs) -> AsyncIterable[Any]:
         """Asynchronous streaming query execution with filtered chunks."""
-        await self._ensure_async_setup()
-        async for chunk in self._graph.astream(**kwargs):
-            filtered_chunk = self._filter_streaming_chunk(chunk)
-            yield dumpd(filtered_chunk)
+
+        async def async_generator() -> AsyncIterable[Any]:
+            await self._ensure_async_setup()
+            if self._graph is None:
+                raise ValueError(
+                    "Graph is not initialized. Call _ensure_async_setup first."
+                )
+            async for chunk in self._graph.astream(**kwargs):
+                filtered_chunk = self._filter_streaming_chunk(chunk)
+                yield dumpd(filtered_chunk)
+
+        return async_generator()
 
     def query(self, **kwargs) -> dict[str, Any] | Any:
         """Synchronous query execution with filtered current interaction."""
         self._ensure_sync_setup()
+        if self._graph is None:
+            raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
         result = self._graph.invoke(**kwargs)
         return self._filter_current_interaction(result)
 
     def stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
         """Synchronous streaming query execution with filtered chunks."""
         self._ensure_sync_setup()
+        if self._graph is None:
+            raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
         for chunk in self._graph.stream(**kwargs):
             filtered_chunk = self._filter_streaming_chunk(chunk)
             yield dumpd(filtered_chunk)
 
     def _filter_current_interaction(self, result: dict) -> dict:
-        """
-        Filtra apenas as mensagens da interação atual.
-        Retorna apenas as mensagens desde a última HumanMessage até o final.
-        """
-        if "messages" not in result:
+        """Filters response to include only messages from the last human input."""
+        if "messages" not in result or not isinstance(result["messages"], list):
             return result
-
         messages = result["messages"]
-        if not messages:
-            return result
-
-        # Encontra o índice da última mensagem humana
         last_human_index = -1
-        for i in range(len(messages) - 1, -1, -1):
-            if isinstance(messages[i], HumanMessage):
+        for i, msg in reversed(list(enumerate(messages))):
+            if isinstance(msg, HumanMessage):
                 last_human_index = i
                 break
-
-        # Se não encontrou mensagem humana, retorna tudo
         if last_human_index == -1:
             return result
-
-        # Filtra apenas as mensagens da interação atual
-        current_interaction_messages = messages[last_human_index:]
-
-        # Cria uma cópia do resultado com apenas as mensagens filtradas
         filtered_result = result.copy()
-        filtered_result["messages"] = current_interaction_messages
-
+        filtered_result["messages"] = messages[last_human_index:]
         return filtered_result
 
     def _filter_streaming_chunk(self, chunk: dict) -> dict:
-        """
-        Filtra chunks de streaming para incluir apenas mensagens da interação atual.
-        """
+        """Applies interaction filter to a streaming chunk if applicable."""
         if isinstance(chunk, dict) and "messages" in chunk:
             return self._filter_current_interaction(chunk)
         return chunk

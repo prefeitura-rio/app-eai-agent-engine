@@ -5,11 +5,11 @@ from sys import argv
 
 import vertexai
 from vertexai import agent_engines
-from src.tools import mcp_tools
-from src.prompt import SYSTEM_PROMPT
 
 from src.config import env
+from src.prompt import SYSTEM_PROMPT
 from engine.agent import Agent
+from src.tools import mcp_tools
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -18,22 +18,24 @@ vertexai.init(
 )
 
 
-def get_agent(reasoning_engine_id: str):
+def get_agent():
     return agent_engines.get(
-        f"projects/{env.PROJECT_NUMBER}/locations/{env.LOCATION}/reasoningEngines/{reasoning_engine_id}"
+        f"projects/{env.PROJECT_NUMBER}/locations/{env.LOCATION}/reasoningEngines/{env.REASONING_ENGINE_ID}"
     )
 
 
-reasoning_engine_id = "2024570342642548736"
 user_id = "asd_3"
+
+
 # Initialize agents
-remote_agent = get_agent(reasoning_engine_id)
+remote_agent = get_agent()
+
 local_agent = Agent(
     model="gemini-2.5-flash",
     system_prompt=SYSTEM_PROMPT,
+    temperature=0.7,
     tools=mcp_tools,
 )
-local_agent.set_up()
 
 
 def parse_agent_response(response, is_local=False):
