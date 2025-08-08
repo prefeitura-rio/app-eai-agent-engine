@@ -41,7 +41,7 @@ def deploy():
         ],
         extra_packages=["./engine"],
         gcs_dir_name=f"{model}/v{system_prompt_version}/{now}",
-        display_name=f"EAI Agent | system_prompt v{system_prompt_version} | model {model}",
+        display_name=f"EAI Agent | {model} | v{system_prompt_version}",
         # env_vars={
         #     "PROJECT_ID": env.PROJECT_ID,
         #     "LOCATION": env.LOCATION,
