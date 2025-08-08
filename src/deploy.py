@@ -2,7 +2,7 @@ from src.config import env
 import vertexai
 from vertexai import agent_engines
 from src.config import env
-from src.prompt import SYSTEM_PROMPT
+from src.prompt import get_system_prompt_from_api
 from engine.agent import Agent
 from src.tools import mcp_tools
 
@@ -16,7 +16,7 @@ vertexai.init(
 def deploy():
     local_agent = Agent(
         model="gemini-2.5-flash",
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=get_system_prompt_from_api(),
         temperature=0.7,
         tools=mcp_tools,
     )
