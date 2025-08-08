@@ -22,7 +22,6 @@ GCS_BUCKET = getenv_or_action("GCS_BUCKET")
 
 REASONING_ENGINE_ID = getenv_or_action("REASONING_ENGINE_ID")
 
-PG_URI = getenv_or_action("PG_URI", action="ignore")
 
-EAI_AGENT_URL = getenv_or_action("EAI_AGENT_URL", action="ignore")
-EAI_AGENT_TOKEN = getenv_or_action("EAI_AGENT_TOKEN", action="ignore")
+EAI_AGENT_URL = getenv_or_action("EAI_AGENT_URL")
+EAI_AGENT_TOKEN = getenv_or_action("EAI_AGENT_TOKEN")
