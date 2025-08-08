@@ -1,6 +1,7 @@
 from src.config import env
 from loguru import logger
 import httpx
+import asyncio
 
 
 async def get_system_prompt_from_api(agent_type: str = "agentic_search") -> str:
@@ -21,7 +22,7 @@ async def get_system_prompt_from_api(agent_type: str = "agentic_search") -> str:
             data = response.json()
 
             logger.info(f"System prompt obtido via API para agent_type: {agent_type}")
-            return data
+            return data["prompt"]
 
     except Exception as e:
         logger.warning(
@@ -34,3 +35,6 @@ Follow these guidelines:
 2. Use tools when necessary
 3. Focus on providing factual information
 4. Be helpful, harmless, and honest"""
+
+
+SYSTEM_PROMPT = asyncio.run(get_system_prompt_from_api())
