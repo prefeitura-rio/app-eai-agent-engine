@@ -66,8 +66,8 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
         llm_with_tools = llm.bind_tools(tools=self._tools)
         self._graph = create_react_agent(
-            llm_with_tools,
-            self._tools,
+            model=llm_with_tools,
+            tools=self._tools,
             prompt=self._system_prompt,
             checkpointer=checkpointer,
         )
@@ -84,14 +84,15 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             user=self._database_user,
             password=self._database_password,
         )
-        self._create_react_agent(checkpointer=PostgresSaver.create_sync(engine=engine))
+        checkpointer = await PostgresSaver.create(engine=engine)
+        self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_async = True
+        self._engine_async = True
 
     def _ensure_sync_setup(self):
         """Ensure sync components are set up."""
         if self._setup_complete_sync:
             return
-
         engine = PostgresEngine.from_instance(
             project_id=self._project_id,
             region=self._region,
@@ -100,7 +101,8 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             user=self._database_user,
             password=self._database_password,
         )
-        self._create_react_agent(checkpointer=PostgresSaver.create_sync(engine=engine))
+        checkpointer = PostgresSaver.create_sync(engine=engine)
+        self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_sync = True
 
     async def async_query(self, **kwargs) -> dict[str, Any] | Any:
