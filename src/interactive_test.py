@@ -14,7 +14,7 @@ from src.tools import mcp_tools
 vertexai.init(
     project=env.PROJECT_ID,
     location=env.LOCATION,
-    staging_bucket=env.GCS_BUCKET_STAGING,
+    staging_bucket=env.GCS_BUCKET,
 )
 
 
@@ -24,7 +24,7 @@ def get_agent():
     )
 
 
-user_id = "1154af1a-7bf6-441d-ae06-4590a66c0d3d"
+user_id = "1154af1a-7bf6-441d-ae06-4590a66c0d3d-3"
 
 
 # Initialize agents
@@ -32,7 +32,7 @@ remote_agent = get_agent()
 
 local_agent = Agent(
     model="gemini-2.5-flash",
-    system_prompt=prompt_data,
+    system_prompt=prompt_data["prompt"],
     temperature=0.7,
     tools=mcp_tools,
 )

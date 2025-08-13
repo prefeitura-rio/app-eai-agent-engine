@@ -1,5 +1,6 @@
 from typing import Any, Iterator, List, Optional, AsyncIterable
 from langchain.load.dump import dumpd
+from datetime import datetime, timezone
 
 # from langgraph.prebuilt import create_react_agent
 
@@ -60,6 +61,21 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._setup_complete_async = False
         self._setup_complete_sync = False
 
+    def _add_timestamp_to_messages(self, state):
+        """Hook para adicionar timestamp nas mensagens usando additional_kwargs."""
+        messages = state.get("messages", [])
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Adicionar timestamp nas mensagens que não têm
+        for message in messages:
+            if (
+                hasattr(message, "additional_kwargs")
+                and "timestamp" not in message.additional_kwargs
+            ):
+                message.additional_kwargs["timestamp"] = timestamp
+
+        return {"messages": messages}
+
     def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
         """Create and configure the React Agent."""
         llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
@@ -70,6 +86,8 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             tools=self._tools,
             prompt=self._system_prompt,
             checkpointer=checkpointer,
+            pre_model_hook=self._add_timestamp_to_messages,
+            post_model_hook=self._add_timestamp_to_messages,
         )
 
     async def _ensure_async_setup(self):

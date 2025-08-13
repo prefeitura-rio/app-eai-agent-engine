@@ -19,7 +19,6 @@ DATABASE = getenv_or_action("DATABASE")
 DATABASE_USER = getenv_or_action("DATABASE_USER")
 DATABASE_PASSWORD = getenv_or_action("DATABASE_PASSWORD")
 GCS_BUCKET = getenv_or_action("GCS_BUCKET")
-GCS_BUCKET_STAGING = getenv_or_action("GCS_BUCKET_STAGING")
 
 REASONING_ENGINE_ID = getenv_or_action("REASONING_ENGINE_ID")
 
