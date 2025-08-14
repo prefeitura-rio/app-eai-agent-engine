@@ -76,6 +76,53 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return {"messages": messages}
 
+    def _inject_thread_id_in_user_id_params(self, state, config=None):
+        """Hook para injetar thread_id em qualquer parâmetro user_id de tool calls.
+        
+        Este hook processa todas as tool calls e substitui qualquer parâmetro 
+        'user_id' pelo thread_id atual, garantindo que todas as ferramentas 
+        recebam o identificador correto do usuário.
+        
+        Args:
+            state: Estado do grafo contendo as mensagens
+            config: Configuração do LangGraph (pode ser None em alguns contextos)
+        
+        Returns:
+            dict: Estado atualizado com thread_id injetado em todos os parâmetros user_id
+        """
+        messages = state.get("messages", [])
+        
+        # Múltiplas formas de tentar obter o thread_id
+        thread_id = None
+        
+        # Método 1: Diretamente do parâmetro config
+        if config and isinstance(config, dict):
+            configurable = config.get('configurable', {})
+            thread_id = configurable.get('thread_id')
+        
+        # Método 2: Se config não foi passado, tenta do state (fallback)
+        if not thread_id and hasattr(state, 'config'):
+            state_config = getattr(state, 'config', {})
+            if isinstance(state_config, dict):
+                configurable = state_config.get('configurable', {})
+                thread_id = configurable.get('thread_id')
+        
+        if thread_id:
+            # Processa apenas a última mensagem AI que pode ter tool calls
+            for message in reversed(messages):
+                if hasattr(message, "tool_calls") and message.tool_calls:
+                    for tool_call in message.tool_calls:
+                        # Verifica se a tool call tem argumentos e se possui user_id
+                        if ("args" in tool_call and 
+                            isinstance(tool_call["args"], dict) and 
+                            "user_id" in tool_call["args"]):
+                            
+                            # Substitui user_id pelo thread_id
+                            tool_call["args"]["user_id"] = thread_id
+                    break  # Processa apenas a última mensagem AI
+        
+        return {"messages": messages}
+
     def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
         """Create and configure the React Agent."""
         llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
@@ -87,7 +134,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             prompt=self._system_prompt,
             checkpointer=checkpointer,
             pre_model_hook=self._add_timestamp_to_messages,
-            post_model_hook=self._add_timestamp_to_messages,
+            post_model_hook=self._inject_thread_id_in_user_id_params,
         )
 
     async def _ensure_async_setup(self):
