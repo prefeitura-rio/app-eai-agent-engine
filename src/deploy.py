@@ -50,7 +50,7 @@ def deploy():
         #     "DATABASE_USER": env.DATABASE_USER,
         #     "DATABASE_PASSWORD": env.DATABASE_PASSWORD,
         # },
-        service_account="989726518247-compute@developer.gserviceaccount.com",
+        service_account=f"{env.PROJECT_NUMBER}-compute@developer.gserviceaccount.com",
     )
 
 
