@@ -25,6 +25,7 @@ def deploy():
         temperature=0.7,
         tools=mcp_tools,
     )
+    service_account = f"{env.PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
     return agent_engines.create(
         local_agent,
         requirements=[
@@ -50,7 +51,7 @@ def deploy():
         #     "DATABASE_USER": env.DATABASE_USER,
         #     "DATABASE_PASSWORD": env.DATABASE_PASSWORD,
         # },
-        service_account=f"{env.PROJECT_NUMBER}-compute@developer.gserviceaccount.com",
+        service_account=service_account,
     )
 
 
