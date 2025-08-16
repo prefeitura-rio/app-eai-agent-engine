@@ -50,7 +50,9 @@ from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Send
 from langgraph.typing import ContextT
 from langgraph.warnings import LangGraphDeprecatedSinceV10
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 StructuredResponse = Union[dict, BaseModel]
