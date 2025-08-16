@@ -66,7 +66,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     def _add_timestamp_to_messages(self, state):
         """Hook para adicionar timestamp nas mensagens usando additional_kwargs."""
         messages = state.get("messages", [])
-        
+
         # Adicionar timestamp nas mensagens que não têm, gerando um timestamp único para cada
         for message in messages:
             if (
@@ -77,7 +77,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 # HumanMessage: quando chega
                 # AIMessage: quando é gerada
                 # ToolMessage: será adicionado após execução da tool
-                message.additional_kwargs["timestamp"] = datetime.now(timezone.utc).isoformat()
+                message.additional_kwargs["timestamp"] = datetime.now(
+                    timezone.utc
+                ).isoformat()
 
         return {"messages": messages}
 
@@ -85,18 +87,22 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         """Hook para adicionar timestamp nas ToolMessages após execução."""
         messages = state.get("messages", [])
         current_time = datetime.now(timezone.utc).isoformat()
-        
+
         # Adicionar timestamp nas mensagens que não têm
         for message in messages:
             if hasattr(message, "additional_kwargs"):
                 # ToolMessage: timestamp após execução
-                if (message.__class__.__name__ == "ToolMessage" 
-                    and "timestamp" not in message.additional_kwargs):
+                if (
+                    message.__class__.__name__ == "ToolMessage"
+                    and "timestamp" not in message.additional_kwargs
+                ):
                     message.additional_kwargs["timestamp"] = current_time
-                
+
                 # AIMessage: timestamp quando é gerada (caso não tenha sido adicionado no pre-model)
-                elif (message.__class__.__name__ == "AIMessage" 
-                      and "timestamp" not in message.additional_kwargs):
+                elif (
+                    message.__class__.__name__ == "AIMessage"
+                    and "timestamp" not in message.additional_kwargs
+                ):
                     message.additional_kwargs["timestamp"] = current_time
 
         return {"messages": messages}
@@ -150,26 +156,27 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return {"messages": messages}
 
+    def _combined_pre_model_hook(self, state, config=None):
+        state = self._add_timestamp_to_messages(state)
+        return self._inject_thread_id_in_user_id_params(state, config)
+
+    def _combined_post_model_hook(self, state, config=None):
+        state = self._add_timestamp_to_tool_messages(state)
+        return self._inject_thread_id_in_user_id_params(state, config)
+
     def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
         """Create and configure the React Agent."""
         llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
         # llm_with_tools = llm.bind_tools(tools=self._tools, parallel_tool_calls=False)
         llm_with_tools = llm.bind_tools(tools=self._tools)
-        
-        # Criar hook combinado para post-model
-        def combined_post_model_hook(state):
-            # Primeiro adicionar timestamps nas ToolMessages
-            state = self._add_timestamp_to_tool_messages(state)
-            # Depois injetar thread_id nos parâmetros
-            return self._inject_thread_id_in_user_id_params(state)
-        
+
         self._graph = create_react_agent(
             model=llm_with_tools,
             tools=self._tools,
             prompt=self._system_prompt,
             checkpointer=checkpointer,
-            pre_model_hook=self._add_timestamp_to_messages,
-            post_model_hook=combined_post_model_hook,
+            pre_model_hook=self._combined_pre_model_hook,
+            post_model_hook=self._combined_post_model_hook,
         )
 
     async def _ensure_async_setup(self):

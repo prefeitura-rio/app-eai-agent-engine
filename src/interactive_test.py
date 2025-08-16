@@ -48,18 +48,22 @@ def parse_agent_response(response, is_local=False, start_time=None):
     if is_local:
         # Local agent returns LangChain message objects directly
         messages = response.get("messages", [])
-        
+
         previous_timestamp = None
         total_execution_time = None
-        
+
         # Calcular tempo total se start_time foi fornecido
         if start_time and messages:
             # Pegar timestamp da última mensagem
             last_message = messages[-1]
-            last_timestamp_str = getattr(last_message, "additional_kwargs", {}).get("timestamp")
+            last_timestamp_str = getattr(last_message, "additional_kwargs", {}).get(
+                "timestamp"
+            )
             if last_timestamp_str and last_timestamp_str != "No timestamp":
                 try:
-                    last_timestamp = datetime.fromisoformat(last_timestamp_str.replace('Z', '+00:00'))
+                    last_timestamp = datetime.fromisoformat(
+                        last_timestamp_str.replace("Z", "+00:00")
+                    )
                     total_execution_time = (last_timestamp - start_time).total_seconds()
                 except:
                     pass
@@ -71,14 +75,18 @@ def parse_agent_response(response, is_local=False, start_time=None):
             timestamp_str = getattr(message, "additional_kwargs", {}).get(
                 "timestamp", "No timestamp"
             )
-            
+
             # Calcular tempo desde a mensagem anterior
             time_since_last = None
             if timestamp_str != "No timestamp":
                 try:
-                    current_timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    current_timestamp = datetime.fromisoformat(
+                        timestamp_str.replace("Z", "+00:00")
+                    )
                     if previous_timestamp:
-                        time_since_last = (current_timestamp - previous_timestamp).total_seconds()
+                        time_since_last = (
+                            current_timestamp - previous_timestamp
+                        ).total_seconds()
                     previous_timestamp = current_timestamp
                 except:
                     pass
@@ -129,15 +137,19 @@ def parse_agent_response(response, is_local=False, start_time=None):
                     print(f"   ⏱️  Time since last: {time_since_last:.3f}s")
                 print(f"   🛠️  Tool: {tool_name}")
                 print(f"   📄 Response: {tool_content}")
-        
+
         # Mostrar tempo total no final
         if total_execution_time:
             print(f"\n📈 EXECUTION SUMMARY:")
             print(f"   🎯 Total execution time: {total_execution_time:.3f}s")
             if start_time:
-                actual_wall_time = (datetime.now(timezone.utc) - start_time).total_seconds()
+                actual_wall_time = (
+                    datetime.now(timezone.utc) - start_time
+                ).total_seconds()
                 print(f"   🕐 Actual wall clock time: {actual_wall_time:.3f}s")
-                print(f"   📊 Efficiency: {(total_execution_time/actual_wall_time*100):.1f}% (message timestamps vs wall clock)")
+                print(
+                    f"   📊 Efficiency: {(total_execution_time/actual_wall_time*100):.1f}% (message timestamps vs wall clock)"
+                )
     else:
         # Remote agent returns direct message objects
         if "messages" not in response:
@@ -233,7 +245,7 @@ async def interactive_chat(use_local=False):
             try:
                 # Capturar tempo de início
                 start_time = datetime.now(timezone.utc)
-                
+
                 # Use async_query for both agents
                 if use_local:
                     result = await local_agent.async_query(input=data, config=config)
