@@ -2,6 +2,7 @@ import traceback
 import asyncio
 import json
 from sys import argv
+from datetime import datetime, timezone
 
 import vertexai
 from vertexai import agent_engines
@@ -24,7 +25,7 @@ def get_agent():
     )
 
 
-user_id = "5521996143632"
+user_id = "hahahahahaha1"
 
 
 # Initialize agents
@@ -38,7 +39,7 @@ local_agent = Agent(
 )
 
 
-def parse_agent_response(response, is_local=False):
+def parse_agent_response(response, is_local=False, start_time=None):
     """Parse the agent response and show all steps."""
     print("\n" + "=" * 60)
     print("🤖 AGENT EXECUTION STEPS")
@@ -47,16 +48,53 @@ def parse_agent_response(response, is_local=False):
     if is_local:
         # Local agent returns LangChain message objects directly
         messages = response.get("messages", [])
+        
+        previous_timestamp = None
+        total_execution_time = None
+        
+        # Calcular tempo total se start_time foi fornecido
+        if start_time and messages:
+            # Pegar timestamp da última mensagem
+            last_message = messages[-1]
+            last_timestamp_str = getattr(last_message, "additional_kwargs", {}).get("timestamp")
+            if last_timestamp_str and last_timestamp_str != "No timestamp":
+                try:
+                    last_timestamp = datetime.fromisoformat(last_timestamp_str.replace('Z', '+00:00'))
+                    total_execution_time = (last_timestamp - start_time).total_seconds()
+                except:
+                    pass
 
         for i, message in enumerate(messages):
             msg_type = message.__class__.__name__
 
+            # Extrair timestamp do additional_kwargs se existir
+            timestamp_str = getattr(message, "additional_kwargs", {}).get(
+                "timestamp", "No timestamp"
+            )
+            
+            # Calcular tempo desde a mensagem anterior
+            time_since_last = None
+            if timestamp_str != "No timestamp":
+                try:
+                    current_timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    if previous_timestamp:
+                        time_since_last = (current_timestamp - previous_timestamp).total_seconds()
+                    previous_timestamp = current_timestamp
+                except:
+                    pass
+
             if "HumanMessage" in msg_type:
                 print(f"\n👤 USER MESSAGE #{i+1}:")
+                print(f"   ⏰ Timestamp: {timestamp_str}")
+                if time_since_last:
+                    print(f"   ⏱️  Time since last: {time_since_last:.3f}s")
                 print(f"   {message.content}")
 
             elif "AIMessage" in msg_type:
                 print(f"\n🤖 AI RESPONSE #{i+1}:")
+                print(f"   ⏰ Timestamp: {timestamp_str}")
+                if time_since_last:
+                    print(f"   ⏱️  Time since last: {time_since_last:.3f}s")
 
                 # Check for tool calls
                 tool_calls = getattr(message, "tool_calls", [])
@@ -86,9 +124,20 @@ def parse_agent_response(response, is_local=False):
                 print(f"\n🔧 TOOL RESPONSE #{i+1}:")
                 tool_name = getattr(message, "name", "unknown")
                 tool_content = message.content
-
+                print(f"   ⏰ Timestamp: {timestamp_str}")
+                if time_since_last:
+                    print(f"   ⏱️  Time since last: {time_since_last:.3f}s")
                 print(f"   🛠️  Tool: {tool_name}")
                 print(f"   📄 Response: {tool_content}")
+        
+        # Mostrar tempo total no final
+        if total_execution_time:
+            print(f"\n📈 EXECUTION SUMMARY:")
+            print(f"   🎯 Total execution time: {total_execution_time:.3f}s")
+            if start_time:
+                actual_wall_time = (datetime.now(timezone.utc) - start_time).total_seconds()
+                print(f"   🕐 Actual wall clock time: {actual_wall_time:.3f}s")
+                print(f"   📊 Efficiency: {(total_execution_time/actual_wall_time*100):.1f}% (message timestamps vs wall clock)")
     else:
         # Remote agent returns direct message objects
         if "messages" not in response:
@@ -182,6 +231,9 @@ async def interactive_chat(use_local=False):
 
             config = {"configurable": {"thread_id": user_id}}
             try:
+                # Capturar tempo de início
+                start_time = datetime.now(timezone.utc)
+                
                 # Use async_query for both agents
                 if use_local:
                     result = await local_agent.async_query(input=data, config=config)
@@ -189,7 +241,7 @@ async def interactive_chat(use_local=False):
                     result = await remote_agent.async_query(input=data, config=config)
                 print(result)
                 # Parse and display the result
-                parse_agent_response(result, is_local=use_local)
+                parse_agent_response(result, is_local=use_local, start_time=start_time)
 
             except Exception as e:
                 print(f"\n❌ Error: {str(e)}")
