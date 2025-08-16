@@ -11,6 +11,7 @@ from typing import (
     Union,
     cast,
     get_type_hints,
+    List,
 )
 from warnings import warn
 
@@ -49,6 +50,8 @@ from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Send
 from langgraph.typing import ContextT
 from langgraph.warnings import LangGraphDeprecatedSinceV10
+from loguru import logger
+
 
 StructuredResponse = Union[dict, BaseModel]
 StructuredResponseSchema = Union[dict, type[BaseModel]]
@@ -243,6 +246,44 @@ def _validate_chat_history(
         error_code=ErrorCode.INVALID_CHAT_HISTORY,
     )
     raise ValueError(error_message)
+
+
+def _clean_malformed_messages(messages: Sequence[BaseMessage]) -> List[BaseMessage]:
+    """
+    Remove mensagens mal formadas que podem causar erro no Gemini API.
+
+    Remove AIMessages que têm:
+    - content vazio (empty string) E
+    - tool_calls vazio (lista vazia ou None)
+
+    Args:
+        messages: Sequência de mensagens para limpar
+
+    Returns:
+        Lista de mensagens válidas
+    """
+    cleaned_messages = []
+
+    for message in messages:
+        # Verifica se é uma AIMessage com problemas
+        if isinstance(message, AIMessage):
+            # Verifica se tem conteúdo vazio E tool_calls vazio
+            has_empty_content = not message.content or message.content.strip() == ""
+            has_empty_tool_calls = (
+                not message.tool_calls or len(message.tool_calls) == 0
+            )
+            finish_reason = message.response_metadata.get("finish_reason")
+            # Se ambos estão vazios, pula esta mensagem
+            if (
+                has_empty_content and has_empty_tool_calls
+            ) or finish_reason == "MALFORMED_FUNCTION_CALL":
+                logger.info(f"Removendo AIMessage mal formada: ID={message.id}")
+                continue
+
+        # Adiciona mensagem válida à lista
+        cleaned_messages.append(message)
+
+    return cleaned_messages
 
 
 def create_react_agent(
@@ -598,6 +639,7 @@ def create_react_agent(
 
         # _validate_chat_history(messages)
         # we're passing messages under `messages` key, as this is expected by the prompt
+        messages = _clean_malformed_messages(messages=messages)
         if isinstance(state_schema, type) and issubclass(state_schema, BaseModel):
             state.messages = messages  # type: ignore
         else:
