@@ -3,7 +3,6 @@ from langchain.load.dump import dumpd
 from datetime import datetime, timezone
 
 # from langgraph.prebuilt import create_react_agent
-
 # use custom graph without _validate_chat_history
 from engine.custom_react_agent import create_react_agent
 from langchain_google_vertexai import ChatVertexAI
@@ -22,6 +21,14 @@ from langchain_google_cloud_sql_pg import (
     PostgresSaver,
 )
 
+from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     """
@@ -39,12 +46,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         system_prompt: str = "YOU ALWAYS RESPOND: `SYSTEM PROMPT NOT SET`",
         tools: List[BaseTool] = [],
         temperature: float = 0.7,
+        otpl_service: str = "langgraph-eai-vX",
     ):
         self._model = model
         self._tools = tools or []
         self._system_prompt = system_prompt
         self._temperature = temperature
-
+        self._otpl_service = otpl_service
         # Database configuration
         self._project_id = getenv("PROJECT_ID", "")
         self._region = getenv("LOCATION", "")
@@ -52,11 +60,37 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._database_name = getenv("DATABASE", "")
         self._database_user = getenv("DATABASE_USER", "")
         self._database_password = getenv("DATABASE_PASSWORD", "")
+        self._otlp_endpoint = getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+        self._otlp_header = getenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
 
-        # Runtime components - initialized lazily
         self._graph = None
         self._setup_complete_async = False
         self._setup_complete_sync = False
+        self._opentelemetry_setup_complete = False
+
+    def _set_up_opentelemetry(self):
+        if self._opentelemetry_setup_complete:
+            return
+        provider = TracerProvider(
+            resource=Resource.create({"service.name": self._otpl_service})
+        )
+        otlp_exporter = OTLPSpanExporter(
+            endpoint=self._otlp_endpoint,
+            headers=(
+                dict(
+                    header.split("=")
+                    for header in self._otlp_header.split(",")
+                    if "=" in header
+                )
+                if self._otlp_header
+                else None
+            ),
+        )
+
+        provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+        trace.set_tracer_provider(provider)
+        LangchainInstrumentor().instrument()
+        self._opentelemetry_setup_complete = True
 
     def set_up(self):
         """Mark that setup is needed - actual setup happens lazily."""
@@ -181,6 +215,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     async def _ensure_async_setup(self):
         """Ensure async components are set up."""
+
+        self._set_up_opentelemetry()
+
         if self._setup_complete_async:
             return
         engine = await PostgresEngine.afrom_instance(
@@ -198,6 +235,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     def _ensure_sync_setup(self):
         """Ensure sync components are set up."""
+
+        self._set_up_opentelemetry()
+
         if self._setup_complete_sync:
             return self._graph
         engine = PostgresEngine.from_instance(
