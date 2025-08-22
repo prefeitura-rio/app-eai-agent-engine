@@ -24,6 +24,7 @@ def deploy():
         system_prompt=system_prompt,
         temperature=0.7,
         tools=mcp_tools,
+        otpl_service=f"eai-langgraph-v{system_prompt_version}",
     )
     service_account = f"{env.PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
     return agent_engines.create(
@@ -38,6 +39,9 @@ def deploy():
             "langchain-google-vertexai>=2.0.28",
             "langchain-mcp-adapters>=0.1.9",
             "langgraph>=0.6.4",
+            "opentelemetry-exporter-otlp-proto-http>=1.36.0",
+            "opentelemetry-instrumentation-langchain>=0.45.6",
+            "opentelemetry-sdk>=1.36.0",
             "pydantic>=2.11.7",
         ],
         extra_packages=["./engine"],

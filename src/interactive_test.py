@@ -36,6 +36,7 @@ local_agent = Agent(
     system_prompt=prompt_data["prompt"],
     temperature=0.7,
     tools=mcp_tools,
+    otpl_service=f"eai-langgraph-v{prompt_data["version"]}",
 )
 
 
