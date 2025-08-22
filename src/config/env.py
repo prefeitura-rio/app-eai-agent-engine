@@ -25,3 +25,5 @@ REASONING_ENGINE_ID = getenv_or_action("REASONING_ENGINE_ID")
 
 EAI_AGENT_URL = getenv_or_action("EAI_AGENT_URL")
 EAI_AGENT_TOKEN = getenv_or_action("EAI_AGENT_TOKEN")
+
+MCP_EXCLUDED_TOOLS = getenv_or_action("MCP_EXCLUDED_TOOLS").split(",") if getenv_or_action("MCP_EXCLUDED_TOOLS", default="") else []
