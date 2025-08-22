@@ -41,7 +41,7 @@ local_agent = Agent(
 
 
 def parse_agent_response(response, is_local=False, start_time=None):
-    """Parse the agent response and show all steps."""
+    """Parse the agent response and show all steps"""
     print("\n" + "=" * 60)
     print("🤖 AGENT EXECUTION STEPS")
     print("=" * 60)
