@@ -1,6 +1,7 @@
 from typing import Any, Iterator, List, Optional, AsyncIterable
 from langchain.load.dump import dumpd
 from datetime import datetime, timezone
+import json
 
 # from langgraph.prebuilt import create_react_agent
 # use custom graph without _validate_chat_history
@@ -68,6 +69,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._setup_complete_sync = False
         self._opentelemetry_setup_complete = False
 
+        # OpenTelemetry tracer
+        self._tracer = None
+
     def _set_up_opentelemetry(self):
         if self._opentelemetry_setup_complete:
             return
@@ -89,8 +93,38 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
         trace.set_tracer_provider(provider)
+
+        # Initialize tracer
+        self._tracer = trace.get_tracer(__name__)
+
         LangchainInstrumentor().instrument()
         self._opentelemetry_setup_complete = True
+
+    def _trace_conversation(self, filtered_result: dict, **kwargs):
+        """Simple tracing to show user input and model output."""
+        if not self._tracer:
+            return
+
+        # Extract input message
+        input_msg = str(kwargs.get("input", ""))
+
+        # Extract thread_id
+        thread_id = (
+            kwargs.get("config", {}).get("configurable", {}).get("thread_id", "unknown")
+        )
+
+        with self._tracer.start_as_current_span("conversation") as span:
+            span.set_attributes(
+                {
+                    "user.input": input_msg,
+                    "model.output": json.dumps(
+                        dumpd(filtered_result), ensure_ascii=False, indent=2
+                    ),
+                    "thread.id": thread_id,
+                    "model.name": self._model,
+                    "model.temperature": self._temperature,
+                }
+            )
 
     def set_up(self):
         """Mark that setup is needed - actual setup happens lazily."""
@@ -262,8 +296,14 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             raise ValueError(
                 "Graph is not initialized. Call _ensure_async_setup first."
             )
+
         result = await self._graph.ainvoke(**kwargs)
-        return self._filter_current_interaction(result)
+        filtered_result = self._filter_current_interaction(result)
+
+        # Simple tracing
+        self._trace_conversation(filtered_result, **kwargs)
+
+        return filtered_result
 
     async def async_stream_query(self, **kwargs) -> AsyncIterable[Any]:
         """Asynchronous streaming query execution with filtered chunks."""
@@ -285,8 +325,14 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._ensure_sync_setup()
         if self._graph is None:
             raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
+
         result = self._graph.invoke(**kwargs)
-        return self._filter_current_interaction(result)
+        filtered_result = self._filter_current_interaction(result)
+
+        # Simple tracing
+        self._trace_conversation(filtered_result, **kwargs)
+
+        return filtered_result
 
     def stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
         """Synchronous streaming query execution with filtered chunks."""
