@@ -19,8 +19,22 @@ DATABASE = getenv_or_action("DATABASE")
 DATABASE_USER = getenv_or_action("DATABASE_USER")
 DATABASE_PASSWORD = getenv_or_action("DATABASE_PASSWORD")
 GCS_BUCKET = getenv_or_action("GCS_BUCKET")
-GCS_BUCKET_STAGING = getenv_or_action("GCS_BUCKET_STAGING")
 
-DATABASE_PASSWORD = getenv_or_action("DATABASE_PASSWORD")
+REASONING_ENGINE_ID = getenv_or_action("REASONING_ENGINE_ID")
 
-PG_URI = getenv_or_action("PG_URI", action="ignore")
+
+EAI_AGENT_URL = getenv_or_action("EAI_AGENT_URL")
+EAI_AGENT_TOKEN = getenv_or_action("EAI_AGENT_TOKEN")
+
+MCP_EXCLUDED_TOOLS = (
+    getenv_or_action("MCP_EXCLUDED_TOOLS").split(",")
+    if getenv_or_action("MCP_EXCLUDED_TOOLS", default="")
+    else []
+)
+
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = getenv_or_action(
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+)
+OTEL_EXPORTER_OTLP_TRACES_HEADERS = getenv_or_action(
+    "OTEL_EXPORTER_OTLP_TRACES_HEADERS"
+)
