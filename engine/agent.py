@@ -2,6 +2,9 @@ from typing import Any, Iterator, List, Optional, AsyncIterable
 from langchain.load.dump import dumpd
 from datetime import datetime, timezone
 import json
+import atexit
+import signal
+import sys
 
 # from langgraph.prebuilt import create_react_agent
 # use custom graph without _validate_chat_history
@@ -26,6 +29,7 @@ from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
@@ -69,14 +73,17 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._setup_complete_sync = False
         self._opentelemetry_setup_complete = False
 
-        # OpenTelemetry tracer
+        # OpenTelemetry tracer e processor para shutdown
         self._tracer = None
+        self._batch_processor = None
+        self._shutdown_handlers_registered = False
 
     def _set_up_opentelemetry(self):
         if self._opentelemetry_setup_complete:
             return
         provider = TracerProvider(
-            resource=Resource.create({"service.name": self._otpl_service})
+            resource=Resource.create({"service.name": self._otpl_service}),
+            sampler=ALWAYS_ON,  # Garantir 100% de sampling
         )
         otlp_exporter = OTLPSpanExporter(
             endpoint=self._otlp_endpoint,
@@ -91,13 +98,25 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             ),
         )
 
-        provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+        # Configurar BatchSpanProcessor com parâmetros otimizados para reduzir perda de spans
+        self._batch_processor = BatchSpanProcessor(
+            otlp_exporter,
+            max_queue_size=8192,  # Aumentar buffer (padrão: 2048)
+            schedule_delay_millis=1000,  # Flush mais frequente (padrão: 5000)
+            export_timeout_millis=10000,  # Timeout menor (padrão: 30000)
+            max_export_batch_size=256,  # Lotes menores para reduzir latência (padrão: 512)
+        )
+        provider.add_span_processor(self._batch_processor)
         trace.set_tracer_provider(provider)
 
         # Initialize tracer
         self._tracer = trace.get_tracer(__name__)
 
         LangchainInstrumentor().instrument()
+
+        # Configurar handlers de shutdown para garantir flush de spans
+        self._register_shutdown_handlers()
+
         self._opentelemetry_setup_complete = True
 
     def _trace_conversation(self, filtered_result: dict, **kwargs):
@@ -114,6 +133,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         )
 
         with self._tracer.start_as_current_span("conversation") as span:
+            # Validar se o span está sendo sampled (100%)
             span.set_attributes(
                 {
                     "user.input": input_msg,
@@ -125,6 +145,58 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                     "model.temperature": self._temperature,
                 }
             )
+
+    def _register_shutdown_handlers(self):
+        """Registra handlers para garantir flush de spans no shutdown."""
+        if self._shutdown_handlers_registered:
+            return
+
+        def shutdown_tracing():
+            """Force flush de spans pendentes antes do shutdown."""
+            if self._batch_processor:
+                try:
+                    # Force flush com timeout de 5 segundos
+                    self._batch_processor.force_flush(timeout_millis=5000)
+                    # Shutdown o processor
+                    self._batch_processor.shutdown()
+                except Exception as e:
+                    print(
+                        f"Erro ao fazer flush de spans no shutdown: {e}",
+                        file=sys.stderr,
+                    )
+
+        # Registrar para atexit (shutdown normal)
+        atexit.register(shutdown_tracing)
+
+        # Registrar para signals (SIGTERM, SIGINT)
+        def signal_handler(signum, _frame):
+            shutdown_tracing()
+            # Re-raise o signal para comportamento padrão
+            signal.signal(signum, signal.SIG_DFL)
+            signal.raise_signal(signum)
+
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
+        self._shutdown_handlers_registered = True
+
+    def force_flush_spans(self, timeout_millis: int = 5000) -> bool:
+        """Force flush manual de spans pendentes.
+
+        Args:
+            timeout_millis: Timeout em milissegundos para o flush
+
+        Returns:
+            bool: True se o flush foi bem-sucedido
+        """
+        if not self._batch_processor:
+            return False
+
+        try:
+            return self._batch_processor.force_flush(timeout_millis=timeout_millis)
+        except Exception as e:
+            print(f"Erro ao fazer force flush: {e}", file=sys.stderr)
+            return False
 
     def set_up(self):
         """Mark that setup is needed - actual setup happens lazily."""
