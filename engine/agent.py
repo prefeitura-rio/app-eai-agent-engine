@@ -114,9 +114,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         LangchainInstrumentor().instrument()
 
-        # Configurar handlers de shutdown para garantir flush de spans
-        self._register_shutdown_handlers()
-
         self._opentelemetry_setup_complete = True
 
     def _trace_conversation(self, filtered_result: dict, **kwargs):
@@ -133,7 +130,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         )
 
         with self._tracer.start_as_current_span("conversation") as span:
-            # Validar se o span está sendo sampled (100%)
             span.set_attributes(
                 {
                     "user.input": input_msg,
@@ -145,58 +141,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                     "model.temperature": self._temperature,
                 }
             )
-
-    def _register_shutdown_handlers(self):
-        """Registra handlers para garantir flush de spans no shutdown."""
-        if self._shutdown_handlers_registered:
-            return
-
-        def shutdown_tracing():
-            """Force flush de spans pendentes antes do shutdown."""
-            if self._batch_processor:
-                try:
-                    # Force flush com timeout de 5 segundos
-                    self._batch_processor.force_flush(timeout_millis=5000)
-                    # Shutdown o processor
-                    self._batch_processor.shutdown()
-                except Exception as e:
-                    print(
-                        f"Erro ao fazer flush de spans no shutdown: {e}",
-                        file=sys.stderr,
-                    )
-
-        # Registrar para atexit (shutdown normal)
-        atexit.register(shutdown_tracing)
-
-        # Registrar para signals (SIGTERM, SIGINT)
-        def signal_handler(signum, _frame):
-            shutdown_tracing()
-            # Re-raise o signal para comportamento padrão
-            signal.signal(signum, signal.SIG_DFL)
-            signal.raise_signal(signum)
-
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-
-        self._shutdown_handlers_registered = True
-
-    def force_flush_spans(self, timeout_millis: int = 5000) -> bool:
-        """Force flush manual de spans pendentes.
-
-        Args:
-            timeout_millis: Timeout em milissegundos para o flush
-
-        Returns:
-            bool: True se o flush foi bem-sucedido
-        """
-        if not self._batch_processor:
-            return False
-
-        try:
-            return self._batch_processor.force_flush(timeout_millis=timeout_millis)
-        except Exception as e:
-            print(f"Erro ao fazer force flush: {e}", file=sys.stderr)
-            return False
 
     def set_up(self):
         """Mark that setup is needed - actual setup happens lazily."""
