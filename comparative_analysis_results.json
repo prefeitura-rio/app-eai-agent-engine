@@ -1,0 +1,270 @@
+{
+  "timestamp": "2025-09-02T17:04:10.998515",
+  "service_agent_results": {
+    "cenario_1_perfeito": {
+      "test_name": "SERVICE: CENÁRIO 1: Usuário Perfeito (3 dados de uma vez)",
+      "total_time": 31.309645652770996,
+      "total_interactions": 2,
+      "average_interaction_time": 15.154433846473694,
+      "llm_calls_estimated": 2,
+      "tool_calls_estimated": 0,
+      "interactions": [
+        {
+          "user_input": "Quero me identificar no sistema",
+          "agent_response": "Para que serviço você gostaria de se identificar? Por exemplo, serviços de impostos, infraestrutura ou saúde?",
+          "interaction_time": 23.31271481513977,
+          "timestamp": "2025-09-02T16:59:37.199902"
+        },
+        {
+          "user_input": "Meu CPF é 11144477735, me chamo Bruno Silva e meu email é bruno.silva@email.com",
+          "agent_response": "Entendi que você quer se identificar. Para qual serviço você precisa se identificar? Assim posso te direcionar para o setor correto.",
+          "interaction_time": 6.996152877807617,
+          "timestamp": "2025-09-02T16:59:44.696386"
+        }
+      ]
+    },
+    "cenario_2_sequencial": {
+      "test_name": "SERVICE: CENÁRIO 2: Usuário Sequencial (1 dado por vez)",
+      "total_time": 34.83520531654358,
+      "total_interactions": 4,
+      "average_interaction_time": 8.20831948518753,
+      "llm_calls_estimated": 4,
+      "tool_calls_estimated": 0,
+      "interactions": [
+        {
+          "user_input": "Preciso me identificar",
+          "agent_response": "Para que eu possa te ajudar com a identificação, preciso saber para qual serviço você precisa se identificar. Por exemplo, é para serviços de impostos, infraestrutura ou saúde?",
+          "interaction_time": 6.79948616027832,
+          "timestamp": "2025-09-02T16:59:51.996481"
+        },
+        {
+          "user_input": "Meu CPF é 11144477735",
+          "agent_response": "Compreendo. Para que eu possa te direcionar ao serviço correto e dar andamento à sua identificação, preciso que você me diga para qual finalidade você precisa se identificar. Seria para assuntos relacionados a impostos, infraestrutura, saúde ou outro serviço?",
+          "interaction_time": 7.7920567989349365,
+          "timestamp": "2025-09-02T17:00:00.289082"
+        },
+        {
+          "user_input": "Meu email é bruno.silva@email.com",
+          "agent_response": "Entendido. Para que eu possa te ajudar, preciso saber qual serviço você precisa acessar. Por favor, me diga se é para serviços de impostos, infraestrutura, saúde ou algum outro tipo de atendimento.",
+          "interaction_time": 11.514960050582886,
+          "timestamp": "2025-09-02T17:00:12.304657"
+        },
+        {
+          "user_input": "Me chamo Bruno Silva",
+          "agent_response": "Certo, Bruno. Para que eu possa te ajudar, preciso que você me diga para qual serviço você precisa se identificar. É para algo relacionado a impostos, infraestrutura, saúde ou outra área?",
+          "interaction_time": 6.7267749309539795,
+          "timestamp": "2025-09-02T17:00:19.531804"
+        }
+      ]
+    },
+    "cenario_3_caotico": {
+      "test_name": "SERVICE: CENÁRIO 3: Usuário Caótico (dados incorretos + correções)",
+      "total_time": 55.04821443557739,
+      "total_interactions": 7,
+      "average_interaction_time": 7.363278082438877,
+      "llm_calls_estimated": 7,
+      "tool_calls_estimated": 0,
+      "interactions": [
+        {
+          "user_input": "Oi, quero me identificar",
+          "agent_response": "Olá! Para que eu possa te ajudar com a identificação, preciso saber qual serviço você procura. É algo relacionado a impostos, infraestrutura, saúde ou outro assunto?",
+          "interaction_time": 6.459213495254517,
+          "timestamp": "2025-09-02T17:00:26.491586"
+        },
+        {
+          "user_input": "Meu CPF é 123456 e me chamo João",
+          "agent_response": "Olá, João! Para que eu possa te ajudar com a sua identificação, preciso saber para qual serviço você precisa se identificar. É para algo relacionado a impostos, infraestrutura, saúde ou outro assunto? Assim consigo te direcionar para o atendimento correto.",
+          "interaction_time": 6.795462131500244,
+          "timestamp": "2025-09-02T17:00:33.787595"
+        },
+        {
+          "user_input": "Ops, meu CPF correto é 11144477735",
+          "agent_response": "Obrigado pela correção, João. Anotei seu CPF: 111.444.777-35.\n\nPara que eu possa te direcionar ao agente correto e dar andamento à sua identificação, preciso que você me diga qual serviço você busca. É algo relacionado a impostos, infraestrutura, saúde ou outro tipo de atendimento?",
+          "interaction_time": 9.327820062637329,
+          "timestamp": "2025-09-02T17:00:43.616095"
+        },
+        {
+          "user_input": "Na verdade meu nome é Bruno Silva, não João",
+          "agent_response": "Certo, Bruno Silva! Peço desculpas pela confusão. Anotei seu nome correto agora.\n\nPara que eu possa te ajudar com a sua identificação, preciso saber qual serviço você procura. É algo relacionado a impostos, infraestrutura, saúde ou outro assunto? Assim consigo te direcionar para o atendimento correto.",
+          "interaction_time": 6.607919216156006,
+          "timestamp": "2025-09-02T17:00:50.724740"
+        },
+        {
+          "user_input": "Meu email é bruno@email",
+          "agent_response": "Entendido, Bruno Silva. Anotei seu e-mail: bruno@email.com.\n\nPara que eu possa te ajudar com a sua identificação e te direcionar ao atendimento correto, preciso que você me diga qual serviço você busca. É algo relacionado a impostos, infraestrutura, saúde ou outro tipo de atendimento?",
+          "interaction_time": 6.459504842758179,
+          "timestamp": "2025-09-02T17:00:57.684864"
+        },
+        {
+          "user_input": "Desculpa, meu email correto é bruno.silva@email.com",
+          "agent_response": "Certo, Bruno Silva! Email corrigido para bruno.silva@email.com.\n\nPara que eu possa te ajudar com a sua identificação e te direcionar ao atendimento correto, preciso que você me diga qual serviço você busca. É algo relacionado a impostos, infraestrutura, saúde ou outro tipo de atendimento?",
+          "interaction_time": 6.627198934555054,
+          "timestamp": "2025-09-02T17:01:04.812663"
+        },
+        {
+          "user_input": "Está tudo correto agora?",
+          "agent_response": "Sim, Bruno Silva! Tenho as seguintes informações atualizadas:\n\n*   **Nome:** Bruno Silva\n*   **CPF:** 111.444.777-35\n*   **Email:** bruno.silva@email.com\n\nEstá tudo correto agora.\n\nPara que eu possa te ajudar com a sua identificação e te direcionar ao atendimento correto, por favor, me diga qual serviço você busca. É algo relacionado a impostos, infraestrutura, saúde ou outro tipo de atendimento?",
+          "interaction_time": 9.265827894210815,
+          "timestamp": "2025-09-02T17:01:14.579074"
+        }
+      ]
+    }
+  },
+  "workflow_results": {
+    "cenario_1_perfeito": {
+      "test_name": "WORKFLOW: CENÁRIO 1: Usuário Perfeito (3 dados de uma vez)",
+      "total_time": 38.81637215614319,
+      "total_interactions": 2,
+      "average_interaction_time": 18.907482743263245,
+      "llm_calls_estimated": 2,
+      "tool_calls_estimated": 0,
+      "interactions": [
+        {
+          "user_input": "Quero me identificar no sistema",
+          "agent_response": "",
+          "interaction_time": 23.871495962142944,
+          "timestamp": "2025-09-02T17:01:38.952336"
+        },
+        {
+          "user_input": "Meu CPF é 11144477735, me chamo Bruno Silva e meu email é bruno.silva@email.com",
+          "agent_response": "",
+          "interaction_time": 13.943469524383545,
+          "timestamp": "2025-09-02T17:01:53.396498"
+        }
+      ]
+    },
+    "cenario_2_sequencial": {
+      "test_name": "WORKFLOW: CENÁRIO 2: Usuário Sequencial (1 dado por vez)",
+      "total_time": 48.636146068573,
+      "total_interactions": 4,
+      "average_interaction_time": 11.658596634864807,
+      "llm_calls_estimated": 4,
+      "tool_calls_estimated": 0,
+      "interactions": [
+        {
+          "user_input": "Preciso me identificar",
+          "agent_response": "",
+          "interaction_time": 11.056841850280762,
+          "timestamp": "2025-09-02T17:02:04.954187"
+        },
+        {
+          "user_input": "Meu CPF é 11144477735",
+          "agent_response": "",
+          "interaction_time": 11.46985387802124,
+          "timestamp": "2025-09-02T17:02:16.924388"
+        },
+        {
+          "user_input": "Meu email é bruno.silva@email.com",
+          "agent_response": "",
+          "interaction_time": 13.14870572090149,
+          "timestamp": "2025-09-02T17:02:30.573765"
+        },
+        {
+          "user_input": "Me chamo Bruno Silva",
+          "agent_response": "",
+          "interaction_time": 10.958985090255737,
+          "timestamp": "2025-09-02T17:02:42.033173"
+        }
+      ]
+    },
+    "cenario_3_caotico": {
+      "test_name": "WORKFLOW: CENÁRIO 3: Usuário Caótico (dados incorretos + correções)",
+      "total_time": 88.46470522880554,
+      "total_interactions": 7,
+      "average_interaction_time": 12.13719276019505,
+      "llm_calls_estimated": 7,
+      "tool_calls_estimated": 0,
+      "interactions": [
+        {
+          "user_input": "Oi, quero me identificar",
+          "agent_response": "",
+          "interaction_time": 14.762235164642334,
+          "timestamp": "2025-09-02T17:02:57.295835"
+        },
+        {
+          "user_input": "Meu CPF é 123456 e me chamo João",
+          "agent_response": "",
+          "interaction_time": 11.19799518585205,
+          "timestamp": "2025-09-02T17:03:08.994949"
+        },
+        {
+          "user_input": "Ops, meu CPF correto é 11144477735",
+          "agent_response": "",
+          "interaction_time": 10.797844648361206,
+          "timestamp": "2025-09-02T17:03:20.293014"
+        },
+        {
+          "user_input": "Na verdade meu nome é Bruno Silva, não João",
+          "agent_response": "",
+          "interaction_time": 15.064196109771729,
+          "timestamp": "2025-09-02T17:03:35.857787"
+        },
+        {
+          "user_input": "Meu email é bruno@email",
+          "agent_response": "",
+          "interaction_time": 11.287358045578003,
+          "timestamp": "2025-09-02T17:03:47.645839"
+        },
+        {
+          "user_input": "Desculpa, meu email correto é bruno.silva@email.com",
+          "agent_response": "",
+          "interaction_time": 11.776812553405762,
+          "timestamp": "2025-09-02T17:03:59.923254"
+        },
+        {
+          "user_input": "Está tudo correto agora?",
+          "agent_response": "Sim, está tudo correto agora! Sua identificação foi concluída com sucesso.",
+          "interaction_time": 10.073907613754272,
+          "timestamp": "2025-09-02T17:04:10.497626"
+        }
+      ]
+    }
+  },
+  "comparison_table": [
+    {
+      "scenario": "CENÁRIO 1: Usuário Perfeito (3 dados de uma vez)",
+      "service_agent": {
+        "total_time": 31.309645652770996,
+        "interactions": 2,
+        "avg_time": 15.154433846473694,
+        "llm_calls": 2
+      },
+      "workflow": {
+        "total_time": 38.81637215614319,
+        "interactions": 2,
+        "avg_time": 18.907482743263245,
+        "llm_calls": 2
+      }
+    },
+    {
+      "scenario": "CENÁRIO 2: Usuário Sequencial (1 dado por vez)",
+      "service_agent": {
+        "total_time": 34.83520531654358,
+        "interactions": 4,
+        "avg_time": 8.20831948518753,
+        "llm_calls": 4
+      },
+      "workflow": {
+        "total_time": 48.636146068573,
+        "interactions": 4,
+        "avg_time": 11.658596634864807,
+        "llm_calls": 4
+      }
+    },
+    {
+      "scenario": "CENÁRIO 3: Usuário Caótico (dados incorretos + correções)",
+      "service_agent": {
+        "total_time": 55.04821443557739,
+        "interactions": 7,
+        "avg_time": 7.363278082438877,
+        "llm_calls": 7
+      },
+      "workflow": {
+        "total_time": 88.46470522880554,
+        "interactions": 7,
+        "avg_time": 12.13719276019505,
+        "llm_calls": 7
+      }
+    }
+  ]
+}

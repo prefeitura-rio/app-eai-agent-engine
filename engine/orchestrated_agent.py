@@ -1,11 +1,15 @@
+"""
+Orchestrated Agent - Enhanced main agent with service agent routing capabilities.
+"""
+
 from typing import Any, Iterator, List, Optional, AsyncIterable
 from langchain.load.dump import dumpd
 from datetime import datetime, timezone
 import json
+from os import getenv
 
-# from langgraph.prebuilt import create_react_agent
-# use custom graph without _validate_chat_history
-from engine.custom_react_agent import create_react_agent
+from langgraph.graph import StateGraph, START, MessagesState
+from langgraph.prebuilt import create_react_agent
 from langchain_google_vertexai import ChatVertexAI
 from langchain_core.tools import BaseTool
 from langchain_core.messages import HumanMessage
@@ -16,11 +20,6 @@ from vertexai.agent_engines import (
     StreamQueryable,
 )
 
-# Import orchestrator and service agents
-from engine.orchestrator import create_handoff_tools
-from engine.services import TaxServiceAgent, InfrastructureServiceAgent, HealthServiceAgent
-
-from os import getenv
 from langchain_google_cloud_sql_pg import (
     PostgresEngine,
     PostgresSaver,
@@ -32,19 +31,25 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 
+# Import orchestrator and service agents
+from engine.orchestrator import create_handoff_tools
+from engine.services import TaxServiceAgent, InfrastructureServiceAgent, HealthServiceAgent
+from engine.workflow_tools import get_workflow_tools
+from engine.identification_service_tools import get_identification_service_tools, set_shared_checkpointer
 
-class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
+
+class OrchestratedAgent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     """
-    An agent for sync/async/streaming queries with state persisted in PostgreSQL.
-
-    Components are initialized lazily on the first query.
-
-    Use engine.init_checkpoint_table() if the table does not exists
+    Orchestrated agent that routes requests to specialized service agents or handles them directly.
+    
+    This agent enhances the main agent capabilities with:
+    - Intelligent routing to specialized service agents
+    - Fallback to general tools for non-specialized requests
+    - Maintains conversation context across service boundaries
     """
-
+    
     def __init__(
         self,
         *,
@@ -53,12 +58,17 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         tools: List[BaseTool] = [],
         temperature: float = 0.7,
         otpl_service: str = "langgraph-eai-vX",
+        enable_service_agents: bool = True,
+        enable_workflows: bool = True,
     ):
         self._model = model
         self._tools = tools or []
         self._system_prompt = system_prompt
         self._temperature = temperature
         self._otpl_service = otpl_service
+        self._enable_service_agents = enable_service_agents
+        self._enable_workflows = enable_workflows
+        
         # Database configuration
         self._project_id = getenv("PROJECT_ID", "")
         self._region = getenv("LOCATION", "")
@@ -85,13 +95,14 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             "infrastructure_agent": InfrastructureServiceAgent(model=model, temperature=temperature),
             "health_agent": HealthServiceAgent(model=model, temperature=temperature)
         }
-
+    
     def _set_up_opentelemetry(self):
+        """Set up OpenTelemetry tracing (unchanged from original)."""
         if self._opentelemetry_setup_complete:
             return
         provider = TracerProvider(
             resource=Resource.create({"service.name": self._otpl_service}),
-            sampler=ALWAYS_ON,  # Garantir 100% de sampling
+            sampler=ALWAYS_ON,
         )
         otlp_exporter = OTLPSpanExporter(
             endpoint=self._otlp_endpoint,
@@ -106,33 +117,26 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             ),
         )
 
-        # Configurar BatchSpanProcessor com parâmetros otimizados para reduzir perda de spans
         self._batch_processor = BatchSpanProcessor(
             otlp_exporter,
-            max_queue_size=8192,  # Aumentar buffer (padrão: 2048)
-            schedule_delay_millis=1000,  # Flush mais frequente (padrão: 5000)
-            export_timeout_millis=10000,  # Timeout menor (padrão: 30000)
-            max_export_batch_size=256,  # Lotes menores para reduzir latência (padrão: 512)
+            max_queue_size=8192,
+            schedule_delay_millis=1000,
+            export_timeout_millis=10000,
+            max_export_batch_size=256,
         )
         provider.add_span_processor(self._batch_processor)
         trace.set_tracer_provider(provider)
 
-        # Initialize tracer
         self._tracer = trace.get_tracer(__name__)
-
         LangchainInstrumentor().instrument()
-
         self._opentelemetry_setup_complete = True
 
     def _trace_conversation(self, filtered_result: dict, **kwargs):
-        """Simple tracing to show user input and model output."""
+        """Simple tracing to show user input and model output (unchanged from original)."""
         if not self._tracer:
             return
 
-        # Extract input message
         input_msg = str(kwargs.get("input", ""))
-
-        # Extract thread_id
         thread_id = (
             kwargs.get("config", {}).get("configurable", {}).get("thread_id", "unknown")
         )
@@ -156,19 +160,14 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._setup_complete_sync = False
 
     def _add_timestamp_to_messages(self, state):
-        """Hook para adicionar timestamp nas mensagens usando additional_kwargs."""
+        """Hook para adicionar timestamp nas mensagens usando additional_kwargs (unchanged from original)."""
         messages = state.get("messages", [])
 
-        # Adicionar timestamp nas mensagens que não têm, gerando um timestamp único para cada
         for message in messages:
             if (
                 hasattr(message, "additional_kwargs")
                 and "timestamp" not in message.additional_kwargs
             ):
-                # Timestamp único para cada mensagem no momento certo:
-                # HumanMessage: quando chega
-                # AIMessage: quando é gerada
-                # ToolMessage: será adicionado após execução da tool
                 message.additional_kwargs["timestamp"] = datetime.now(
                     timezone.utc
                 ).isoformat()
@@ -176,21 +175,18 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         return {"messages": messages}
 
     def _add_timestamp_to_tool_messages(self, state):
-        """Hook para adicionar timestamp nas ToolMessages após execução."""
+        """Hook para adicionar timestamp nas ToolMessages após execução (unchanged from original)."""
         messages = state.get("messages", [])
         current_time = datetime.now(timezone.utc).isoformat()
 
-        # Adicionar timestamp nas mensagens que não têm
         for message in messages:
             if hasattr(message, "additional_kwargs"):
-                # ToolMessage: timestamp após execução
                 if (
                     message.__class__.__name__ == "ToolMessage"
                     and "timestamp" not in message.additional_kwargs
                 ):
                     message.additional_kwargs["timestamp"] = current_time
 
-                # AIMessage: timestamp quando é gerada (caso não tenha sido adicionado no pre-model)
                 elif (
                     message.__class__.__name__ == "AIMessage"
                     and "timestamp" not in message.additional_kwargs
@@ -200,30 +196,15 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         return {"messages": messages}
 
     def _inject_thread_id_in_user_id_params(self, state, config=None):
-        """Hook para injetar thread_id em qualquer parâmetro user_id de tool calls.
-
-        Este hook processa todas as tool calls e substitui qualquer parâmetro
-        'user_id' pelo thread_id atual, garantindo que todas as ferramentas
-        recebam o identificador correto do usuário.
-
-        Args:
-            state: Estado do grafo contendo as mensagens
-            config: Configuração do LangGraph (pode ser None em alguns contextos)
-
-        Returns:
-            dict: Estado atualizado com thread_id injetado em todos os parâmetros user_id
-        """
+        """Hook para injetar thread_id em qualquer parâmetro user_id de tool calls (unchanged from original)."""
         messages = state.get("messages", [])
 
-        # Múltiplas formas de tentar obter o thread_id
         thread_id = None
 
-        # Método 1: Diretamente do parâmetro config
         if config and isinstance(config, dict):
             configurable = config.get("configurable", {})
             thread_id = configurable.get("thread_id")
 
-        # Método 2: Se config não foi passado, tenta do state (fallback)
         if not thread_id and hasattr(state, "config"):
             state_config = getattr(state, "config", {})
             if isinstance(state_config, dict):
@@ -231,20 +212,16 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 thread_id = configurable.get("thread_id")
 
         if thread_id:
-            # Processa apenas a última mensagem AI que pode ter tool calls
             for message in reversed(messages):
                 if hasattr(message, "tool_calls") and message.tool_calls:
                     for tool_call in message.tool_calls:
-                        # Verifica se a tool call tem argumentos e se possui user_id
                         if (
                             "args" in tool_call
                             and isinstance(tool_call["args"], dict)
                             and "user_id" in tool_call["args"]
                         ):
-
-                            # Substitui user_id pelo thread_id
                             tool_call["args"]["user_id"] = thread_id
-                    break  # Processa apenas a última mensagem AI
+                    break
 
         return {"messages": messages}
 
@@ -256,75 +233,154 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         state = self._add_timestamp_to_tool_messages(state)
         return self._inject_thread_id_in_user_id_params(state, config)
 
-    def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
-        """Create and configure the React Agent with orchestrator capabilities."""
+    def _create_orchestrated_graph(self, checkpointer: Optional[PostgresSaver] = None):
+        """Create the orchestrated graph with main agent and service agents."""
+        
+        # Set shared checkpointer for identification service agents
+        if checkpointer:
+            set_shared_checkpointer(checkpointer)
+        
         llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
         
-        # Add orchestrator handoff tools to existing tools
-        handoff_tools = create_handoff_tools()
-        all_tools = self._tools + handoff_tools
+        # Conditionally add routing tools based on configuration
+        all_tools = self._tools.copy()
+        
+        if self._enable_service_agents:
+            # Add handoff tools for service agent routing
+            handoff_tools = create_handoff_tools()
+            all_tools.extend(handoff_tools)
+        
+        if self._enable_workflows:
+            # Add workflow tools for workflow routing
+            workflow_tools = get_workflow_tools()
+            all_tools.extend(workflow_tools)
+            
+            # Add identification service tools for comparison
+            identification_service_tools = get_identification_service_tools()
+            all_tools.extend(identification_service_tools)
+        
+        # Create routing-specific prompt based on enabled features
+        routing_instructions = self._get_routing_instructions()
         
         # Enhanced system prompt with routing logic
         enhanced_prompt = f"""
 {self._system_prompt}
 
-# SERVICE ROUTING CAPABILITIES
-
-You now have access to specialized service agents for complex municipal services. Before responding, determine if the user's request falls into one of these specialized categories:
-
-## SPECIALIZED SERVICES (use handoff tools):
-
-1. **TAX SERVICES** → use `route_to_tax_agent`:
-   - IPTU (property tax): payments, segunda via, exemptions, calculations
-   - ISS (service tax): business registration, rate calculations, payments
-   - Tax certifications: negative certificates, payment confirmations
-   - Any tax-related documents or procedures
-
-2. **INFRASTRUCTURE SERVICES** → use `route_to_infrastructure_agent`:
-   - Street lighting: broken lights, maintenance requests, new installations
-   - Road maintenance: potholes, street repairs, traffic signs, road markings
-   - Public facilities: parks, squares, public bathrooms, bus stops maintenance
-   - Infrastructure emergencies: urgent repairs, safety hazards
-
-3. **HEALTH SERVICES** → use `route_to_health_agent`:
-   - Medical appointments: scheduling, rescheduling, cancellation
-   - Health facilities: Clínicas da Família, CMS information, locations
-   - Vaccination: schedules, requirements, certificates, locations
-   - Health programs: preventive care, chronic disease management
-
-## GENERAL SERVICES (use existing tools):
-
-4. **INFORMATION & EQUIPMENT LOCATION** → use existing tools:
-   - General municipal information → use `web_search_surkai`
-   - Equipment and facility locations → use `equipments_by_address` and `equipments_instructions`
-   - User feedback about the chatbot → use `user_feedback`
-
-## ROUTING DECISION PROCESS:
-
-1. **Analyze the user's request carefully**
-2. **If it matches a specialized service**: Use the appropriate handoff tool (route_to_tax_agent, route_to_infrastructure_agent, or route_to_health_agent)
-3. **If it's general information or equipment location**: Use your existing tools (web_search_surkai, equipments_by_address, etc.)
-4. **When in doubt**: Treat as general and use existing tools
-
-The specialized agents have focused expertise and specific tools for their domains. They will handle parameter collection, validation, and service execution for their respective areas.
-
-Your existing capabilities for general information, equipment location, and municipal services remain unchanged and should be used for non-specialized requests.
+{routing_instructions}
 """
-        
-        llm_with_tools = llm.bind_tools(tools=all_tools)
-
-        self._graph = create_react_agent(
-            model=llm_with_tools,
+        # Create main orchestrator agent
+        main_agent = create_react_agent(
+            model=llm.bind_tools(all_tools),
             tools=all_tools,
             prompt=enhanced_prompt,
             checkpointer=checkpointer,
             pre_model_hook=self._combined_pre_model_hook,
             post_model_hook=self._combined_post_model_hook,
         )
+        
+        # Create the multi-agent graph
+        builder = StateGraph(MessagesState)
+        
+        # Add main orchestrator node
+        builder.add_node("main_agent", main_agent)
+        
+        # Add service agent nodes only if service agents are enabled
+        if self._enable_service_agents:
+            for agent_name, service_agent in self._service_agents.items():
+                agent_graph = service_agent.create_agent(checkpointer)
+                builder.add_node(agent_name, agent_graph)
+        
+        # Set entry point
+        builder.add_edge(START, "main_agent")
+        
+        # The handoff tools will handle routing via Command objects
+        # No explicit edges needed - LangGraph handles Command routing
+        
+        return builder.compile(checkpointer=checkpointer)
+    
+    def _get_routing_instructions(self) -> str:
+        """Generate routing instructions based on enabled features."""
+        
+        if self._enable_service_agents and self._enable_workflows:
+            return """
+# SERVICE ROUTING CAPABILITIES
+
+You have access to both specialized service agents and structured workflows. Choose the best approach for each request:
+
+## SPECIALIZED SERVICES (use handoff tools):
+
+1. **TAX SERVICES** → use `route_to_tax_agent`:
+   - Complex tax consultations and advice
+   - Multi-step tax procedures requiring expertise
+
+2. **INFRASTRUCTURE SERVICES** → use `route_to_infrastructure_agent`:
+   - Infrastructure problem reporting with follow-up
+   - Complex infrastructure consultations
+
+3. **HEALTH SERVICES** → use `route_to_health_agent`:
+   - Health appointment scheduling and management
+   - Health program consultations
+
+## STRUCTURED WORKFLOWS (use workflow tools):
+
+4. **USER IDENTIFICATION** → use workflow tools OR service agent:
+   - Structured approach → use workflow tools (step-by-step with validation)
+   - Conversational approach → use `route_to_identification_agent` (natural dialogue)
+   - Both use the same PostgreSQL memory and share conversation history
+
+## GENERAL SERVICES (use existing tools):
+
+5. **INFORMATION & EQUIPMENT LOCATION** → use existing tools:
+   - General municipal information → use `web_search_surkai`
+   - Equipment and facility locations → use `equipments_by_address`
+"""
+        
+        elif self._enable_service_agents:
+            return """
+# SERVICE AGENT ROUTING
+
+Route complex requests to specialized service agents for personalized assistance:
+
+## SPECIALIZED SERVICES (use handoff tools):
+
+1. **TAX SERVICES** → use `route_to_tax_agent`
+2. **INFRASTRUCTURE SERVICES** → use `route_to_infrastructure_agent`  
+3. **HEALTH SERVICES** → use `route_to_health_agent`
+
+For user identification, route to the appropriate specialized agent that will handle it conversationally.
+
+## GENERAL SERVICES (use existing tools):
+- Use your existing tools for general information and equipment location
+"""
+        
+        elif self._enable_workflows:
+            return """
+# WORKFLOW ROUTING
+
+Use structured workflows for transactional services that require step-by-step parameter collection:
+
+## STRUCTURED WORKFLOWS (use workflow tools):
+
+1. **USER IDENTIFICATION** → use workflow tools:
+   - Structured CPF, email, and name collection with validation
+   - Clear step-by-step process with built-in validation
+
+## GENERAL SERVICES (use existing tools):
+- Use your existing tools for general information and equipment location
+"""
+        
+        else:
+            return """
+# GENERAL SERVICES ONLY
+
+Use your existing tools for all requests:
+- General municipal information → use `web_search_surkai`
+- Equipment and facility locations → use `equipments_by_address`
+- User feedback → use `user_feedback`
+"""
 
     async def _ensure_async_setup(self):
         """Ensure async components are set up."""
-
         self._set_up_opentelemetry()
 
         if self._setup_complete_async:
@@ -339,12 +395,11 @@ Your existing capabilities for general information, equipment location, and muni
             engine_args={"pool_pre_ping": True, "pool_recycle": 300},
         )
         checkpointer = await PostgresSaver.create(engine=engine)
-        self._create_react_agent(checkpointer=checkpointer)
+        self._graph = self._create_orchestrated_graph(checkpointer=checkpointer)
         self._setup_complete_async = True
 
     def _ensure_sync_setup(self):
         """Ensure sync components are set up."""
-
         self._set_up_opentelemetry()
 
         if self._setup_complete_sync:
@@ -360,10 +415,11 @@ Your existing capabilities for general information, equipment location, and muni
         )
 
         checkpointer = PostgresSaver.create_sync(engine=engine)
-        self._create_react_agent(checkpointer=checkpointer)
+        self._graph = self._create_orchestrated_graph(checkpointer=checkpointer)
         self._setup_complete_sync = True
         return self._graph
 
+    # The rest of the methods (async_query, query, stream_query, etc.) remain unchanged from original
     async def async_query(self, **kwargs) -> dict[str, Any] | Any:
         """Asynchronous query execution with filtered current interaction."""
         await self._ensure_async_setup()
