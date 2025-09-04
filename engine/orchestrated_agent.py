@@ -38,6 +38,7 @@ from engine.orchestrator import create_handoff_tools
 from engine.services import TaxServiceAgent, InfrastructureServiceAgent, HealthServiceAgent
 from engine.workflow_tools import get_workflow_tools
 from engine.identification_service_tools import get_identification_service_tools, set_shared_checkpointer
+from engine.robust_tools import robust_identification_tools
 
 
 class OrchestratedAgent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
@@ -245,19 +246,22 @@ class OrchestratedAgent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQ
         # Conditionally add routing tools based on configuration
         all_tools = self._tools.copy()
         
+        # Always add robust identification tools
+        all_tools.extend(robust_identification_tools)
+        
         if self._enable_service_agents:
             # Add handoff tools for service agent routing
             handoff_tools = create_handoff_tools()
             all_tools.extend(handoff_tools)
+            
+            # Add identification service tools for conversational approach
+            identification_service_tools = get_identification_service_tools()
+            all_tools.extend(identification_service_tools)
         
         if self._enable_workflows:
             # Add workflow tools for workflow routing
             workflow_tools = get_workflow_tools()
             all_tools.extend(workflow_tools)
-            
-            # Add identification service tools for comparison
-            identification_service_tools = get_identification_service_tools()
-            all_tools.extend(identification_service_tools)
         
         # Create routing-specific prompt based on enabled features
         routing_instructions = self._get_routing_instructions()
@@ -303,9 +307,25 @@ class OrchestratedAgent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQ
         
         if self._enable_service_agents and self._enable_workflows:
             return """
-# SERVICE ROUTING CAPABILITIES
+# SERVICE ROUTING CAPABILITIES WITH ROBUST VALIDATION
 
 You have access to both specialized service agents and structured workflows. Choose the best approach for each request:
+
+## ROBUST USER IDENTIFICATION (use these tools FIRST):
+
+🔥 **ALWAYS START WITH VALIDATION** - Use these tools for ANY identification request:
+
+1. **validate_and_check_user_cpf** → Validates CPF and checks if user exists in database
+2. **validate_user_email** → Validates email format
+3. **confirm_existing_user_email** → For users already in database, confirm/update email
+4. **register_new_user** → Register completely new users after validation
+5. **get_user_summary** → Get complete user information summary
+
+## FLOW LOGIC:
+- If user provides CPF → use `validate_and_check_user_cpf` first
+- If user found in database → greet by name, use `confirm_existing_user_email` 
+- If user NOT in database → collect name and email, validate with tools, then `register_new_user`
+- ALWAYS validate before registering
 
 ## SPECIALIZED SERVICES (use handoff tools):
 
@@ -337,36 +357,82 @@ You have access to both specialized service agents and structured workflows. Cho
         
         elif self._enable_service_agents:
             return """
-# SERVICE AGENT ROUTING
+# SERVICE AGENT ROUTING - PRIORITY INSTRUCTIONS WITH ROBUST VALIDATION
 
-Route complex requests to specialized service agents for personalized assistance:
+🚨 **IDENTIFICATION DETECTION**: If user mentions any of these keywords, use ROBUST VALIDATION TOOLS:
+- "identificar", "identificação", "cpf", "email", "nome", "dados pessoais", "me identificar"
+- Any message containing CPF numbers, email addresses, or personal names
 
-## SPECIALIZED SERVICES (use handoff tools):
+## ROBUST VALIDATION TOOLS (use FIRST for identification):
 
-1. **TAX SERVICES** → use `route_to_tax_agent`
-2. **INFRASTRUCTURE SERVICES** → use `route_to_infrastructure_agent`  
-3. **HEALTH SERVICES** → use `route_to_health_agent`
+1. **validate_and_check_user_cpf** → Validates CPF and checks if user exists in database
+2. **validate_user_email** → Validates email format  
+3. **confirm_existing_user_email** → For users already in database, confirm/update email
+4. **register_new_user** → Register completely new users after validation
+5. **get_user_summary** → Get complete user information summary
 
-For user identification, route to the appropriate specialized agent that will handle it conversationally.
+## FLOW LOGIC:
+- If user provides CPF → use `validate_and_check_user_cpf` first
+- If user found in database → greet by name, use `confirm_existing_user_email` 
+- If user NOT in database → collect name and email, validate with tools, then `register_new_user`
+- ALWAYS validate before registering
+
+## ROUTING RULES:
+
+1. **USER IDENTIFICATION** → Use robust validation tools above OR `route_to_identification_agent`:
+   - For complex identification flows → route_to_identification_agent
+   - For simple validation → use validation tools directly
+
+2. **TAX SERVICES** → use `route_to_tax_agent`:
+   - IPTU, ISS, tax payments, certifications
+
+3. **INFRASTRUCTURE SERVICES** → use `route_to_infrastructure_agent`:  
+   - Street lighting, roads, public facilities
+
+4. **HEALTH SERVICES** → use `route_to_health_agent`:
+   - Medical appointments, vaccination, health programs
 
 ## GENERAL SERVICES (use existing tools):
-- Use your existing tools for general information and equipment location
+- General information → use `web_search_surkai`
+- Equipment location → use `equipments_by_address`
+
+⚠️ DO NOT ask "para qual serviço?" if user is clearly trying to identify themselves.
 """
         
         elif self._enable_workflows:
             return """
-# WORKFLOW ROUTING
+# WORKFLOW ROUTING - PRIORITY INSTRUCTIONS WITH ROBUST VALIDATION
 
-Use structured workflows for transactional services that require step-by-step parameter collection:
+🚨 **IDENTIFICATION DETECTION**: If user mentions any of these keywords, use ROBUST VALIDATION TOOLS:
+- "identificar", "identificação", "cpf", "email", "nome", "dados pessoais", "me identificar"
+- Any message containing CPF numbers, email addresses, or personal names
 
-## STRUCTURED WORKFLOWS (use workflow tools):
+## ROBUST VALIDATION TOOLS (use FIRST for identification):
 
-1. **USER IDENTIFICATION** → use workflow tools:
-   - Structured CPF, email, and name collection with validation
-   - Clear step-by-step process with built-in validation
+1. **validate_and_check_user_cpf** → Validates CPF and checks if user exists in database
+2. **validate_user_email** → Validates email format
+3. **confirm_existing_user_email** → For users already in database, confirm/update email
+4. **register_new_user** → Register completely new users after validation
+5. **get_user_summary** → Get complete user information summary
+
+## FLOW LOGIC:
+- If user provides CPF → use `validate_and_check_user_cpf` first
+- If user found in database → greet by name, use `confirm_existing_user_email` 
+- If user NOT in database → collect name and email, validate with tools, then `register_new_user`
+- ALWAYS validate before registering
+
+## WORKFLOW RULES:
+
+1. **USER IDENTIFICATION** → Use robust validation tools above OR workflow tools:
+   - For structured flows → use `start_user_identification` and `process_user_identification`  
+   - For direct validation → use validation tools directly
 
 ## GENERAL SERVICES (use existing tools):
-- Use your existing tools for general information and equipment location
+- General information → use `web_search_surkai`
+- Equipment location → use `equipments_by_address`
+- User feedback → use `user_feedback`
+
+⚠️ DO NOT provide generic responses for identification requests - USE THE VALIDATION TOOLS.
 """
         
         else:
