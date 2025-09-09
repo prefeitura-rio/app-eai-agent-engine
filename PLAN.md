@@ -207,7 +207,7 @@ Instead of modifying the graph structure, use LangGraph's **Functional API** wit
 
 **Tool Integration**
 - Create `ExecuteServiceTool` that calls service entrypoints
-- Services run as separate workflows with own checkpointing
+- Services reuse the same checkpointer from main graph
 - Results returned to main agent conversation
 
 **Example Structure**
@@ -238,8 +238,8 @@ def data_collection_service():
 
 **Trade-offs**
 - Less integration with main conversation flow
-- Separate checkpointer instances per service
-- Service state not visible in main agent traces
+- Service state managed in separate thread namespace
+- Service traces separate from main agent traces
 - Limited cross-service communication
 
 ### **Decision Matrix**
@@ -248,7 +248,7 @@ def data_collection_service():
 |----------|----------------|----------------|
 | **Implementation Complexity** | High | Low |
 | **Graph Integration** | Native | Tool-based |
-| **State Management** | Unified | Separate |
+| **State Management** | Unified | Same Checkpointer |
 | **Observability** | Complete | Service-level |
 | **Development Speed** | Slow | Fast |
 | **Testing Isolation** | Complex | Simple |
