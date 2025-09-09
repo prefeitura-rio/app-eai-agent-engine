@@ -180,10 +180,93 @@ Add `StartServiceTool` to existing MCP tools:
 4. **Error Recovery**: Should failed services be auto-retryable later?
 5. **Service Analytics**: What metrics are most valuable for service optimization?
 
+## 🔄 Alternative Approach: Functional API with @task
+
+### **Overview**
+
+Instead of modifying the graph structure, use LangGraph's **Functional API** with `@task` decorators to implement services as composable functions with built-in persistence and human-in-the-loop capabilities.
+
+### **Key Concepts**
+
+**@task Decorator**
+- Functions become persistent, resumable tasks
+- Automatic state management and checkpointing
+- Built-in support for `interrupt()` and resume patterns
+
+**@entrypoint Decorator**
+- Orchestrates multiple tasks into workflows
+- Provides persistence and threading capabilities
+- Can be called as tools from existing agent
+
+### **Implementation Strategy**
+
+**Service as Task Functions**
+- Each service step becomes a `@task` function
+- Use `interrupt()` for user input collection
+- Natural retry logic through function composition
+
+**Tool Integration**
+- Create `ExecuteServiceTool` that calls service entrypoints
+- Services run as separate workflows with own checkpointing
+- Results returned to main agent conversation
+
+**Example Structure**
+```
+@task
+def collect_cpf() -> str:
+    cpf = interrupt("Por favor, informe seu CPF:")
+    if not validate_cpf(cpf):
+        return collect_cpf()  # Retry via recursion
+    return cpf
+
+@entrypoint(checkpointer=checkpointer)
+def data_collection_service():
+    cpf = collect_cpf().result()
+    email = collect_email().result() 
+    name = collect_name().result()
+    return {"cpf": cpf, "email": email, "name": name}
+```
+
+### **Pros vs. Graph Approach**
+
+**Advantages**
+- Zero modification to existing graph structure
+- Simpler implementation with less code
+- Natural function composition and testing
+- Automatic persistence per service
+- Easy service isolation and debugging
+
+**Trade-offs**
+- Less integration with main conversation flow
+- Separate checkpointer instances per service
+- Service state not visible in main agent traces
+- Limited cross-service communication
+
+### **Decision Matrix**
+
+| Criteria | Graph Extension | Functional API |
+|----------|----------------|----------------|
+| **Implementation Complexity** | High | Low |
+| **Graph Integration** | Native | Tool-based |
+| **State Management** | Unified | Separate |
+| **Observability** | Complete | Service-level |
+| **Development Speed** | Slow | Fast |
+| **Testing Isolation** | Complex | Simple |
+| **Rollback Safety** | Medium | High |
+
 ## 🚀 Next Steps
 
+### **Option A: Graph Extension (Recommended)**
 1. **Stakeholder Review**: Get approval on architecture and phases
 2. **Proof of Concept**: Implement minimal viable service flow
 3. **Technical Spec**: Detail exact implementation for Phase 1
-4. **Development Setup**: Prepare testing environment and tools
-5. **Team Coordination**: Assign roles and establish development workflow
+
+### **Option B: Functional API (Alternative)**
+1. **Rapid Prototype**: Build data collection service with @task
+2. **Tool Integration**: Create ExecuteServiceTool for agent
+3. **Validation**: Test service isolation and persistence
+
+### **Decision Process**
+1. **Week 1**: Implement both prototypes
+2. **Week 2**: Evaluate based on integration quality and development velocity
+3. **Week 3**: Choose approach and proceed with full implementation
