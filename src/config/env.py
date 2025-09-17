@@ -38,3 +38,7 @@ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = getenv_or_action(
 OTEL_EXPORTER_OTLP_TRACES_HEADERS = getenv_or_action(
     "OTEL_EXPORTER_OTLP_TRACES_HEADERS"
 )
+
+# Memory management settings
+SHORT_MEMORY_TOKEN_LIMIT = int(getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT", default="10000"))
+SHORT_MEMORY_TIME_LIMIT = int(getenv_or_action("SHORT_MEMORY_TIME_LIMIT", default="30"))

@@ -9,6 +9,7 @@ from engine.custom_react_agent import create_react_agent
 from langchain_google_vertexai import ChatVertexAI
 from langchain_core.tools import BaseTool
 from langchain_core.messages import HumanMessage
+from src.utils.memory_manager import MemoryManager
 from vertexai.agent_engines import (
     AsyncQueryable,
     AsyncStreamQueryable,
@@ -21,6 +22,7 @@ from langchain_google_cloud_sql_pg import (
     PostgresEngine,
     PostgresSaver,
 )
+from src.utils.memory_limited_checkpointer import MemoryLimitedPostgresSaver
 
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
@@ -30,6 +32,9 @@ from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
@@ -62,6 +67,11 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._database_name = getenv("DATABASE", "")
         self._database_user = getenv("DATABASE_USER", "")
         self._database_password = getenv("DATABASE_PASSWORD", "")
+        
+        # Initialize memory manager
+        self._memory_manager = MemoryManager(model_name=self._model)
+        # Debug flag for memory logging
+        self._debug_memory = False
         self._otlp_endpoint = getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
         self._otlp_header = getenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
 
@@ -237,13 +247,93 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return {"messages": messages}
 
+    def _limit_memory(self, state, config=None):
+        """Hook to limit memory based on token count and time constraints."""
+        messages = state.get("messages", [])
+        if not messages:
+            return state  # Return original state if no messages
+        
+        try:
+            # Apply memory limitations
+            limited_state = self._memory_manager.limit_memory(messages)
+            
+            # Ensure we always have a valid messages list
+            limited_messages = limited_state.get("messages", [])
+            if not limited_messages:
+                logger.warning("Memory manager returned empty messages list, keeping original")
+                return state
+            
+            # Log memory statistics if debug logging is enabled
+            if hasattr(self, '_debug_memory') and self._debug_memory:
+                stats = self._memory_manager.get_memory_stats(messages)
+                logger.info(f"Memory stats: {stats}")
+            
+            return limited_state
+            
+        except Exception as e:
+            logger.error(f"Error in memory limiting: {e}. Keeping original messages.")
+            return state
+
+    def _limit_memory_for_storage(self, state, config=None):
+        """Hook to limit memory before saving to PostgreSQL database.
+        
+        This is the CRITICAL method that ensures only memory-limited messages
+        are persisted in the database. This prevents old messages from being
+        stored indefinitely and ensures true memory management.
+        """
+        messages = state.get("messages", [])
+        if not messages:
+            return state  # Return original state if no messages
+        
+        try:
+            # Apply memory limitations for storage
+            limited_result = self._memory_manager.limit_memory(messages)
+            
+            # Ensure we always have a valid messages list
+            limited_messages = limited_result.get("messages", [])
+            if not limited_messages:
+                logger.warning("Memory manager returned empty messages list for storage, keeping most recent")
+                # Keep at least the most recent message to prevent empty conversation
+                limited_messages = [messages[-1]] if messages else []
+            
+            # Create new state with memory-limited messages
+            limited_state = dict(state)
+            limited_state["messages"] = limited_messages
+            
+            # Log storage memory statistics if debug logging is enabled
+            if hasattr(self, '_debug_memory') and self._debug_memory:
+                original_count = len(messages)
+                limited_count = len(limited_messages)
+                removed_count = original_count - limited_count
+                logger.info(
+                    f"Storage memory limiting: {original_count} -> {limited_count} messages "
+                    f"(removed {removed_count} old messages from database storage)"
+                )
+            
+            return limited_state
+            
+        except Exception as e:
+            logger.error(f"Error in storage memory limiting: {e}. Keeping original messages.")
+            return state
+
     def _combined_pre_model_hook(self, state, config=None):
+        # CRITICAL: Apply memory limits FIRST to ensure only recent messages are processed
+        # This affects both what the model sees AND what gets stored in the database
+        state = self._limit_memory_for_storage(state, config)
+        # Then add timestamps  
         state = self._add_timestamp_to_messages(state)
+        # Finally inject thread IDs
         return self._inject_thread_id_in_user_id_params(state, config)
 
     def _combined_post_model_hook(self, state, config=None):
+        # First add timestamps to tool messages
         state = self._add_timestamp_to_tool_messages(state)
-        return self._inject_thread_id_in_user_id_params(state, config)
+        # Then inject thread IDs
+        state = self._inject_thread_id_in_user_id_params(state, config)
+        # Apply memory limits again to ensure storage consistency
+        # (This is a safety net in case new messages were added)
+        state = self._limit_memory_for_storage(state, config)
+        return state
 
     def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
         """Create and configure the React Agent."""
@@ -276,7 +366,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             password=self._database_password,
             engine_args={"pool_pre_ping": True, "pool_recycle": 300},
         )
-        checkpointer = await PostgresSaver.create(engine=engine)
+        checkpointer = await MemoryLimitedPostgresSaver.create(engine=engine, memory_manager=self._memory_manager)
         self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_async = True
 
@@ -297,7 +387,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             engine_args={"pool_pre_ping": True, "pool_recycle": 300},
         )
 
-        checkpointer = PostgresSaver.create_sync(engine=engine)
+        checkpointer = MemoryLimitedPostgresSaver.create_sync(engine=engine, memory_manager=self._memory_manager)
         self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_sync = True
         return self._graph
@@ -377,3 +467,34 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         if isinstance(chunk, dict) and "messages" in chunk:
             return self._filter_current_interaction(chunk)
         return chunk
+
+    def enable_memory_debug(self):
+        """Enable debug logging for memory management."""
+        self._debug_memory = True
+        logger.info("Memory debug logging enabled")
+
+    def disable_memory_debug(self):
+        """Disable debug logging for memory management.""" 
+        self._debug_memory = False
+        logger.info("Memory debug logging disabled")
+
+    def get_memory_stats(self, thread_id: str) -> dict:
+        """Get memory statistics for a specific thread.
+        
+        Args:
+            thread_id: The thread ID to get stats for
+            
+        Returns:
+            Dictionary with memory usage statistics
+        """
+        try:
+            # This would require accessing the checkpointer to get current state
+            # For now, return basic info about limits
+            return {
+                "token_limit": self._memory_manager.token_limit,
+                "time_limit_days": self._memory_manager.time_limit_days,
+                "note": "Use during conversation to see actual memory usage"
+            }
+        except Exception as e:
+            logger.error(f"Error getting memory stats: {e}")
+            return {"error": str(e)}
