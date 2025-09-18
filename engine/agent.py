@@ -21,6 +21,7 @@ from langchain_google_cloud_sql_pg import (
     PostgresEngine,
     PostgresSaver,
 )
+from src.utils.memory_limited_checkpointer import create_memory_limited_checkpointer
 
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
@@ -143,6 +144,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         """Mark that setup is needed - actual setup happens lazily."""
         self._setup_complete_async = False
         self._setup_complete_sync = False
+        
+    def force_reset_setup(self):
+        """Force reset setup to ensure new memory limits are applied."""
+        print("🔄 Forcing agent setup reset to apply memory limits")
+        self._setup_complete_async = False
+        self._setup_complete_sync = False
+        self._graph = None
 
     def _add_timestamp_to_messages(self, state):
         """Hook para adicionar timestamp nas mensagens usando additional_kwargs."""
@@ -245,7 +253,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         state = self._add_timestamp_to_tool_messages(state)
         return self._inject_thread_id_in_user_id_params(state, config)
 
-    def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
+    def _create_react_agent(self, checkpointer: Optional[Any] = None):
         """Create and configure the React Agent."""
         llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
         # llm_with_tools = llm.bind_tools(tools=self._tools, parallel_tool_calls=False)
@@ -276,7 +284,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             password=self._database_password,
             engine_args={"pool_pre_ping": True, "pool_recycle": 300},
         )
-        checkpointer = await PostgresSaver.create(engine=engine)
+        # Use memory-limited checkpointer instead of standard PostgresSaver
+        base_checkpointer = await PostgresSaver.create(engine=engine)
+        checkpointer = create_memory_limited_checkpointer(
+            base_checkpointer=base_checkpointer,
+            model_name=self._model,
+        )
+        print(f"🔍 Created memory-limited checkpointer: {type(checkpointer)}")
         self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_async = True
 
@@ -297,7 +311,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             engine_args={"pool_pre_ping": True, "pool_recycle": 300},
         )
 
-        checkpointer = PostgresSaver.create_sync(engine=engine)
+        # Use memory-limited checkpointer instead of standard PostgresSaver
+        base_checkpointer = PostgresSaver.create_sync(engine=engine)
+        checkpointer = create_memory_limited_checkpointer(
+            base_checkpointer=base_checkpointer,
+            model_name=self._model,
+        )
+        print(f"🔍 Created memory-limited checkpointer: {type(checkpointer)}")
         self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_sync = True
         return self._graph
