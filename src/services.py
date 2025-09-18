@@ -1,16 +1,14 @@
 from abc import ABC, abstractmethod
-import json
 import re
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Tuple, List
 
 
 class BaseService(ABC):
     """Base class for all multi-step services"""
 
-    def __init__(self, session_id: str):
-        self.session_id = session_id
+    def __init__(self, user_id: str):
+        self.user_id = user_id
         self.data = {}
         self.created_at = datetime.now()
 
@@ -29,18 +27,87 @@ class BaseService(ABC):
         """Validate input for a step. Returns (is_valid, error_message)"""
         pass
 
-    def get_step_prompt(self, step: str) -> str:
-        """Get prompt message for a specific step"""
-        steps_info = self.get_steps_info()
-        for step_data in steps_info:
-            if step_data["name"] == step:
-                return step_data["prompt"]
-        return ""
-
     @abstractmethod
     def get_completion_message(self) -> str:
         """Get message when service is completed"""
         pass
+
+    def process_bulk(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Process bulk payload using existing step validation"""
+        valid_data = {}
+        field_errors = {}
+
+        # Use existing step validation for each field
+        for step in self.get_steps():
+            if step in payload:
+                is_valid, error_msg = self.execute_step(step, str(payload[step]))
+                if is_valid:
+                    valid_data[step] = str(payload[step]).strip()
+                else:
+                    field_errors[step] = error_msg
+
+        # If no valid data, return error with schema
+        if not valid_data:
+            return {
+                "status": "bulk_validation_error",
+                "message": "Nenhum campo válido encontrado",
+                "field_errors": field_errors,
+                "schema": self.get_schema(),
+            }
+
+        # Store valid data
+        self.data.update(valid_data)
+
+        # If all steps completed, return success
+        steps = self.get_steps()
+        if all(step in self.data for step in steps):
+            return {
+                "status": "bulk_success",
+                "completed": True,
+                "data": self.data,
+                "completion_message": self.get_completion_message(),
+            }
+
+        # Partial success - determine next step needed
+        next_step = None
+        for step in steps:
+            if step not in self.data:
+                next_step = step
+                break
+
+        return {
+            "status": "partial_success",
+            "next_step_info": self.get_next_step_info(next_step) if next_step else {},
+            "field_errors": field_errors,
+            "valid_fields": list(valid_data.keys()),
+            "completed": False,
+            "schema": self.get_schema(),
+        }
+
+    def get_schema(self) -> Dict[str, Any]:
+        """Generate schema from steps_info"""
+        steps_info = self.get_steps_info()
+        properties = {}
+        required = []
+
+        for step_data in steps_info:
+            properties[step_data["name"]] = {
+                "type": "string",
+                "description": step_data.get("description", ""),
+                "example": step_data.get("example", ""),
+            }
+            if step_data.get("required", True):
+                required.append(step_data["name"])
+
+        return {"type": "object", "properties": properties, "required": required}
+
+    def get_next_step_info(self, step: str) -> Dict[str, Any]:
+        """Get complete info for next step"""
+        steps_info = self.get_steps_info()
+        for step_data in steps_info:
+            if step_data["name"] == step:
+                return step_data
+        return {}
 
     def process_step(self, step: str, payload: str) -> Dict[str, Any]:
         """Process a step and return result"""
@@ -49,9 +116,9 @@ class BaseService(ABC):
         if not is_valid:
             return {
                 "status": "error",
-                "message": error_msg,
-                "next_step": step,
+                "next_step_info": self.get_next_step_info(step),
                 "completed": False,
+                "schema": self.get_schema(),
             }
 
         # Store valid data
@@ -64,26 +131,25 @@ class BaseService(ABC):
         except ValueError:
             return {
                 "status": "error",
-                "message": f"Step '{step}' não encontrado",
-                "next_step": step,
+                "next_step_info": self.get_next_step_info(step),
                 "completed": False,
+                "schema": self.get_schema(),
             }
 
         if current_idx < len(steps) - 1:
             next_step = steps[current_idx + 1]
             return {
                 "status": "success",
-                "message": self.get_step_prompt(next_step),
-                "next_step": next_step,
+                "next_step_info": self.get_next_step_info(next_step),
                 "completed": False,
+                "schema": self.get_schema(),
             }
         else:
             return {
                 "status": "completed",
-                "message": self.get_completion_message(),
-                "next_step": None,
                 "completed": True,
                 "data": self.data,
+                "completion_message": self.get_completion_message(),
             }
 
 
@@ -95,29 +161,20 @@ class DataCollectionService(BaseService):
             {
                 "name": "cpf",
                 "description": "Coleta e valida o CPF do usuário",
-                "prompt": "Por favor, informe seu CPF",
-                "validation": "Deve conter 11 dígitos numéricos",
                 "example": "12345678901",
                 "required": True,
-                "next_step": "email",
             },
             {
                 "name": "email",
                 "description": "Coleta e valida o e-mail do usuário",
-                "prompt": "Agora informe seu e-mail",
-                "validation": "Deve ser um e-mail válido",
                 "example": "example@gmail.com",
                 "required": True,
-                "next_step": "name",
             },
             {
                 "name": "name",
                 "description": "Coleta e valida o nome completo do usuário",
-                "prompt": "Por fim, seu nome completo",
-                "validation": "Deve conter apenas letras e espaços, mínimo 2 caracteres",
                 "example": "João da Silva",
                 "required": True,
-                "next_step": "end",
             },
         ]
 

@@ -3,7 +3,6 @@ from langchain_core.tools import BaseTool, tool
 import asyncio
 import json
 from pathlib import Path
-from datetime import datetime
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
@@ -64,15 +63,12 @@ STATE_DIR = Path("service_states")
 STATE_DIR.mkdir(exist_ok=True)
 
 
-def _save_service_state(
-    session_id: str, service: BaseService, service_name: str, user_id: str
-) -> None:
+def _save_service_state(service: BaseService, service_name: str, user_id: str) -> None:
     """Save service state to file"""
-    state_file = STATE_DIR / f"{session_id}.json"
+    state_file = STATE_DIR / f"{user_id}__{service_name}.json"
     state_data = {
         "service_class": service.__class__.__name__,
         "service_name": service_name,
-        "session_id": service.session_id,
         "user_id": user_id,
         "data": service.data,
         "created_at": service.created_at.isoformat(),
@@ -81,9 +77,9 @@ def _save_service_state(
         json.dump(state_data, f, indent=2, ensure_ascii=False)
 
 
-def _load_service_state(session_id: str) -> Optional[BaseService]:
+def _load_service_state(service_name: str, user_id: str) -> Optional[BaseService]:
     """Load service state from file"""
-    state_file = STATE_DIR / f"{session_id}.json"
+    state_file = STATE_DIR / f"{user_id}__{service_name}.json"
     if not state_file.exists():
         return None
 
@@ -103,7 +99,7 @@ def _load_service_state(session_id: str) -> Optional[BaseService]:
             return None
 
         # Recreate service instance
-        service = service_class(state_data["session_id"])
+        service = service_class(user_id)
         service.data = state_data["data"]
         return service
 
@@ -111,17 +107,17 @@ def _load_service_state(session_id: str) -> Optional[BaseService]:
         return None
 
 
-def _get_or_create_service(service_name: str, session_id: str) -> Optional[BaseService]:
+def _get_or_create_service(service_name: str, user_id: str) -> Optional[BaseService]:
     """Get existing service or create new one"""
     # Try to load existing state
-    service = _load_service_state(session_id)
+    service = _load_service_state(service_name, user_id)
     if service:
         return service
 
     # Create new service
     service_class = SERVICE_REGISTRY.get(service_name)
     if service_class:
-        return service_class(session_id)
+        return service_class(user_id)
 
     return None
 
@@ -133,26 +129,19 @@ def multi_step_service(
     """
     PLACE HOLDER - This docstring will be replaced dynamically
     """
-    # Generate session_id if starting new service
-    if step == "start":
-        session_id = f"{service_name}_{int(datetime.now().timestamp())}"
-    else:
-        # For ongoing services, session_id should be passed somehow
-        # For now, we'll try to find the most recent session for this service
-        session_files = list(STATE_DIR.glob(f"{service_name}_*.json"))
-        if not session_files:
+
+    # Check if this is not a start and session doesn't exist
+    if step != "start":
+        state_file = STATE_DIR / f"{user_id}__{service_name}.json"
+        if not state_file.exists():
             return {
                 "status": "error",
                 "message": f"Nenhuma sessão ativa encontrada para {service_name}. Use step='start' para iniciar.",
                 "available_services": list(SERVICE_REGISTRY.keys()),
             }
 
-        # Get most recent session
-        session_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-        session_id = session_files[0].stem
-
     # Load or create service instance
-    service = _get_or_create_service(service_name=service_name, session_id=session_id)
+    service = _get_or_create_service(service_name=service_name, user_id=user_id)
 
     if not service:
         return {
@@ -161,39 +150,49 @@ def multi_step_service(
             "available_services": list(SERVICE_REGISTRY.keys()),
         }
 
-    # Handle start step
+    # Handle start step - sempre solicita todos os dados de uma vez
     if step == "start":
-        first_step = service.get_steps()[0]
         result = {
-            "status": "started",
-            "message": service.get_step_prompt(first_step),
-            "next_step": first_step,
-            "completed": False,
-            "session_id": session_id,
+            "status": "bulk_request",
+            "schema": service.get_schema(),
             "steps_info": service.get_steps_info(),
+            "completed": False,
         }
+
         # Save initial state
         _save_service_state(
-            session_id=session_id,
             service=service,
             service_name=service_name,
             user_id=user_id,
         )
         return result
 
-    # Process current step
-    result = service.process_step(step, payload)
+    # Auto-detect bulk vs step-by-step based on payload
+    is_bulk = False
+    bulk_payload = None
+
+    try:
+
+        bulk_payload = json.loads(payload)
+        # If JSON parsing succeeds and it's a dict, it's bulk mode
+        if isinstance(bulk_payload, dict):
+            is_bulk = True
+    except (json.JSONDecodeError, TypeError):
+        # Not JSON or not a dict, treat as step-by-step
+        is_bulk = False
+
+    # Process accordingly
+    if is_bulk and bulk_payload is not None:
+        result = service.process_bulk(bulk_payload)
+    else:
+        result = service.process_step(step, payload)
 
     # Save state after processing
     _save_service_state(
-        session_id=session_id,
         service=service,
         service_name=service_name,
         user_id=user_id,
     )
-
-    # Add session_id to result
-    result["session_id"] = session_id
 
     return result
 
@@ -208,19 +207,29 @@ def _get_service_descriptions():
 
 
 multi_step_service_description = """
-    Universal multi-step service tool for handling complex user interactions.
+    Tool Universal de serviços.
+    
+    IMPORTANTE - Quando solicitar dados ao usuario siga essas instruções:
+    - Sua menssagens de solicitação devem ser claras, objetivas e seguindo sua Persona original.
+    - Apresente os campos necessários em formato de lista.
+    - Examemplo:
+        Para iniciar seu cadastro, por favor forneça as seguintes informações:
+        - CPF
+        - Nome completo
+        - E-mail
 
-    Available services:
+    
+    Servicos disponíveis:
     {available_services}
 
     Args:
-        service_name: Name of service to run.
-        step: Current step name ('start' for new service)
-        payload: User input for current step
-        user_id: Agent identifier, always use 'agent'
+        service_name: Nome do serviço a ser executado
+        step: Passo atual ('start' para a primeira interação, bulk para multiplos passos em um unico request, ou o nome especifico do passo a ser executado.)
+        payload: Resposta do usuário (string para passos especificos, JSON string para bulk)
+        user_id: Identificador do agente, sempre utilize 'agent'
 
     Returns:
-        Dict with status, message, next_step, and other relevant data
+        Dict com status, next_step_info (detalhes completos do proximo passo), schema, e outros dados relevantes.
     """.format(
     available_services=_get_service_descriptions(),
 )
