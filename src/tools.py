@@ -226,6 +226,5 @@ multi_step_service_description = """
 )
 
 multi_step_service.description = multi_step_service_description
-# mcp_tools = asyncio.run(get_mcp_tools(exclude_tools=env.MCP_EXCLUDED_TOOLS))
-# mcp_tools.append(multi_step_service)
-mcp_tools = [multi_step_service]
+mcp_tools = asyncio.run(get_mcp_tools(exclude_tools=env.MCP_EXCLUDED_TOOLS))
+mcp_tools.append(multi_step_service)
