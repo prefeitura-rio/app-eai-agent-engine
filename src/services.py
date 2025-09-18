@@ -95,7 +95,7 @@ class DataCollectionService(BaseService):
             {
                 "name": "cpf",
                 "description": "Coleta e valida o CPF do usuário",
-                "prompt": "Por favor, informe seu CPF:",
+                "prompt": "Por favor, informe seu CPF",
                 "validation": "Deve conter 11 dígitos numéricos",
                 "example": "12345678901",
                 "required": True,
@@ -104,7 +104,7 @@ class DataCollectionService(BaseService):
             {
                 "name": "email",
                 "description": "Coleta e valida o e-mail do usuário",
-                "prompt": "Agora informe seu e-mail:",
+                "prompt": "Agora informe seu e-mail",
                 "validation": "Deve ser um e-mail válido",
                 "example": "example@gmail.com",
                 "required": True,
@@ -113,7 +113,7 @@ class DataCollectionService(BaseService):
             {
                 "name": "name",
                 "description": "Coleta e valida o nome completo do usuário",
-                "prompt": "Por fim, seu nome completo:",
+                "prompt": "Por fim, seu nome completo",
                 "validation": "Deve conter apenas letras e espaços, mínimo 2 caracteres",
                 "example": "João da Silva",
                 "required": True,

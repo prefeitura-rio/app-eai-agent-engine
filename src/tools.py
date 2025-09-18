@@ -128,7 +128,7 @@ def _get_or_create_service(service_name: str, session_id: str) -> Optional[BaseS
 
 @tool
 def multi_step_service(
-    service_name: str, step: str, payload: str = "", user_id: str = "agent"
+    service_name: str, step: str, payload: str, user_id: str
 ) -> Dict[str, Any]:
     """
     PLACE HOLDER - This docstring will be replaced dynamically
@@ -217,7 +217,7 @@ multi_step_service_description = """
         service_name: Name of service to run.
         step: Current step name ('start' for new service)
         payload: User input for current step
-        user_id: User identifier (will be set by hook)
+        user_id: Agent identifier, always use 'agent'
 
     Returns:
         Dict with status, message, next_step, and other relevant data

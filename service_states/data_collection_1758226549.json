@@ -1,0 +1,12 @@
+{
+  "service_class": "DataCollectionService",
+  "service_name": "data_collection",
+  "session_id": "data_collection_1758226549",
+  "user_id": "hahahahahaha1",
+  "data": {
+    "cpf": "12312312312",
+    "email": "hahaha@gmail.com",
+    "name": "hahaha hehehe"
+  },
+  "created_at": "2025-09-18T17:17:38.337800"
+}
