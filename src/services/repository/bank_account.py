@@ -2,7 +2,7 @@ import re
 from typing import List, Tuple
 
 from src.services.base_service import BaseService
-from src.services.schema import StepInfo, ConditionalDependency
+from src.services.schema import StepInfo, ConditionalDependency, ServiceDefinition
 
 
 class BankAccountService(BaseService):
@@ -10,8 +10,11 @@ class BankAccountService(BaseService):
     
     service_name = "bank_account"
 
-    def get_steps_info(self) -> List[StepInfo]:
-        return [
+    def get_service_definition(self) -> ServiceDefinition:
+        return ServiceDefinition(
+            service_name=self.service_name,
+            description="Advanced service demonstrating complex dependencies for bank account creation",
+            steps=[
             StepInfo(
                 name="document_type",
                 description="Tipo de documento (CPF ou CNPJ)",
@@ -75,7 +78,8 @@ class BankAccountService(BaseService):
                 required=True,
                 depends_on=["document_number"],
             ),
-        ]
+            ]
+        )
 
     def execute_step(self, step: str, payload: str) -> Tuple[bool, str]:
         payload = payload.strip()

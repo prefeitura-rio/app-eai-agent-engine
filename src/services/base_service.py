@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, Any, Tuple, List, Optional, Type
 
-from src.services.schema import StepInfo
+from src.services.schema import StepInfo, ServiceDefinition
 
 
 class BaseService(ABC):
@@ -21,14 +21,14 @@ class BaseService(ABC):
             raise ValueError(f"Service {self.__class__.__name__} must define service_name")
 
     @abstractmethod
-    def get_steps_info(self) -> List[StepInfo]:
-        """Return detailed information about all steps with dependencies"""
+    def get_service_definition(self) -> ServiceDefinition:
+        """Return the complete service definition - single source of truth"""
         pass
 
     def get_steps(self) -> list:
         """Return list of step names in order"""
-        steps_info = self.get_steps_info()
-        return [step_data.name for step_data in steps_info]
+        definition = self.get_service_definition()
+        return definition.step_names
 
     @abstractmethod
     def execute_step(self, step: str, payload: str) -> Tuple[bool, str]:
@@ -79,29 +79,23 @@ class BaseService(ABC):
     
     def _get_step_info(self, step_name: str) -> Optional[StepInfo]:
         """Get StepInfo for a specific step"""
-        for step_info in self.get_steps_info():
-            if step_info.name == step_name:
-                return step_info
-        return None
+        definition = self.get_service_definition()
+        return definition.get_step_info(step_name)
     
     def get_available_steps(self) -> List[str]:
         """Get list of steps that can be executed based on current state"""
-        available = []
-        for step_info in self.get_steps_info():
-            if step_info.name not in self.data:
-                is_valid, _ = self._validate_dependencies(step_info.name)
-                if is_valid:
-                    available.append(step_info.name)
-        return available
+        definition = self.get_service_definition()
+        return definition.get_available_steps(self.data)
     
     def get_next_required_step(self) -> Optional[str]:
         """Get the next required step based on dependencies"""
         available = self.get_available_steps()
+        definition = self.get_service_definition()
         
         # Filter for required steps only
-        for step_info in self.get_steps_info():
-            if step_info.name in available and step_info.required:
-                return step_info.name
+        for step in definition.steps:
+            if step.name in available and step.required:
+                return step.name
         
         # If no required steps, return first available
         return available[0] if available else None
@@ -220,23 +214,14 @@ class BaseService(ABC):
         }
 
     def get_schema(self) -> Dict[str, Any]:
-        """Generate schema from steps_info"""
-        steps_info = self.get_steps_info()
-        properties = {}
-        required = []
-
-        for step_data in steps_info:
-            properties[step_data.name] = {
-                "type": "string",
-                "description": step_data.description,
-                "example": step_data.example,
-                "depends_on": step_data.depends_on,
-                "conflicts_with": step_data.conflicts_with,
-            }
-            if step_data.required:
-                required.append(step_data.name)
-
-        return {"type": "object", "properties": properties, "required": required}
+        """Generate schema from service definition"""
+        definition = self.get_service_definition()
+        return definition.json_schema
+    
+    def get_steps_info(self) -> List[StepInfo]:
+        """Return detailed information about all steps - compatibility method"""
+        definition = self.get_service_definition()
+        return definition.steps
 
     def get_next_step_info(self, step: str) -> Dict[str, Any]:
         """Get complete info for next step"""
@@ -274,7 +259,8 @@ class BaseService(ABC):
         self.data[step] = payload
 
         # Check if all required steps are completed
-        required_steps = [s.name for s in self.get_steps_info() if s.required]
+        definition = self.get_service_definition()
+        required_steps = [s.name for s in definition.steps if s.required]
         if all(step in self.data for step in required_steps):
             return {
                 "status": "completed",

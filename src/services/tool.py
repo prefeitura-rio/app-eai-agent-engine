@@ -66,11 +66,10 @@ def create_multi_step_service_tool(service_registry):
 
         # Handle start step - sempre solicita todos os dados de uma vez
         if step == "start":
+            definition = service.get_service_definition()
             result = {
                 "status": "bulk_request",
-                "schema": service.get_schema(),
-                "steps_info": [step_info.model_dump() for step_info in service.get_steps_info()],
-                "available_steps": service.get_available_steps(),
+                "service_definition": definition.to_dict(include_state=True, completed_data=service.data),
                 "completed": False,
             }
 

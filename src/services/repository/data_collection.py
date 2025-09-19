@@ -2,7 +2,7 @@ import re
 from typing import List, Tuple
 
 from src.services.base_service import BaseService
-from src.services.schema import StepInfo
+from src.services.schema import StepInfo, ServiceDefinition
 
 
 class DataCollectionService(BaseService):
@@ -10,27 +10,31 @@ class DataCollectionService(BaseService):
     
     service_name = "data_collection"
 
-    def get_steps_info(self) -> List[StepInfo]:
-        return [
-            StepInfo(
-                name="cpf",
-                description="Coleta e valida o CPF do usuário",
-                example="12345678901",
-                required=True,
-            ),
-            StepInfo(
-                name="email",
-                description="Coleta e valida o e-mail do usuário",
-                example="example@gmail.com",
-                required=True,
-            ),
-            StepInfo(
-                name="name",
-                description="Coleta e valida o nome completo do usuário",
-                example="João da Silva",
-                required=True,
-            ),
-        ]
+    def get_service_definition(self) -> ServiceDefinition:
+        return ServiceDefinition(
+            service_name=self.service_name,
+            description="Service for collecting user personal data",
+            steps=[
+                StepInfo(
+                    name="cpf",
+                    description="Coleta e valida o CPF do usuário",
+                    example="12345678901",
+                    required=True,
+                ),
+                StepInfo(
+                    name="email",
+                    description="Coleta e valida o e-mail do usuário",
+                    example="example@gmail.com",
+                    required=True,
+                ),
+                StepInfo(
+                    name="name",
+                    description="Coleta e valida o nome completo do usuário",
+                    example="João da Silva",
+                    required=True,
+                ),
+            ]
+        )
 
     def execute_step(self, step: str, payload: str) -> Tuple[bool, str]:
         payload = payload.strip()

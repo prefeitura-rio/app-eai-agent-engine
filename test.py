@@ -9,12 +9,12 @@ from src.services.tests import run_complete_tests
 
 if "__main__" == __name__:
     # Build the service registry
-    print(multi_step_service.description)
+    # print(multi_step_service.description)
     r = multi_step_service.invoke(
         {
-            "service_name": "data_collection",
-            "step": "start",
-            "payload": "",
+            "service_name": "bank_account",
+            "step": "account_type",
+            "payload": "corrente",
             "user_id": "test_user",
         }
     )

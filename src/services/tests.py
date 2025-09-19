@@ -11,7 +11,7 @@ from typing import List, Tuple
 
 from src.services import SERVICE_REGISTRY, build_service_registry, multi_step_service
 from src.services.base_service import BaseService
-from src.services.schema import StepInfo, ConditionalDependency
+from src.services.schema import StepInfo, ConditionalDependency, ServiceDefinition
 from src.services.repository.data_collection import DataCollectionService
 from src.services.repository.bank_account import BankAccountService
 
@@ -72,11 +72,15 @@ class SimpleTestService(BaseService):
     """Serviço simples para testes"""
     service_name = "simple_test"
     
-    def get_steps_info(self) -> List[StepInfo]:
-        return [
-            StepInfo(name="step1", description="Primeiro step"),
-            StepInfo(name="step2", description="Segundo step", depends_on=["step1"]),
-        ]
+    def get_service_definition(self) -> ServiceDefinition:
+        return ServiceDefinition(
+            service_name=self.service_name,
+            description="Simple test service",
+            steps=[
+                StepInfo(name="step1", description="Primeiro step"),
+                StepInfo(name="step2", description="Segundo step", depends_on=["step1"]),
+            ]
+        )
     
     def execute_step(self, step: str, payload: str) -> Tuple[bool, str]:
         return len(payload) >= 3, "Payload muito curto" if len(payload) < 3 else ""
@@ -95,11 +99,11 @@ def test_baseservice_core():
     assert service.service_name == "simple_test"
     assert service.user_id == "test_user"
     
-    # 2. Steps info
-    steps_info = service.get_steps_info()
-    print_result("Steps info retornado")
-    assert len(steps_info) == 2
-    assert steps_info[0].name == "step1"
+    # 2. Service definition
+    definition = service.get_service_definition()
+    print_result("Service definition retornado")
+    assert len(definition.steps) == 2
+    assert definition.steps[0].name == "step1"
     
     # 3. Steps disponíveis
     available = service.get_available_steps()
@@ -157,7 +161,8 @@ def test_data_collection_complete():
     })
     print_result("Start executado com sucesso")
     assert result["status"] == "bulk_request"
-    assert "schema" in result
+    assert "service_definition" in result
+    assert "schema" in result["service_definition"]
     
     # 2. Bulk completo
     bulk_data = {
@@ -298,7 +303,8 @@ def test_registry_validation():
     
     # 1. Serviço sem service_name
     class NoNameService(BaseService):
-        def get_steps_info(self): return []
+        def get_service_definition(self): 
+            return ServiceDefinition(service_name="", description="", steps=[])
         def execute_step(self, step, payload): return True, ""
         def get_completion_message(self): return ""
     
@@ -312,13 +318,15 @@ def test_registry_validation():
     # 2. Nomes duplicados
     class Dup1(BaseService):
         service_name = "dup"
-        def get_steps_info(self): return []
+        def get_service_definition(self): 
+            return ServiceDefinition(service_name=self.service_name, description="", steps=[])
         def execute_step(self, step, payload): return True, ""
         def get_completion_message(self): return ""
     
     class Dup2(BaseService):
         service_name = "dup"
-        def get_steps_info(self): return []
+        def get_service_definition(self): 
+            return ServiceDefinition(service_name=self.service_name, description="", steps=[])
         def execute_step(self, step, payload): return True, ""
         def get_completion_message(self): return ""
     
