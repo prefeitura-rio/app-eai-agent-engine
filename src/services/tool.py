@@ -19,14 +19,14 @@ def create_multi_step_service_tool(service_registry):
 
     @tool
     def multi_step_service(
-        service_name: str, payload: str, user_id: str
+        service_name: str, payload: Dict[str, Any], user_id: str
     ) -> Dict[str, Any]:
         """
         Sistema de serviços multi-step com schema dinâmico e estado transparente.
 
         Args:
             service_name: Nome do serviço (ex: "bank_account")
-            payload: JSON string com campos (ex: '{"document_type":"CPF","account_type":"corrente"}')
+            payload: Dicionário com campos (ex: {"document_type":"CPF","account_type":"corrente"})
             user_id: ID do agente, passar sempre 'agent'
 
         Returns:
@@ -34,16 +34,16 @@ def create_multi_step_service_tool(service_registry):
 
         Exemplos:
             # Início - payload vazio
-            payload = "{}"
+            payload = {}
 
             # Um campo
-            payload = '{"document_type":"CPF"}'
+            payload = {"document_type":"CPF"}
 
             # Múltiplos campos
-            payload = '{"document_number":"12345678901","account_type":"corrente"}'
+            payload = {"document_number":"12345678901","account_type":"corrente"}
 
             # Valores aninhados (se suportado pelo step)
-            payload = '{"address":{"street":"Rua A","number":123},"contact":{"email":"test@example.com"}}'
+            payload = {"address":{"street":"Rua A","number":123},"contact":{"email":"test@example.com"}}
 
         Serviços disponíveis:
         {__replace__available_services__}
@@ -66,18 +66,8 @@ def create_multi_step_service_tool(service_registry):
         # Get service definition for all logic
         definition = service.get_service_definition()
 
-        # Parse payload from JSON string
-        try:
-            if payload and payload.strip():
-                payload_dict = json.loads(payload)
-            else:
-                payload_dict = {}
-        except json.JSONDecodeError as e:
-            return {
-                "status": "error",
-                "message": f"Invalid JSON payload: {str(e)}",
-                "service_name": service_name,
-            }
+        # Payload já vem como dicionário
+        payload_dict = payload if payload else {}
 
         # Process the payload - sempre dict, pode estar vazio para início
         if payload_dict:

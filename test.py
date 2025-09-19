@@ -24,9 +24,19 @@ if "__main__" == __name__:
     # user_id = str(uuid4())
     user_id = "dep_bug_test"
     r = multi_step_service.invoke(
-        {"user_id": user_id, "service_name": service_name, "payload": "{}"}
+        {
+            "user_id": user_id,
+            "service_name": service_name,
+            "payload": {
+                "name": "João",
+                "document_type": "CPF",
+                "document_number": "12345678901",
+                "email": "test@example.com",
+            },
+        },
     )
-    # print(json.dumps(r, indent=2, ensure_ascii=False))
+    print(json.dumps(r, indent=2, ensure_ascii=False))
+
     print(r["visual_schematic"])
     print("\n\n")
     run_complete_tests()

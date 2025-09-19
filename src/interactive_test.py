@@ -133,6 +133,13 @@ def parse_agent_response(response, is_local=False, start_time=None):
                 print(f"\n🔧 TOOL RESPONSE #{i+1}:")
                 tool_name = getattr(message, "name", "unknown")
                 tool_content = message.content
+                try:
+                    tool_content = json.dumps(
+                        json.loads(tool_content), indent=4, ensure_ascii=False
+                    )
+                except:
+                    pass
+
                 print(f"   ⏰ Timestamp: {timestamp_str}")
                 if time_since_last:
                     print(f"   ⏱️  Time since last: {time_since_last:.3f}s")

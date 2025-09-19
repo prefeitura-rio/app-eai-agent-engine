@@ -157,7 +157,7 @@ def test_data_collection_complete():
     # 1. Início - payload vazio
     result = multi_step_service.invoke({
         "service_name": "data_collection",
-        "payload": "{}",
+        "payload": {},
         "user_id": "data_user"
     })
     print_result("Início com payload vazio")
@@ -168,7 +168,7 @@ def test_data_collection_complete():
     # 2. Um campo individual
     result = multi_step_service.invoke({
         "service_name": "data_collection",
-        "payload": '{"cpf": "12345678901"}',
+        "payload": {"cpf": "12345678901"},
         "user_id": "data_user"
     })
     print_result("Campo individual adicionado")
@@ -178,7 +178,7 @@ def test_data_collection_complete():
     # 3. Múltiplos campos finalizando
     result = multi_step_service.invoke({
         "service_name": "data_collection",
-        "payload": '{"email": "test@example.com", "name": "João Silva"}',
+        "payload": {"email": "test@example.com", "name": "João Silva"},
         "user_id": "data_user"
     })
     print_result("Serviço completado")
@@ -195,7 +195,7 @@ def test_bank_account_basic():
     # 1. Início - payload vazio
     result = multi_step_service.invoke({
         "service_name": "bank_account",
-        "payload": "{}",
+        "payload": {},
         "user_id": "bank_user"
     })
     print_result("Bank Account iniciado")
@@ -205,7 +205,7 @@ def test_bank_account_basic():
     # 2. Document_type primeiro
     result = multi_step_service.invoke({
         "service_name": "bank_account",
-        "payload": '{"document_type": "CPF"}',
+        "payload": {"document_type": "CPF"},
         "user_id": "bank_user"
     })
     print_result("Document_type definido")
@@ -215,7 +215,7 @@ def test_bank_account_basic():
     # 3. Agora document_number (contextual schema para CPF)
     result = multi_step_service.invoke({
         "service_name": "bank_account",
-        "payload": '{"document_number": "12345678901"}',
+        "payload": {"document_number": "12345678901"},
         "user_id": "bank_user"
     })
     print_result("Document_number após document_type")
@@ -232,7 +232,7 @@ def test_bank_account_bulk_simple():
     setup_test_environment()
     
     # Múltiplos campos de uma vez
-    bulk_data = '{"document_type": "CPF", "document_number": "12345678901", "account_type": "poupanca", "personal_name": "João Silva", "email": "joao@test.com"}'
+    bulk_data = {"document_type": "CPF", "document_number": "12345678901", "account_type": "poupanca", "personal_name": "João Silva", "email": "joao@test.com"}
     
     result = multi_step_service.invoke({
         "service_name": "bank_account",
@@ -332,14 +332,14 @@ def test_multi_user_isolation():
     # User A - um campo
     multi_step_service.invoke({
         "service_name": "data_collection",
-        "payload": '{"cpf": "11111111111"}',
+        "payload": {"cpf": "11111111111"},
         "user_id": "user_a"
     })
     
     # User B - serviço completo
     multi_step_service.invoke({
         "service_name": "data_collection",
-        "payload": '{"cpf": "22222222222", "email": "b@test.com", "name": "User B"}',
+        "payload": {"cpf": "22222222222", "email": "b@test.com", "name": "User B"},
         "user_id": "user_b"
     })
     
@@ -359,7 +359,7 @@ def test_error_handling():
     # 1. Serviço inexistente
     result = multi_step_service.invoke({
         "service_name": "inexistente",
-        "payload": "{}",
+        "payload": {},
         "user_id": "error_user"
     })
     print_result("Serviço inexistente rejeitado")
@@ -369,7 +369,7 @@ def test_error_handling():
     # 2. Dados inválidos
     result = multi_step_service.invoke({
         "service_name": "data_collection",
-        "payload": '{"cpf": "123"}',  # CPF inválido
+        "payload": {"cpf": "123"},  # CPF inválido
         "user_id": "validation_user"
     })
     print_result("Dados inválidos rejeitados")
@@ -386,7 +386,7 @@ def test_dependency_validation_fixed():
     # 1. Primeiro: completar steps base (document_type, account_type, personal_name)
     result = multi_step_service.invoke({
         "service_name": "bank_account",
-        "payload": '{"document_type": "CPF", "account_type": "corrente", "personal_name": "João Silva"}',
+        "payload": {"document_type": "CPF", "account_type": "corrente", "personal_name": "João Silva"},
         "user_id": "dep_bug_test"
     })
     print_result("Steps base completados")
@@ -398,7 +398,7 @@ def test_dependency_validation_fixed():
     # 2. Segundo: tentar steps que dependem dos anteriores (document_number, initial_deposit)
     result = multi_step_service.invoke({
         "service_name": "bank_account",
-        "payload": '{"document_number": "12345678901", "initial_deposit": "500.00"}',
+        "payload": {"document_number": "12345678901", "initial_deposit": "500.00"},
         "user_id": "dep_bug_test"
     })
     print_result("Steps dependentes aceitos sem erro")
@@ -480,7 +480,7 @@ def test_visual_schematic_in_responses():
     # 1. Teste estado inicial - deve ter visual_schematic
     result = multi_step_service.invoke({
         "service_name": "bank_account",
-        "payload": "{}",
+        "payload": {},
         "user_id": "visual_response_test"
     })
     print_result("Campo visual_schematic presente no estado inicial")
@@ -492,7 +492,7 @@ def test_visual_schematic_in_responses():
     # 2. Teste com dados parciais - deve mostrar progresso
     result = multi_step_service.invoke({
         "service_name": "bank_account",
-        "payload": '{"document_type": "CPF", "personal_name": "João Silva"}',
+        "payload": {"document_type": "CPF", "personal_name": "João Silva"},
         "user_id": "visual_response_test"
     })
     print_result("Visual_schematic com progresso")
@@ -504,7 +504,7 @@ def test_visual_schematic_in_responses():
     # 3. Teste com erro de validação - deve ter visual_schematic mesmo com erro
     result = multi_step_service.invoke({
         "service_name": "data_collection",
-        "payload": '{"cpf": "123"}',  # CPF inválido
+        "payload": {"cpf": "123"},  # CPF inválido
         "user_id": "visual_error_test"
     })
     print_result("Visual_schematic presente mesmo com erro de validação")
@@ -515,7 +515,7 @@ def test_visual_schematic_in_responses():
     # 4. Teste serviço completado - deve ter visual_schematic
     result = multi_step_service.invoke({
         "service_name": "data_collection",
-        "payload": '{"cpf": "12345678901", "email": "test@example.com", "name": "João Silva"}',
+        "payload": {"cpf": "12345678901", "email": "test@example.com", "name": "João Silva"},
         "user_id": "visual_complete_test"
     })
     print_result("Visual_schematic no serviço completado")
@@ -533,7 +533,7 @@ def test_bank_account_advanced():
     # 1. Verificar serviço disponível
     result = multi_step_service.invoke({
         "service_name": "bank_account_advanced",
-        "payload": "{}",
+        "payload": {},
         "user_id": "advanced_test"
     })
     print_result("Serviço bank_account_advanced disponível")
@@ -551,7 +551,7 @@ def test_bank_account_advanced():
     
     result = multi_step_service.invoke({
         "service_name": "bank_account_advanced",
-        "payload": json.dumps({"user_info": json.dumps(user_info)}),
+        "payload": {"user_info": user_info},
         "user_id": "advanced_test"
     })
     print_result("User_info JSON aceito")
@@ -571,11 +571,11 @@ def test_bank_account_advanced():
     
     result = multi_step_service.invoke({
         "service_name": "bank_account_advanced",
-        "payload": json.dumps({
-            "account_info": json.dumps(account_info),
-            "address": json.dumps(address),
-            "contact": json.dumps(contact)
-        }),
+        "payload": {
+            "account_info": account_info,
+            "address": address,
+            "contact": contact
+        },
         "user_id": "advanced_test"
     })
     print_result("Múltiplos steps JSON processados")
@@ -593,13 +593,13 @@ def test_bank_account_advanced():
     
     result = multi_step_service.invoke({
         "service_name": "bank_account_advanced",
-        "payload": json.dumps({
-            "user_info": json.dumps(user_info),
-            "account_info": json.dumps(account_info),
-            "address": json.dumps(address),
-            "contact": json.dumps(contact),
-            "deposits": json.dumps(deposits)
-        }),
+        "payload": {
+            "user_info": user_info,
+            "account_info": account_info,
+            "address": address,
+            "contact": contact,
+            "deposits": deposits
+        },
         "user_id": "advanced_deposits_test"
     })
     print_result("Todos os steps incluindo deposits aceitos")
@@ -610,7 +610,7 @@ def test_bank_account_advanced():
     # 5. Teste validação de JSON inválido
     result = multi_step_service.invoke({
         "service_name": "bank_account_advanced",
-        "payload": '{"user_info": "invalid json"}',
+        "payload": {"user_info": "invalid json"},
         "user_id": "advanced_error_test"
     })
     print_result("JSON inválido rejeitado corretamente")

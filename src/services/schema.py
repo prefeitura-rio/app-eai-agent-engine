@@ -1,4 +1,5 @@
 import re
+import json
 from typing import Dict, Any, List, Optional, Tuple, Literal
 from pydantic import BaseModel, Field, field_validator, computed_field
 
@@ -105,23 +106,40 @@ class ServiceDefinition(BaseModel):
 
     def get_available_steps(self, completed_data: Dict[str, Any]) -> List[str]:
         """Calculate available steps based on current state and dependencies"""
-        completed_steps = set(completed_data.keys())
+        # Para steps com substeps, verificar se todos os substeps obrigatórios estão completos
+        truly_completed_steps = set()
+        for step_name, step_data in completed_data.items():
+            step_info = self.get_step_info(step_name)
+            if step_info and step_info.substeps:
+                # Verificar se todos os substeps obrigatórios estão presentes
+                if isinstance(step_data, dict):
+                    required_substeps = [sub.name for sub in step_info.substeps if sub.required]
+                    if all(sub in step_data for sub in required_substeps):
+                        truly_completed_steps.add(step_name)
+                    # Se não tem todos os substeps obrigatórios, o step ainda está disponível
+                else:
+                    # Se não é dict, algo está errado - considerar não completo
+                    pass
+            else:
+                # Step sem substeps - considerar completo normalmente
+                truly_completed_steps.add(step_name)
+        
         available = []
 
         for step in self.steps:
-            # Check if already completed
-            if step.name in completed_steps:
+            # Check if already completed (considerando substeps)
+            if step.name in truly_completed_steps:
                 continue
 
             # Check basic dependencies
             if step.depends_on and not all(
-                dep in completed_steps for dep in step.depends_on
+                dep in truly_completed_steps for dep in step.depends_on
             ):
                 continue
 
             # Check conflicts
             if step.conflicts_with and any(
-                conflict in completed_steps for conflict in step.conflicts_with
+                conflict in truly_completed_steps for conflict in step.conflicts_with
             ):
                 continue
 
@@ -137,7 +155,7 @@ class ServiceDefinition(BaseModel):
                 )
 
                 if required_deps and not all(
-                    dep in completed_steps for dep in required_deps
+                    dep in truly_completed_steps for dep in required_deps
                 ):
                     continue
 
@@ -364,8 +382,25 @@ class ServiceDefinition(BaseModel):
                     conditional_info = (
                         " (conditional)" if step.get("conditional") else ""
                     )
+                    
+                    # Verificar se tem substeps para mostrar detalhes
+                    step_info = self.get_step_info(step['name'])
+                    substeps_info = ""
+                    if step_info and step_info.substeps and step.get('value'):
+                        # Mostrar status dos substeps
+                        step_data = step.get('value', {})
+                        if isinstance(step_data, dict):
+                            required_substeps = [sub.name for sub in step_info.substeps if sub.required]
+                            completed_substeps = [sub for sub in required_substeps if sub in step_data]
+                            missing_substeps = [sub for sub in required_substeps if sub not in step_data]
+                            
+                            if missing_substeps:
+                                substeps_info = f" (faltam: {', '.join(missing_substeps)})"
+                            elif completed_substeps:
+                                substeps_info = f" (substeps: {', '.join(completed_substeps)})"
+                    
                     lines.append(
-                        f"      • {step['name']}{value_info} - {step['description']}{conditional_info}"
+                        f"      • {step['name']}{value_info} - {step['description']}{conditional_info}{substeps_info}"
                     )
                 lines.append("")
 
@@ -399,8 +434,41 @@ class ServiceDefinition(BaseModel):
         # Linha do nó atual
         lines.append(f"{prefix}{connector}{icon} {node_name}{status}")
 
-        # Renderizar filhos
+        # Obter filhos primeiro
         children = node.get("children", [])
+
+        # Renderizar substeps se existirem (antes dos filhos normais)
+        substep_lines = []
+        if node_name in completed_data:
+            step_info = self.get_step_info(node_name)
+            if step_info and step_info.substeps:
+                step_data = completed_data[node_name]
+                if isinstance(step_data, dict):
+                    # Novo prefixo para substeps
+                    substep_prefix = prefix + ("    " if is_last else "│   ")
+                    
+                    required_substeps = [s for s in step_info.substeps if s.required]
+                    
+                    for i, substep in enumerate(required_substeps):
+                        substep_name = substep.name
+                        if substep_name in step_data:
+                            substep_icon = "✅"
+                            substep_status = f" = {step_data[substep_name]}"
+                        else:
+                            substep_icon = "🔴"
+                            substep_status = " (required)"
+                        
+                        # Determinar se é o último item considerando filhos normais
+                        is_last_substep = (i == len(required_substeps) - 1) and not children
+                        substep_connector = "└── " if is_last_substep else "├── "
+                        
+                        substep_lines.append(f"{substep_prefix}{substep_connector}{substep_icon} {substep_name}{substep_status}")
+
+        # Adicionar substeps às linhas
+        lines.extend(substep_lines)
+
+        # Renderizar filhos
+        
         if children:
             # Novo prefixo para filhos
             child_prefix = prefix + ("    " if is_last else "│   ")
@@ -463,17 +531,41 @@ class ServiceDefinition(BaseModel):
         }
 
     def get_contextual_schema(self, completed_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Schema dinâmico baseado no estado atual"""
+        """Schema dinâmico baseado no estado atual - apenas steps principais com substeps estruturados"""
         available_steps = self.get_available_steps(completed_data)
         schema = {"type": "object", "properties": {}, "required": []}
 
         for step_name in available_steps:
             step_info = self.get_step_info(step_name)
             if step_info:
-                step_schema = {"type": "string", "description": step_info.description}
-
+                # Criar schema para o step principal
+                step_schema = {
+                    "type": "string", 
+                    "description": step_info.description,
+                    "data_type": step_info.data_type
+                }
+                
                 if step_info.example:
                     step_schema["example"] = step_info.example
+
+                # Se tem substeps, adicionar informações dos substeps e instruções de formato
+                if step_info.substeps:
+                    # Substeps é um campo especial - não vai para type: string
+                    substeps_info = [
+                        {
+                            "step": substep.name,
+                            "type": "string",
+                            "description": substep.description,
+                            "example": substep.example,
+                            "data_type": substep.data_type,
+                            "required": substep.required
+                        }
+                        for substep in step_info.substeps
+                    ]
+                    step_schema["substeps"] = substeps_info
+                    
+                    # Gerar instruções de formato dinamicamente
+                    step_schema["format_instructions"] = self._generate_format_instructions(step_info)
 
                 # Add to required array if this step is required
                 if step_info.required or self._is_conditionally_required(
@@ -481,11 +573,51 @@ class ServiceDefinition(BaseModel):
                 ):
                     schema["required"].append(step_name)
 
-                # Schema base do StepInfo (example, description, etc.)
-
                 schema["properties"][step_name] = step_schema
 
         return schema
+
+    def _generate_format_instructions(self, step_info: StepInfo) -> str:
+        """Gera instruções de formato dinamicamente baseado nos substeps"""
+        if not step_info.substeps:
+            return ""
+        
+        # Gerar exemplo de payload estruturado
+        example_payload = {}
+        for substep in step_info.substeps:
+            if substep.example:
+                example_payload[substep.name] = substep.example
+            else:
+                example_payload[substep.name] = f"<{substep.name}>"
+        
+        # Formato para individual substeps
+        individual_examples = []
+        for substep in step_info.substeps:
+            example_val = substep.example or f"<{substep.name}>"
+            individual_examples.append(f'{{"{substep.name}": "{example_val}"}}')
+        
+        instructions = f"""
+FORMATOS ACEITOS:
+
+1. Individual substeps (detectados automaticamente):
+   {' ou '.join(individual_examples)}
+
+2. JSON completo:
+   {{"{step_info.name}": {json.dumps(example_payload, ensure_ascii=False)}}}
+
+3. Múltiplos substeps:
+   {json.dumps(example_payload, ensure_ascii=False)}
+"""
+        return instructions.strip()
+
+    def _detect_substep_parent(self, field_name: str) -> Optional[str]:
+        """Detecta qual step principal contém o substep especificado"""
+        for step_info in self.steps:
+            if step_info.substeps:
+                for substep in step_info.substeps:
+                    if substep.name == field_name:
+                        return step_info.name
+        return None
 
     def get_state_summary(self, completed_data: Dict[str, Any]) -> str:
         """Resumo em linguagem natural do estado atual"""
@@ -700,29 +832,70 @@ class ServiceDefinition(BaseModel):
         dependency_errors = {}
 
         # First pass: validate individual steps without dependencies
-        for step_name in self.step_names:
-            if step_name in payload:
-                is_valid, error_msg = service_executor.execute_step(
-                    step_name, str(payload[step_name])
-                )
+        # Process both main steps and substeps
+        all_possible_steps = set(self.step_names)
+        
+        # Add substep names to the processing list (com prefixo)
+        for step_info in self.steps:
+            if step_info.substeps:
+                for substep in step_info.substeps:
+                    substep_key = f"{step_info.name}_{substep.name}"
+                    all_possible_steps.add(substep_key)
+        
+        # Detectar substeps sem prefixo automaticamente
+        payload_to_process = {}
+        for field_name, field_value in payload.items():
+            if field_name in all_possible_steps:
+                # Campo já mapeado (main step ou substep com prefixo)
+                payload_to_process[field_name] = field_value
+            else:
+                # Tentar detectar se é um substep sem prefixo
+                detected_substep = self._detect_substep_parent(field_name)
+                if detected_substep:
+                    # Converter para formato com prefixo
+                    prefixed_key = f"{detected_substep}_{field_name}"
+                    payload_to_process[prefixed_key] = field_value
+                    all_possible_steps.add(prefixed_key)
+                else:
+                    # Campo não reconhecido - manter original para gerar erro apropriado
+                    payload_to_process[field_name] = field_value
+        
+        for step_name in all_possible_steps:
+            if step_name in payload_to_process:
+                # Para objetos complexos, usar json.dumps; para strings simples, usar como está
+                value = payload_to_process[step_name]
+                if isinstance(value, (dict, list)):
+                    payload_str = json.dumps(value, ensure_ascii=False)
+                else:
+                    payload_str = str(value)
+                
+                is_valid, error_msg = service_executor.execute_step(step_name, payload_str)
                 if is_valid:
-                    # Se o service executor já processou e salvou os dados (como BankAccountAdvanced),
-                    # usar os dados processados em vez da string original
-                    if (
-                        hasattr(service_executor, "data")
-                        and step_name in service_executor.data
-                    ):
-                        valid_data[step_name] = service_executor.data[step_name]
+                    # Substeps não devem ser salvos em valid_data, apenas processados
+                    # (eles são gerenciados internamente pelo service)
+                    if "_" in step_name and step_name not in self.step_names:
+                        # É um substep - não salvar em valid_data
+                        pass
                     else:
-                        valid_data[step_name] = str(payload[step_name]).strip()
+                        # É um step principal - salvar normalmente
+                        if (
+                            hasattr(service_executor, "data")
+                            and step_name in service_executor.data
+                        ):
+                            valid_data[step_name] = service_executor.data[step_name]
+                        else:
+                            valid_data[step_name] = str(payload_to_process[step_name]).strip()
                 else:
                     field_errors[step_name] = error_msg
 
         # Second pass: validate dependencies with combined data (existing + new)
+        # Only validate dependencies for main steps, not substeps
+        main_steps_to_validate = [step for step in valid_data.keys() if step in self.step_names]
+        
         # Get existing service data
         existing_data = getattr(service_executor, "data", {})
         temp_data = dict(existing_data)  # Start with existing data
-        processing_order = self.get_processing_order(list(valid_data.keys()))
+        processing_order = self.get_processing_order(main_steps_to_validate)
 
         for step in processing_order:
             if step in valid_data:
