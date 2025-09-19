@@ -173,34 +173,3 @@ class BankAccountService(BaseService):
             return False, "E-mail inválido"
         return True, ""
     
-    def get_contextual_schema(self, step_name: str, completed_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Schema que muda baseado no contexto atual"""
-        if step_name == "document_number":
-            doc_type = completed_data.get("document_type")
-            if doc_type == "CPF":
-                return {
-                    "pattern": "^[0-9]{11}$",
-                    "description": "CPF com 11 dígitos (baseado no tipo selecionado)"
-                }
-            elif doc_type == "CNPJ":
-                return {
-                    "pattern": "^[0-9]{14}$", 
-                    "description": "CNPJ com 14 dígitos (baseado no tipo selecionado)"
-                }
-        
-        if step_name == "initial_deposit":
-            account_type = completed_data.get("account_type")
-            if account_type == "corrente":
-                return {
-                    "type": "number",
-                    "minimum": 100,
-                    "description": "Depósito inicial obrigatório para conta corrente (mínimo R$ 100)"
-                }
-            elif account_type == "poupança" or account_type == "poupanca":
-                return {
-                    "type": "number", 
-                    "minimum": 0,
-                    "description": "Depósito inicial opcional para poupança"
-                }
-        
-        return {}

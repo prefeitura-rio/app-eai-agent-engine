@@ -13,16 +13,9 @@ from src.services.state import save_service_state, get_or_create_service
 def create_multi_step_service_tool(service_registry):
     """Factory function to create the multi_step_service tool with dependency injection"""
 
-    def _get_enhanced_contextual_schema(service, definition, completed_data):
-        """Combina o schema base com o schema contextual específico do service"""
-        base_schema = definition.get_contextual_schema(completed_data)
-
-        # Enhancing each step with service-specific contextual schema
-        for step_name, step_schema in base_schema.get("properties", {}).items():
-            contextual_props = service.get_contextual_schema(step_name, completed_data)
-            step_schema.update(contextual_props)
-
-        return base_schema
+    def _get_schema_from_definition(definition, completed_data):
+        """Gera schema diretamente do ServiceDefinition - sem dependências externas"""
+        return definition.get_contextual_schema(completed_data)
 
     @tool
     def multi_step_service(
@@ -108,8 +101,8 @@ def create_multi_step_service_tool(service_registry):
                     "errors": all_errors,
                 }
                 response.update(analysis)
-                response["next_steps_schema"] = _get_enhanced_contextual_schema(
-                    service, definition, service.data
+                response["next_steps_schema"] = _get_schema_from_definition(
+                    definition, service.data
                 )
                 response["state_summary"] = definition.get_state_summary(service.data)
                 response["next_action_suggestion"] = (
@@ -150,8 +143,8 @@ def create_multi_step_service_tool(service_registry):
                 "status": status,
                 "service_name": service_name,
                 "current_data": dict(service.data),
-                "next_steps_schema": _get_enhanced_contextual_schema(
-                    service, definition, service.data
+                "next_steps_schema": _get_schema_from_definition(
+                    definition, service.data
                 ),
                 "state_summary": definition.get_state_summary(service.data),
                 "next_action_suggestion": definition.get_next_action_suggestion(

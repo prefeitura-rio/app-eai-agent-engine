@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Dict, Any, Tuple, Optional, Type
+from typing import Dict, Tuple, Optional, Type
 
 from src.services.schema import ServiceDefinition
 
@@ -39,9 +39,6 @@ class BaseService(ABC):
         """Get message when service is completed"""
         pass
     
-    def get_contextual_schema(self, step_name: str, completed_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Schema contextual específico - pode ser sobrescrito pelos services"""
-        return {}
 
 
 def build_service_registry(*service_classes: Type[BaseService]) -> Dict[str, Type[BaseService]]:

@@ -14,6 +14,7 @@ from src.services.base_service import BaseService
 from src.services.schema import StepInfo, ConditionalDependency, ServiceDefinition
 from src.services.repository.data_collection import DataCollectionService
 from src.services.repository.bank_account import BankAccountService
+from src.services.repository.bank_account_advanced import BankAccountAdvancedService
 
 
 def setup_test_environment():
@@ -523,6 +524,100 @@ def test_visual_schematic_in_responses():
     assert "✅ Completed:" in result["visual_schematic"]
 
 
+def test_bank_account_advanced():
+    """Testa o novo serviço BankAccountAdvanced com estrutura JSON complexa"""
+    print_test_header("BANK ACCOUNT ADVANCED - JSON ESTRUTURADO")
+    
+    setup_test_environment()
+    
+    # 1. Verificar serviço disponível
+    result = multi_step_service.invoke({
+        "service_name": "bank_account_advanced",
+        "payload": "{}",
+        "user_id": "advanced_test"
+    })
+    print_result("Serviço bank_account_advanced disponível")
+    assert result["status"] == "ready"
+    assert result["service_name"] == "bank_account_advanced"
+    assert "user_info" in result["available_steps"]
+    
+    # 2. Teste user_info com JSON estruturado
+    user_info = {
+        "name": "João Silva",
+        "document_number": "12345678901",
+        "email": "test@example.com", 
+        "document_type": "CPF"
+    }
+    
+    result = multi_step_service.invoke({
+        "service_name": "bank_account_advanced",
+        "payload": json.dumps({"user_info": json.dumps(user_info)}),
+        "user_id": "advanced_test"
+    })
+    print_result("User_info JSON aceito")
+    assert result["status"] == "progress"
+    assert "user_info" in result["completed_steps"]
+    assert "account_info" in result["available_steps"]
+    
+    # 3. Múltiplos steps JSON de uma vez
+    account_info = {
+        "account_type": "corrente",
+        "bank_name": "Banco do Brasil", 
+        "agency_number": "1234",
+        "account_number": "56789-0"
+    }
+    address = {"street": "Rua A", "number": 123}
+    contact = {"email": "test@example.com", "phone": "1234567890"}
+    
+    result = multi_step_service.invoke({
+        "service_name": "bank_account_advanced",
+        "payload": json.dumps({
+            "account_info": json.dumps(account_info),
+            "address": json.dumps(address),
+            "contact": json.dumps(contact)
+        }),
+        "user_id": "advanced_test"
+    })
+    print_result("Múltiplos steps JSON processados")
+    assert result["status"] == "completed"
+    assert len(result["current_data"]) == 4  # user_info + account_info + address + contact
+    
+    # 4. Teste deposits opcionais
+    setup_test_environment()  # Reset environment
+    
+    # Completar tudo incluindo deposits
+    deposits = [
+        {"amount": 1000.0, "date": "2025-09-19T11:57:13.205906"},
+        {"amount": 500.0, "date": "2025-09-19T11:59:13.205906"}
+    ]
+    
+    result = multi_step_service.invoke({
+        "service_name": "bank_account_advanced",
+        "payload": json.dumps({
+            "user_info": json.dumps(user_info),
+            "account_info": json.dumps(account_info),
+            "address": json.dumps(address),
+            "contact": json.dumps(contact),
+            "deposits": json.dumps(deposits)
+        }),
+        "user_id": "advanced_deposits_test"
+    })
+    print_result("Todos os steps incluindo deposits aceitos")
+    assert result["status"] == "completed"
+    assert len(result["current_data"]) == 5  # Todos os 5 steps
+    assert "deposits" in result["current_data"]
+    
+    # 5. Teste validação de JSON inválido
+    result = multi_step_service.invoke({
+        "service_name": "bank_account_advanced",
+        "payload": '{"user_info": "invalid json"}',
+        "user_id": "advanced_error_test"
+    })
+    print_result("JSON inválido rejeitado corretamente")
+    assert result["status"] == "validation_error"
+    assert "user_info" in result["errors"]
+
+
 # =============================================================================
 # RUNNER PRINCIPAL
 # =============================================================================
@@ -553,6 +648,7 @@ def run_complete_tests():
         test_dependency_validation_fixed,
         test_steps_schematic,
         test_visual_schematic_in_responses,
+        test_bank_account_advanced,
     ]
     
     passed = 0

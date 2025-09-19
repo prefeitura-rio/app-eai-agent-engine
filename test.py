@@ -20,7 +20,7 @@ if "__main__" == __name__:
     # Build the service registry
     # print(multi_step_service.description)
     # Load or create service instance
-    service_name = "bank_account"
+    service_name = "bank_account_advanced"
     # user_id = str(uuid4())
     user_id = "dep_bug_test"
     r = multi_step_service.invoke(
