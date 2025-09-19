@@ -2,7 +2,7 @@ import re
 from typing import List, Tuple, Dict, Any
 
 from src.services.base_service import BaseService
-from src.services.schema import StepInfo, ConditionalDependency, ServiceDefinition
+from src.services.schema import StepInfo, ServiceDefinition
 
 
 class BankAccountService(BaseService):
@@ -18,63 +18,45 @@ class BankAccountService(BaseService):
             StepInfo(
                 name="document_type",
                 description="Tipo de documento (CPF ou CNPJ)",
-                example="CPF",
+                payload_example={"document_type": "CPF"},
                 required=True,
             ),
             StepInfo(
                 name="document_number",
                 description="Número do documento",
-                example="12345678901",
+                payload_example={"document_number": "12345678901"},
                 required=True,
                 depends_on=["document_type"],
-                validation_depends_on=["document_type"],
             ),
             StepInfo(
                 name="account_type",
                 description="Tipo de conta (corrente ou poupança)",
-                example="corrente",
+                payload_example={"account_type": "corrente"},
                 required=True,
             ),
             StepInfo(
                 name="initial_deposit",
                 description="Depósito inicial em reais",
-                example="1000.00",
+                payload_example={"initial_deposit": "1000.00"},
                 required=False,
                 depends_on=["account_type"],
-                conditional=ConditionalDependency(
-                    if_condition={"account_type": "corrente"},
-                    then_required=[],  # Corrigido: não há dependências adicionais
-                    else_required=[]
-                ),
             ),
             StepInfo(
                 name="business_name",
                 description="Nome da empresa (apenas para CNPJ)",
-                example="Empresa XYZ Ltda",
+                payload_example={"business_name": "Empresa XYZ Ltda"},
                 required=False,
-                conditional=ConditionalDependency(
-                    if_condition={"document_type": "CNPJ"},
-                    then_required=["business_name"],
-                    else_required=[]
-                ),
-                conflicts_with=["personal_name"],
             ),
             StepInfo(
                 name="personal_name",
                 description="Nome completo da pessoa (apenas para CPF)",
-                example="João da Silva",
+                payload_example={"personal_name": "João da Silva"},
                 required=False,
-                conditional=ConditionalDependency(
-                    if_condition={"document_type": "CPF"},
-                    then_required=["personal_name"],
-                    else_required=[]
-                ),
-                conflicts_with=["business_name"],
             ),
             StepInfo(
                 name="email",
                 description="E-mail para contato",
-                example="contato@exemplo.com",
+                payload_example={"email": "contato@exemplo.com"},
                 required=True,
                 depends_on=["document_number"],
             ),

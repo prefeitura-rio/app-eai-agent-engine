@@ -36,8 +36,8 @@ class ServiceDefinition(BaseModel):
 
         for step in self.steps:
             properties[step.name] = {"type": "string", "description": step.description}
-            if step.example:
-                properties[step.name]["example"] = step.example
+            if step.payload_example:
+                properties[step.name]["payload_example"] = step.payload_example
 
             if step.required:
                 required.append(step.name)
@@ -51,7 +51,7 @@ class ServiceDefinition(BaseModel):
         return [step.name for step in self.steps]
 
     # === Dependency Management (delegated to DependencyEngine) ===
-    
+
     def get_available_steps(self, completed_data: Dict[str, Any]) -> List[str]:
         """Calculate available steps based on current state and dependencies"""
         return self._dependency_engine.get_available_steps(completed_data)
@@ -66,22 +66,20 @@ class ServiceDefinition(BaseModel):
         self, step_name: str, temp_data: Dict[str, Any]
     ) -> Tuple[bool, str]:
         """Validate dependencies using temporary data state"""
-        return self._dependency_engine.validate_dependencies_with_temp_data(step_name, temp_data)
+        return self._dependency_engine.validate_dependencies_with_temp_data(
+            step_name, temp_data
+        )
 
     def get_processing_order(self, steps: List[str]) -> List[str]:
         """Get processing order based on dependencies (topological sort)"""
         return self._dependency_engine.get_processing_order(steps)
-
-    def get_next_required_step(self, completed_data: Dict[str, Any]) -> Optional[str]:
-        """Get the next required step based on dependencies"""
-        return self._dependency_engine.get_next_required_step(completed_data)
 
     def is_service_completed(self, completed_data: Dict[str, Any]) -> bool:
         """Check if all required steps are completed"""
         return self._dependency_engine.is_service_completed(completed_data)
 
     # === Validation (delegated to ValidationEngine) ===
-    
+
     def process_bulk_data(
         self, payload: Dict[str, Any], service_executor
     ) -> Tuple[Dict[str, Any], Dict[str, str], Dict[str, str]]:
@@ -89,7 +87,7 @@ class ServiceDefinition(BaseModel):
         return self._validation_engine.process_bulk_data(payload, service_executor)
 
     # === Visualization (delegated to VisualizationEngine) ===
-    
+
     def get_steps_schematic(
         self, completed_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -130,15 +128,14 @@ class ServiceDefinition(BaseModel):
             if step_info:
                 # Criar schema para o step principal
                 step_schema = {
-                    "type": "string", 
                     "description": step_info.description,
-                    "data_type": step_info.data_type
+                    "data_type": step_info.data_type,
                 }
-                
-                if step_info.example:
-                    step_schema["example"] = step_info.example
+                # Usar exemplo de payload direto do StepInfo (obrigatório para todos os steps)
+                if step_info.payload_example:
+                    step_schema["payload_example"] = step_info.payload_example
 
-                # Se tem substeps, adicionar informações dos substeps e instruções de formato
+                # Adicionar substeps se existirem
                 if step_info.substeps:
                     # Substeps como objeto direto (não JSON string)
                     substeps_info = {}
@@ -147,16 +144,15 @@ class ServiceDefinition(BaseModel):
                             "description": substep.description,
                             "data_type": substep.data_type,
                         }
-                        if substep.example:
-                            substeps_info[substep.name]["example"] = substep.example
-                    
+                        if substep.payload_example:
+                            substeps_info[substep.name][
+                                "payload_example"
+                            ] = substep.payload_example
+
                     step_schema["substeps"] = substeps_info
-                    
-                    # Gerar instruções de formato dinamicamente
-                    step_schema["format_instructions"] = self._generate_format_instructions(step_info)
 
                 schema["properties"][step_name] = step_schema
-                
+
                 # Para steps com substeps, adicionar substeps obrigatórios ao required
                 if step_info.substeps:
                     for substep in step_info.substeps:
@@ -164,51 +160,11 @@ class ServiceDefinition(BaseModel):
                             schema["required"].append(substep.name)
                 else:
                     # Para steps sem substeps, adicionar o step ao required se for obrigatório
-                    if step_info.required or self._is_conditionally_required(
-                        step_info, completed_data
-                    ):
+                    if step_info.required:
                         schema["required"].append(step_name)
 
         return schema
 
-    def _generate_format_instructions(self, step_info: StepInfo) -> str:
-        """Gera instruções de formato dinamicamente baseado nos substeps"""
-        if not step_info.substeps:
-            return ""
-        
-        # Gerar exemplo de payload estruturado
-        example_payload = {}
-        for substep in step_info.substeps:
-            if substep.example:
-                example_payload[substep.name] = substep.example
-            else:
-                example_payload[substep.name] = f"<{substep.name}>"
-        
-        # Formato para individual substeps
-        individual_examples = []
-        for substep in step_info.substeps:
-            example_val = substep.example or f"<{substep.name}>"
-            individual_examples.append(f'{{"{substep.name}": "{example_val}"}}')
-        
-        instructions = f"""
-FORMATOS ACEITOS:
-
-1. Individual substeps (detectados automaticamente):
-   {' ou '.join(individual_examples)}
-
-2. JSON completo:
-   {{"{step_info.name}": {json.dumps(example_payload, ensure_ascii=False)}}}
-
-3. Múltiplos substeps:
-   {json.dumps(example_payload, ensure_ascii=False)}
-"""
-        return instructions.strip()
-
-    def _is_conditionally_required(
-        self, step: StepInfo, completed_data: Dict[str, Any]
-    ) -> bool:
-        """Verifica se um step se tornou obrigatório baseado em condições"""
-        return self._dependency_engine._is_conditionally_required(step, completed_data)
 
     def to_dict(
         self,

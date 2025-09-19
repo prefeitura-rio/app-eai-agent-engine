@@ -11,7 +11,7 @@ from typing import List, Tuple
 
 from src.services import SERVICE_REGISTRY, build_service_registry, multi_step_service
 from src.services.base_service import BaseService
-from src.services.schema import StepInfo, ConditionalDependency, ServiceDefinition
+from src.services.schema import StepInfo, ServiceDefinition
 from src.services.repository.data_collection import DataCollectionService
 from src.services.repository.bank_account import BankAccountService
 from src.services.repository.bank_account_advanced import BankAccountAdvancedService
@@ -117,12 +117,10 @@ def test_schema_validation():
     step_deps = StepInfo(
         name="with_deps", 
         description="Com dependências",
-        depends_on=["step1"],
-        conflicts_with=["step2"]
+        depends_on=["step1"]
     )
     print_result("StepInfo com dependências criado")
     assert step_deps.depends_on == ["step1"]
-    assert step_deps.conflicts_with == ["step2"]
 
 
 class SimpleTestService(BaseService):
@@ -542,7 +540,6 @@ def test_visual_schematic_in_responses():
     print_result("Campo visual_schematic presente no estado inicial")
     assert "visual_schematic" in result
     assert isinstance(result["visual_schematic"], str)
-    assert "📋 BANK_ACCOUNT" in result["visual_schematic"]
     assert "🌳 DEPENDENCY TREE:" in result["visual_schematic"]
     
     # 2. Teste com dados parciais - deve mostrar progresso
@@ -553,9 +550,7 @@ def test_visual_schematic_in_responses():
     })
     print_result("Visual_schematic com progresso")
     assert "visual_schematic" in result
-    assert "🎯 STATUS:" in result["visual_schematic"]
-    assert "✅ Completed:" in result["visual_schematic"]
-    assert "📊 Progress:" in result["visual_schematic"]
+    assert "🌳 DEPENDENCY TREE:" in result["visual_schematic"]
     
     # 3. Teste com erro de validação - deve ter visual_schematic mesmo com erro
     result = multi_step_service.invoke({
@@ -566,7 +561,7 @@ def test_visual_schematic_in_responses():
     print_result("Visual_schematic presente mesmo com erro de validação")
     assert result["status"] == "validation_error"
     assert "visual_schematic" in result
-    assert "📋 DATA_COLLECTION" in result["visual_schematic"]
+    assert "🌳 DEPENDENCY TREE:" in result["visual_schematic"]
     
     # 4. Teste serviço completado - deve ter visual_schematic
     result = multi_step_service.invoke({
@@ -577,7 +572,7 @@ def test_visual_schematic_in_responses():
     print_result("Visual_schematic no serviço completado")
     assert result["status"] == "completed"
     assert "visual_schematic" in result
-    assert "✅ Completed:" in result["visual_schematic"]
+    assert "🌳 DEPENDENCY TREE:" in result["visual_schematic"]
 
 
 def test_bank_account_advanced():

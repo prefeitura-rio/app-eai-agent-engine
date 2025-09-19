@@ -94,10 +94,6 @@ def create_multi_step_service_tool(service_registry):
                 response["next_steps_schema"] = _get_schema_from_definition(
                     definition, service.data
                 )
-                response["state_summary"] = definition.get_state_summary(service.data)
-                response["next_action_suggestion"] = (
-                    definition.get_next_action_suggestion(service.data)
-                )
                 response["visual_schematic"] = definition.get_visual_schematic(service.data)
 
                 # Save state even on validation error
@@ -115,7 +111,6 @@ def create_multi_step_service_tool(service_registry):
             step.name in service.data
             for step in definition.steps
             if step.required
-            or definition._is_conditionally_required(step, service.data)
         )
 
         if all_required_completed and not analysis["required_steps"]:
@@ -125,8 +120,8 @@ def create_multi_step_service_tool(service_registry):
                 "service_name": service_name,
                 "current_data": dict(service.data),
                 "completion_message": service.get_completion_message(),
-                "visual_schematic": definition.get_visual_schematic(service.data),
             }
+            response["visual_schematic"] = definition.get_visual_schematic(service.data)
         else:
             status = "ready" if not service.data else "progress"
             response = {
@@ -136,13 +131,9 @@ def create_multi_step_service_tool(service_registry):
                 "next_steps_schema": _get_schema_from_definition(
                     definition, service.data
                 ),
-                "state_summary": definition.get_state_summary(service.data),
-                "next_action_suggestion": definition.get_next_action_suggestion(
-                    service.data
-                ),
-                "visual_schematic": definition.get_visual_schematic(service.data),
             }
             response.update(analysis)
+            response["visual_schematic"] = definition.get_visual_schematic(service.data)
 
         # Save state after processing
         save_service_state(service=service, service_name=service_name, user_id=user_id)

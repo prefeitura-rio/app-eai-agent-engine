@@ -18,19 +18,19 @@ class DataCollectionService(BaseService):
                 StepInfo(
                     name="cpf",
                     description="Coleta e valida o CPF do usuário",
-                    example="12345678901",
+                    payload_example={"cpf": "12345678901"},
                     required=True,
                 ),
                 StepInfo(
                     name="email",
                     description="Coleta e valida o e-mail do usuário",
-                    example="example@gmail.com",
+                    payload_example={"email": "example@gmail.com"},
                     required=True,
                 ),
                 StepInfo(
                     name="name",
                     description="Coleta e valida o nome completo do usuário",
-                    example="João da Silva",
+                    payload_example={"name": "João da Silva"},
                     required=True,
                 ),
             ]

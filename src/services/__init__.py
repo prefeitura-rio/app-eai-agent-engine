@@ -4,7 +4,7 @@ Self-contained module ready for MCP migration.
 """
 
 from src.services.base_service import BaseService, build_service_registry
-from src.services.schema import StepInfo, ConditionalDependency, ServiceDefinition
+from src.services.schema import StepInfo, ServiceDefinition
 from src.services.repository import (
     DataCollectionService,
     BankAccountService,
@@ -27,7 +27,6 @@ __all__ = [
     # Core classes
     "BaseService",
     "StepInfo",
-    "ConditionalDependency",
     "ServiceDefinition",
     # Service implementations
     "DataCollectionService",

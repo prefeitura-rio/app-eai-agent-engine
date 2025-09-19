@@ -57,35 +57,40 @@ class BankAccountAdvancedService(BaseService):
                 StepInfo(
                     name="user_info",
                     description="Informações completas do usuário (JSON final, mas com substeps)",
-                    example='{"name": "João Silva", "document_number": "12345678901", "email": "test@example.com", "document_type": "CPF"}',
+                    payload_example={
+                        "name": "João Silva",
+                        "document_number": "12345678901",
+                        "email": "test@example.com",
+                        "document_type": "CPF",
+                    },
                     required=True,
                     data_type="dict",
                     substeps=[
                         StepInfo(
                             name="name",
                             description="Nome completo do usuário",
-                            example="João Silva",
+                            payload_example={"name": "João Silva"},
                             required=True,
                             data_type="str",
                         ),
                         StepInfo(
                             name="document_number",
                             description="Número do documento (CPF ou CNPJ)",
-                            example="12345678901",
+                            payload_example={"document_number": "12345678901"},
                             required=True,
                             data_type="str",
                         ),
                         StepInfo(
                             name="email",
                             description="E-mail do usuário",
-                            example="test@example.com",
+                            payload_example={"email": "test@example.com"},
                             required=True,
                             data_type="str",
                         ),
                         StepInfo(
                             name="document_type",
                             description="Tipo de documento (CPF ou CNPJ)",
-                            example="CPF",
+                            payload_example={"document_type": "CPF"},
                             required=True,
                             data_type="str",
                         ),
@@ -95,7 +100,14 @@ class BankAccountAdvancedService(BaseService):
                 StepInfo(
                     name="account_info",
                     description="Informações da conta bancária em formato JSON",
-                    example='{"account_type": "corrente", "bank_name": "Banco do Brasil", "agency_number": "1234", "account_number": "56789-0"}',
+                    payload_example={
+                        "account_info": {
+                            "account_type": "corrente",
+                            "bank_name": "Banco do Brasil",
+                            "agency_number": "1234",
+                            "account_number": "56789-0",
+                        }
+                    },
                     required=True,
                     data_type="dict",
                     depends_on=["user_info"],
@@ -104,7 +116,7 @@ class BankAccountAdvancedService(BaseService):
                 StepInfo(
                     name="address",
                     description="Endereço completo em formato JSON",
-                    example='{"street": "Rua A", "number": 123}',
+                    payload_example={"address": {"street": "Rua A", "number": 123}},
                     required=True,
                     data_type="dict",
                     depends_on=["user_info"],
@@ -113,7 +125,9 @@ class BankAccountAdvancedService(BaseService):
                 StepInfo(
                     name="contact",
                     description="Informações de contato em formato JSON",
-                    example='{"email": "test@example.com", "phone": "1234567890"}',
+                    payload_example={
+                        "contact": {"email": "test@example.com", "phone": "1234567890"}
+                    },
                     required=True,
                     data_type="dict",
                     depends_on=["user_info"],
@@ -122,7 +136,11 @@ class BankAccountAdvancedService(BaseService):
                 StepInfo(
                     name="deposits",
                     description="Depósito individual ou lista de depósitos (modo append automático)",
-                    example='{"amount": 1000.0, "date": "2025-09-19T11:57:13.205906"}',
+                    payload_example={
+                        "deposits": [
+                            {"amount": 1000.0, "date": "2025-09-19T11:57:13.205906"}
+                        ]
+                    },
                     required=False,
                     data_type="list_dict",
                     depends_on=["account_info", "address", "contact"],
@@ -310,9 +328,54 @@ class BankAccountAdvancedService(BaseService):
 
         return True, ""
 
+    def _is_partial_substeps(self, step: str, data: Dict[str, Any]) -> bool:
+        """Detecta se os dados são substeps parciais ou dados completos"""
+        definition = self.get_service_definition()
+        step_info = definition.get_step_info(step)
+
+        if not step_info or not step_info.substeps:
+            return False
+
+        # Obter nomes dos substeps
+        substep_names = {substep.name for substep in step_info.substeps}
+        data_keys = set(data.keys())
+
+        # Se todas as chaves são substeps válidos mas não são todos os obrigatórios,
+        # então é um conjunto parcial
+        if data_keys.issubset(substep_names):
+            required_substeps = {
+                substep.name for substep in step_info.substeps if substep.required
+            }
+            # É parcial se não tem todos os obrigatórios
+            return not required_substeps.issubset(data_keys)
+
+        return False
+
+    def _handle_partial_substeps(
+        self, step: str, data: Dict[str, Any]
+    ) -> Tuple[bool, str]:
+        """Manipula substeps parciais - acumula dados e valida individualmente"""
+        # Inicializar step se não existir
+        if step not in self.data:
+            self.data[step] = {}
+
+        # Validar cada substep individualmente
+        for substep_name, substep_value in data.items():
+            is_valid, error_msg = self._validate_substep_value(
+                step, substep_name, str(substep_value)
+            )
+            if not is_valid:
+                return False, error_msg
+
+            # Salvar substep se válido
+            self.data[step][substep_name] = substep_value
+
+        return True, ""
+
     def _handle_dict_step(self, step: str, payload: str) -> Tuple[bool, str]:
         """
         Manipula steps com data_type=dict - valida JSON e salva como dicionário.
+        Detecta automaticamente se são substeps parciais ou JSON completo.
         """
         try:
             data = json.loads(payload)
@@ -322,7 +385,12 @@ class BankAccountAdvancedService(BaseService):
         if not isinstance(data, dict):
             return False, f"{step} deve ser um objeto JSON"
 
-        # Validação específica baseada no step
+        # Detectar se é um conjunto parcial de substeps ou dados completos
+        if step == "user_info" and self._is_partial_substeps(step, data):
+            # É um conjunto parcial de substeps - acumular
+            return self._handle_partial_substeps(step, data)
+
+        # Validação específica baseada no step (dados completos)
         if step == "user_info":
             is_valid, error_msg = self._validate_user_info(payload)
         elif step == "account_info":

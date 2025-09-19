@@ -28,10 +28,10 @@ if "__main__" == __name__:
             "user_id": user_id,
             "service_name": service_name,
             "payload": {
-                "name": "João",
-                "document_type": "CPF",
-                "document_number": "12345678901",
-                "email": "test@example.com",
+                # "name": "João",
+                # "document_type": "CPF",
+                # "document_number": "12345678901",
+                # "email": "test@example.com",
             },
         },
     )
@@ -39,4 +39,4 @@ if "__main__" == __name__:
 
     print(r["visual_schematic"])
     print("\n\n")
-    # run_complete_tests()
+    run_complete_tests()
