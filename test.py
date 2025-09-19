@@ -13,10 +13,9 @@ if "__main__" == __name__:
     r = multi_step_service.invoke(
         {
             "service_name": "bank_account",
-            "step": "account_type",
-            "payload": "corrente",
+            "payload": '{"business_name": "Empresa XYZ Ltda"}',
             "user_id": "test_user",
-        }
+        },
     )
     print(json.dumps(r, indent=2, ensure_ascii=False))
     print("\n\n")

@@ -25,7 +25,7 @@ def get_agent():
     )
 
 
-user_id = "hahahahahaha2"
+user_id = "hahahahahaha5"
 
 
 # Initialize agents
@@ -239,7 +239,7 @@ async def interactive_chat(use_local=False):
 
             # Prepare the data
             data = {
-                "messages": [{"role": "human", "content": user_input}],
+                "messages": [{"role": "human", "content": str(user_input)}],
             }
 
             config = {"configurable": {"thread_id": user_id}}

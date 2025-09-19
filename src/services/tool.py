@@ -3,59 +3,65 @@ Multi-step service tool for LangChain integration.
 Isolated tool that can be easily migrated to MCP repository.
 """
 
-import json
 from typing import Dict, Any
 from langchain_core.tools import tool
+import json
 
 from src.services.state import save_service_state, get_or_create_service
 
 
 def create_multi_step_service_tool(service_registry):
     """Factory function to create the multi_step_service tool with dependency injection"""
-    
+
+    def _get_enhanced_contextual_schema(service, definition, completed_data):
+        """Combina o schema base com o schema contextual específico do service"""
+        base_schema = definition.get_contextual_schema(completed_data)
+
+        # Enhancing each step with service-specific contextual schema
+        for step_name, step_schema in base_schema.get("properties", {}).items():
+            contextual_props = service.get_contextual_schema(step_name, completed_data)
+            step_schema.update(contextual_props)
+
+        return base_schema
+
     @tool
     def multi_step_service(
-        service_name: str, step: str, payload: str, user_id: str
+        service_name: str, payload: str, user_id: str
     ) -> Dict[str, Any]:
         """
-        Universal multi-step service tool with dependency management.
-        
-        IMPORTANTE - Quando solicitar dados ao usuario siga essas instruções:
-        - Suas mensagens de solicitação devem ser claras, objetivas e seguindo sua Persona original.
-        - Apresente os campos necessários em formato de lista.
-        - Exemplo:
-            Para iniciar seu cadastro, por favor forneça as seguintes informações:
-            - CPF
-            - Nome completo
-            - E-mail
-
-        
-        Serviços disponíveis:
-        {available_services}
+        Sistema de serviços multi-step com schema dinâmico e estado transparente.
 
         Args:
-            service_name: Nome do serviço a ser executado
-            step: Passo atual ('start' para a primeira interação, 'bulk' para múltiplos passos em um único request, ou o nome específico do passo a ser executado.)
-            payload: Resposta do usuário (string para passos específicos, JSON string para bulk)
-            user_id: Identificador do usuário
+            service_name: Nome do serviço (ex: "bank_account")
+            payload: JSON string com campos (ex: '{"document_type":"CPF","account_type":"corrente"}')
+            user_id: ID do agente, passar sempre 'agent'
 
         Returns:
-            Dict com status, next_step_info (detalhes completos do próximo passo), schema, available_steps e outros dados relevantes.
+            Estado completo: current_data, available_steps, schema dinâmico, progresso
+
+        Exemplos:
+            # Início - payload vazio
+            payload = "{}"
+
+            # Um campo
+            payload = '{"document_type":"CPF"}'
+
+            # Múltiplos campos
+            payload = '{"document_number":"12345678901","account_type":"corrente"}'
+
+            # Valores aninhados (se suportado pelo step)
+            payload = '{"address":{"street":"Rua A","number":123},"contact":{"email":"test@example.com"}}'
+
+        Serviços disponíveis:
+        {__replace__available_services__}
         """
-
-        # Check if this is not a start and session doesn't exist
-        if step != "start":
-            from src.services.state import STATE_DIR
-            state_file = STATE_DIR / f"{user_id}__{service_name}.json"
-            if not state_file.exists():
-                return {
-                    "status": "error",
-                    "message": f"Nenhuma sessão ativa encontrada para {service_name}. Use step='start' para iniciar.",
-                    "available_services": list(service_registry.keys()),
-                }
-
+        
         # Load or create service instance
-        service = get_or_create_service(service_name=service_name, user_id=user_id, service_registry=service_registry)
+        service = get_or_create_service(
+            service_name=service_name,
+            user_id=user_id,
+            service_registry=service_registry,
+        )
 
         if not service:
             return {
@@ -64,42 +70,98 @@ def create_multi_step_service_tool(service_registry):
                 "available_services": list(service_registry.keys()),
             }
 
-        # Handle start step - sempre solicita todos os dados de uma vez
-        if step == "start":
-            definition = service.get_service_definition()
-            result = {
-                "status": "bulk_request",
-                "service_definition": definition.to_dict(include_state=True, completed_data=service.data),
-                "completed": False,
+        # Get service definition for all logic
+        definition = service.get_service_definition()
+
+        # Parse payload from JSON string
+        try:
+            if payload and payload.strip():
+                payload_dict = json.loads(payload)
+            else:
+                payload_dict = {}
+        except json.JSONDecodeError as e:
+            return {
+                "status": "error",
+                "message": f"Invalid JSON payload: {str(e)}",
+                "service_name": service_name,
             }
 
-            # Save initial state
-            save_service_state(service=service, service_name=service_name, user_id=user_id)
-            return result
+        # Process the payload - sempre dict, pode estar vazio para início
+        if payload_dict:
+            # Use ServiceDefinition for bulk processing logic
+            valid_data, field_errors, dependency_errors = definition.process_bulk_data(
+                payload_dict, service
+            )
 
-        # Auto-detect bulk vs step-by-step based on payload
-        is_bulk = False
-        bulk_payload = None
+            # Update service data with valid fields only
+            service.data.update(valid_data)
 
-        try:
-            bulk_payload = json.loads(payload)
-            # If JSON parsing succeeds and it's a dict, it's bulk mode
-            if isinstance(bulk_payload, dict):
-                is_bulk = True
-        except (json.JSONDecodeError, TypeError):
-            # Not JSON or not a dict, treat as step-by-step
-            is_bulk = False
+            # If there are any errors, return error response
+            all_errors = {**field_errors, **dependency_errors}
+            if all_errors:
+                analysis = definition.get_state_analysis(service.data)
 
-        # Process accordingly
-        if is_bulk and bulk_payload is not None:
-            result = service.process_bulk(bulk_payload)
+                response = {
+                    "status": "validation_error",
+                    "service_name": service_name,
+                    "current_data": dict(service.data),
+                    "errors": all_errors,
+                }
+                response.update(analysis)
+                response["next_steps_schema"] = _get_enhanced_contextual_schema(
+                    service, definition, service.data
+                )
+                response["state_summary"] = definition.get_state_summary(service.data)
+                response["next_action_suggestion"] = (
+                    definition.get_next_action_suggestion(service.data)
+                )
+
+                # Save state even on validation error
+                save_service_state(
+                    service=service, service_name=service_name, user_id=user_id
+                )
+                return response
+
+        # Get current state and build response
+        definition = service.get_service_definition()
+        analysis = definition.get_state_analysis(service.data)
+
+        # Check if service is completed
+        all_required_completed = all(
+            step.name in service.data
+            for step in definition.steps
+            if step.required
+            or definition._is_conditionally_required(step, service.data)
+        )
+
+        if all_required_completed and not analysis["required_steps"]:
+            status = "completed"
+            response = {
+                "status": status,
+                "service_name": service_name,
+                "current_data": dict(service.data),
+                "completion_message": service.get_completion_message(),
+            }
         else:
-            result = service.process_step(step, payload)
+            status = "ready" if not service.data else "progress"
+            response = {
+                "status": status,
+                "service_name": service_name,
+                "current_data": dict(service.data),
+                "next_steps_schema": _get_enhanced_contextual_schema(
+                    service, definition, service.data
+                ),
+                "state_summary": definition.get_state_summary(service.data),
+                "next_action_suggestion": definition.get_next_action_suggestion(
+                    service.data
+                ),
+            }
+            response.update(analysis)
 
         # Save state after processing
         save_service_state(service=service, service_name=service_name, user_id=user_id)
 
-        return result
+        return response
 
     def _get_service_descriptions():
         """Generate service descriptions for the tool docstring"""
@@ -110,8 +172,8 @@ def create_multi_step_service_tool(service_registry):
         return "\n".join(descriptions)
 
     # Update the tool description with available services
-    multi_step_service.description = multi_step_service.description.format(
-        available_services=_get_service_descriptions()
+    multi_step_service.description = multi_step_service.description.replace(
+        "__replace__available_services__", _get_service_descriptions()
     )
-    
+
     return multi_step_service
