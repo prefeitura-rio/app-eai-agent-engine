@@ -40,6 +40,62 @@ def print_result(description: str, success: bool = True):
 # TESTES CORE - SCHEMA E BASESERVICE
 # =============================================================================
 
+def test_simplified_framework():
+    """Testa framework simplificado mantendo funcionalidades"""
+    print_test_header("FRAMEWORK SIMPLIFICADO - FUNCIONALIDADES")
+    
+    # 1. StepInfo simplificado
+    step = StepInfo(name="valid_step", description="Descrição válida")
+    print_result("StepInfo simplificado criado")
+    assert step.name == "valid_step"
+    
+    # 2. Validação básica funciona
+    from src.services import multi_step_service
+    result = multi_step_service.invoke({
+        'service_name': 'data_collection',
+        'payload': {'cpf': '12345678901'},
+        'user_id': 'test_simplified'
+    })
+    print_result("Tool básica funciona")
+    assert result['status'] in ['progress', 'ready']
+    assert 'cpf' in result.get('completed_steps', [])
+    
+    # 3. Auto-detecção de substeps
+    result = multi_step_service.invoke({
+        'service_name': 'bank_account_advanced', 
+        'payload': {
+            'name': 'João Silva', 
+            'email': 'joao@test.com',
+            'document_number': '12345678901',
+            'document_type': 'CPF'
+        },
+        'user_id': 'test_substeps'
+    })
+    print_result("Auto-detecção de substeps funciona")
+    assert result['status'] in ['progress', 'ready']
+    
+    # 4. Validação de dependências (duas etapas para testar dependência)
+    # Primeiro: document_type
+    result = multi_step_service.invoke({
+        'service_name': 'bank_account',
+        'payload': {'document_type': 'CPF'},
+        'user_id': 'test_deps'
+    })
+    assert result['status'] in ['progress', 'ready']
+    assert 'document_type' in result.get('completed_steps', [])
+    
+    # Depois: document_number (que depende do document_type)
+    result = multi_step_service.invoke({
+        'service_name': 'bank_account',
+        'payload': {'document_number': '12345678901'},
+        'user_id': 'test_deps'
+    })
+    print_result("Validação de dependências funciona")
+    assert result['status'] in ['progress', 'ready']
+    assert 'document_type' in result.get('completed_steps', [])
+    assert 'document_number' in result.get('completed_steps', [])
+
+
 def test_schema_validation():
     """Testa validações do schema Pydantic"""
     print_test_header("SCHEMA PYDANTIC - VALIDAÇÕES")
@@ -628,6 +684,9 @@ def run_complete_tests():
     print("Foco: Funcionalidades implementadas e estáveis\n")
     
     tests = [
+        # Framework Simplificado
+        test_simplified_framework,
+        
         # Core
         test_schema_validation,
         test_baseservice_core,

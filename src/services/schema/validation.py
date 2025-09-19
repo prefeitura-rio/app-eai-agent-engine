@@ -1,161 +1,114 @@
 import json
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple
 from src.services.schema.step_info import StepInfo
 from src.services.schema.dependency_engine import DependencyEngine
 
 
 class ValidationEngine:
-    """Engine for validating step data and processing bulk payloads"""
+    """Simplified validation engine with smart auto-detection"""
 
     def __init__(self, steps: List[StepInfo]):
         self.steps = steps
         self.dependency_engine = DependencyEngine(steps)
+        
+        # Pre-compute lookup tables for performance
         self._steps_by_name = {step.name: step for step in steps}
-        self.step_names = [step.name for step in steps]
+        self._substep_map = self._build_substep_map()
+
+    def _build_substep_map(self) -> Dict[str, str]:
+        """Build reverse lookup: substep_name -> parent_step_name"""
+        substep_map = {}
+        for step in self.steps:
+            if step.substeps:
+                for substep in step.substeps:
+                    substep_map[substep.name] = step.name
+        return substep_map
 
     def process_bulk_data(
         self, payload: Dict[str, Any], service_executor
     ) -> Tuple[Dict[str, Any], Dict[str, str], Dict[str, str]]:
-        """Process bulk payload with dependency validation - returns (valid_data, field_errors, dependency_errors)"""
+        """Simplified single-pass validation with smart field resolution"""
         valid_data = {}
         field_errors = {}
         dependency_errors = {}
-
-        # First pass: validate individual steps without dependencies
-        # Process both main steps and substeps
-        all_possible_steps = set(self.step_names)
         
-        # Add substep names to the processing list (com prefixo)
-        for step_info in self.steps:
-            if step_info.substeps:
-                for substep in step_info.substeps:
-                    substep_key = f"{step_info.name}_{substep.name}"
-                    all_possible_steps.add(substep_key)
+        # Smart field resolution - auto-detect substeps and normalize
+        normalized_payload = self._normalize_payload(payload)
         
-        # Detectar substeps sem prefixo automaticamente
-        payload_to_process = {}
-        for field_name, field_value in payload.items():
-            if field_name in all_possible_steps:
-                # Campo já mapeado (main step ou substep com prefixo)
-                payload_to_process[field_name] = field_value
-            else:
-                # Tentar detectar se é um substep sem prefixo
-                detected_substep = self._detect_substep_parent(field_name)
-                if detected_substep:
-                    # Converter para formato com prefixo
-                    prefixed_key = f"{detected_substep}_{field_name}"
-                    payload_to_process[prefixed_key] = field_value
-                    all_possible_steps.add(prefixed_key)
-                else:
-                    # Campo não reconhecido - manter original para gerar erro apropriado
-                    payload_to_process[field_name] = field_value
-        
-        for step_name in all_possible_steps:
-            if step_name in payload_to_process:
-                # Para objetos complexos, usar json.dumps; para strings simples, usar como está
-                value = payload_to_process[step_name]
-                if isinstance(value, (dict, list)):
-                    payload_str = json.dumps(value, ensure_ascii=False)
-                else:
-                    payload_str = str(value)
-                
-                is_valid, error_msg = service_executor.execute_step(step_name, payload_str)
-                if is_valid:
-                    # Substeps não devem ser salvos em valid_data, apenas processados
-                    # (eles são gerenciados internamente pelo service)
-                    if "_" in step_name and step_name not in self.step_names:
-                        # É um substep - não salvar em valid_data
-                        pass
-                    else:
-                        # É um step principal - salvar normalmente
-                        if (
-                            hasattr(service_executor, "data")
-                            and step_name in service_executor.data
-                        ):
-                            valid_data[step_name] = service_executor.data[step_name]
-                        else:
-                            valid_data[step_name] = str(payload_to_process[step_name]).strip()
-                else:
-                    field_errors[step_name] = error_msg
-
-        # Second pass: validate dependencies with combined data (existing + new)
-        # Only validate dependencies for main steps, not substeps
-        main_steps_to_validate = [step for step in valid_data.keys() if step in self.step_names]
-        
-        # Get existing service data
+        # Single pass: validate all fields with dependency checking
         existing_data = getattr(service_executor, "data", {})
-        temp_data = dict(existing_data)  # Start with existing data
-        processing_order = self.dependency_engine.get_processing_order(main_steps_to_validate)
-
-        for step in processing_order:
-            if step in valid_data:
-                # Add new step to combined data
-                temp_data[step] = valid_data[step]
-                # Validate dependencies with combined state (existing + new)
+        temp_data = dict(existing_data)
+        
+        for field_name, field_value in normalized_payload.items():
+            # Skip if not a main step
+            if field_name not in self._steps_by_name:
+                continue
+                
+            # Validate the field
+            is_valid, error_msg = self._validate_field(field_name, field_value, service_executor)
+            
+            if is_valid:
+                # Check dependencies immediately
+                temp_data[field_name] = getattr(service_executor, "data", {}).get(field_name, field_value)
+                
                 is_dep_valid, dep_error = self.dependency_engine.validate_dependencies_with_temp_data(
-                    step, temp_data
+                    field_name, temp_data
                 )
-                if not is_dep_valid:
-                    dependency_errors[step] = dep_error
-                    # Remove from valid data if dependencies fail
-                    valid_data.pop(step, None)
-                    temp_data.pop(step, None)  # Remove from temp as well
+                
+                if is_dep_valid:
+                    valid_data[field_name] = temp_data[field_name]
+                else:
+                    dependency_errors[field_name] = dep_error
+                    temp_data.pop(field_name, None)
+            else:
+                field_errors[field_name] = error_msg
 
         return valid_data, field_errors, dependency_errors
 
-    def _detect_substep_parent(self, field_name: str) -> Optional[str]:
-        """Detecta qual step principal contém o substep especificado"""
-        for step_info in self.steps:
-            if step_info.substeps:
-                for substep in step_info.substeps:
-                    if substep.name == field_name:
-                        return step_info.name
-        return None
-
-    def validate_step_exists(self, step_name: str) -> bool:
-        """Check if step exists in the service definition"""
-        return step_name in self._steps_by_name
-
-    def get_step_validation_context(self, step_name: str, completed_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Get validation context for a specific step"""
-        step_info = self._steps_by_name.get(step_name)
-        if not step_info:
-            return {}
-
-        context = {
-            "step_info": step_info,
-            "completed_data": completed_data,
-            "validation_depends_on": step_info.validation_depends_on,
-        }
-
-        # Add contextual data from validation dependencies
-        validation_data = {}
-        for dep_step in step_info.validation_depends_on:
-            if dep_step in completed_data:
-                validation_data[dep_step] = completed_data[dep_step]
+    def _normalize_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Smart payload normalization with auto-detection"""
+        normalized = {}
         
-        context["validation_data"] = validation_data
-        return context
+        for field_name, field_value in payload.items():
+            # Check if it's a main step
+            if field_name in self._steps_by_name:
+                normalized[field_name] = field_value
+                continue
+            
+            # Check if it's a substep (auto-detect parent)
+            parent_step = self._substep_map.get(field_name)
+            if parent_step:
+                # Initialize parent step data if not exists
+                if parent_step not in normalized:
+                    normalized[parent_step] = {}
+                
+                # Ensure parent is a dict for substep accumulation
+                if not isinstance(normalized[parent_step], dict):
+                    normalized[parent_step] = {}
+                
+                # Add substep to parent
+                normalized[parent_step][field_name] = field_value
+            else:
+                # Unknown field - keep as is for error handling
+                normalized[field_name] = field_value
+        
+        return normalized
+
+    def _validate_field(self, field_name: str, field_value: Any, service_executor) -> Tuple[bool, str]:
+        """Simplified field validation"""
+        # Convert complex objects to JSON strings for service validation
+        if isinstance(field_value, (dict, list)):
+            payload_str = json.dumps(field_value, ensure_ascii=False)
+        else:
+            payload_str = str(field_value)
+        
+        return service_executor.execute_step(field_name, payload_str)
 
     def validate_required_fields_complete(self, completed_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
-        """Validate that all required fields are completed"""
-        missing_required = []
-        
-        for step in self.steps:
-            if step.required or self.dependency_engine._is_conditionally_required(step, completed_data):
-                if step.name not in completed_data:
-                    missing_required.append(step.name)
-
-        return len(missing_required) == 0, missing_required
-
-    def get_validation_errors_summary(
-        self, field_errors: Dict[str, str], dependency_errors: Dict[str, str]
-    ) -> Dict[str, Any]:
-        """Create a summary of validation errors"""
-        return {
-            "field_errors": field_errors,
-            "dependency_errors": dependency_errors,
-            "total_errors": len(field_errors) + len(dependency_errors),
-            "has_field_errors": len(field_errors) > 0,
-            "has_dependency_errors": len(dependency_errors) > 0,
-        }
+        """Check if all required fields are completed"""
+        missing = [
+            step.name for step in self.steps 
+            if (step.required or self.dependency_engine._is_conditionally_required(step, completed_data))
+            and step.name not in completed_data
+        ]
+        return len(missing) == 0, missing
