@@ -41,4 +41,4 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS = getenv_or_action(
 
 # Short-term memory configuration
 SHORT_MEMORY_TOKEN_LIMIT = int(getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT", default="1000"))
-SHORT_MEMORY_TIME_LIMIT = float(getenv_or_action("SHORT_MEMORY_TIME_LIMIT", default="0.042"))
+SHORT_MEMORY_TIME_LIMIT = float(getenv_or_action("SHORT_MEMORY_TIME_LIMIT", default="0.00694")) # approx 10 minutes in days
