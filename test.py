@@ -21,8 +21,8 @@ if "__main__" == __name__:
     # print(multi_step_service.description)
     # Load or create service instance
     service_name = "bank_account_advanced"
-    # user_id = str(uuid4())
-    user_id = "dep_bug_test"
+    user_id = str(uuid4())
+    # user_id = "dep_bug_test"
     r = multi_step_service.invoke(
         {
             "user_id": user_id,
@@ -39,4 +39,4 @@ if "__main__" == __name__:
 
     print(r["visual_schematic"])
     print("\n\n")
-    run_complete_tests()
+    # run_complete_tests()

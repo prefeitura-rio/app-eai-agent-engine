@@ -140,30 +140,34 @@ class ServiceDefinition(BaseModel):
 
                 # Se tem substeps, adicionar informações dos substeps e instruções de formato
                 if step_info.substeps:
-                    # Substeps é um campo especial - não vai para type: string
-                    substeps_info = [
-                        {
-                            "step": substep.name,
-                            "type": "string",
+                    # Substeps como objeto direto (não JSON string)
+                    substeps_info = {}
+                    for substep in step_info.substeps:
+                        substeps_info[substep.name] = {
                             "description": substep.description,
-                            "example": substep.example,
                             "data_type": substep.data_type,
-                            "required": substep.required
                         }
-                        for substep in step_info.substeps
-                    ]
-                    step_schema["substeps"] = json.dumps(substeps_info, ensure_ascii=False)
+                        if substep.example:
+                            substeps_info[substep.name]["example"] = substep.example
+                    
+                    step_schema["substeps"] = substeps_info
                     
                     # Gerar instruções de formato dinamicamente
                     step_schema["format_instructions"] = self._generate_format_instructions(step_info)
 
-                # Add to required array if this step is required
-                if step_info.required or self._is_conditionally_required(
-                    step_info, completed_data
-                ):
-                    schema["required"].append(step_name)
-
                 schema["properties"][step_name] = step_schema
+                
+                # Para steps com substeps, adicionar substeps obrigatórios ao required
+                if step_info.substeps:
+                    for substep in step_info.substeps:
+                        if substep.required:
+                            schema["required"].append(substep.name)
+                else:
+                    # Para steps sem substeps, adicionar o step ao required se for obrigatório
+                    if step_info.required or self._is_conditionally_required(
+                        step_info, completed_data
+                    ):
+                        schema["required"].append(step_name)
 
         return schema
 

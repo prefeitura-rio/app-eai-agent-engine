@@ -1,8 +1,0 @@
-{
-  "service_class": "BankAccountAdvancedService",
-  "service_name": "bank_account_advanced",
-  "user_id": "advanced_error_test",
-  "data": {},
-  "created_at": "2025-09-19T15:34:16.875860",
-  "last_updated": "2025-09-19T15:34:16.876136"
-}

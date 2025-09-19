@@ -236,32 +236,36 @@ class VisualizationEngine:
         # Obter filhos primeiro
         children = node.get("children", [])
 
-        # Renderizar substeps se existirem (antes dos filhos normais)
+        # Renderizar substeps se existirem (sempre, mesmo sem dados)
         substep_lines = []
-        if node_name in completed_data:
-            step_info = self.dependency_engine.get_step_info(node_name)
-            if step_info and step_info.substeps:
-                step_data = completed_data[node_name]
-                if isinstance(step_data, dict):
-                    # Novo prefixo para substeps
-                    substep_prefix = prefix + ("    " if is_last else "│   ")
-                    
-                    required_substeps = [s for s in step_info.substeps if s.required]
-                    
-                    for i, substep in enumerate(required_substeps):
-                        substep_name = substep.name
-                        if substep_name in step_data:
-                            substep_icon = "✅"
-                            substep_status = f" = {step_data[substep_name]}"
-                        else:
-                            substep_icon = "🔴"
-                            substep_status = " (required)"
-                        
-                        # Determinar se é o último item considerando filhos normais
-                        is_last_substep = (i == len(required_substeps) - 1) and not children
-                        substep_connector = "└── " if is_last_substep else "├── "
-                        
-                        substep_lines.append(f"{substep_prefix}{substep_connector}{substep_icon} {substep_name}{substep_status}")
+        step_info = self.dependency_engine.get_step_info(node_name)
+        if step_info and step_info.substeps:
+            # Novo prefixo para substeps
+            substep_prefix = prefix + ("    " if is_last else "│   ")
+            
+            # Mostrar todos os substeps, não apenas os obrigatórios
+            for i, substep in enumerate(step_info.substeps):
+                substep_name = substep.name
+                
+                # Verificar se há dados completados para este step e substep
+                if node_name in completed_data and isinstance(completed_data[node_name], dict):
+                    step_data = completed_data[node_name]
+                    if substep_name in step_data:
+                        substep_icon = "✅"
+                        substep_status = f" = {step_data[substep_name]}"
+                    else:
+                        substep_icon = "🔴" if substep.required else "🟡"
+                        substep_status = " (required)" if substep.required else " (optional)"
+                else:
+                    # Não há dados - mostrar status baseado em required
+                    substep_icon = "🔴" if substep.required else "🟡"
+                    substep_status = " (required)" if substep.required else " (optional)"
+                
+                # Determinar se é o último item considerando filhos normais
+                is_last_substep = (i == len(step_info.substeps) - 1) and not children
+                substep_connector = "└── " if is_last_substep else "├── "
+                
+                substep_lines.append(f"{substep_prefix}{substep_connector}{substep_icon} {substep_name}{substep_status}")
 
         # Adicionar substeps às linhas
         lines.extend(substep_lines)
