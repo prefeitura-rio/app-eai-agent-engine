@@ -376,6 +376,153 @@ def test_error_handling():
     assert "errors" in result
 
 
+def test_dependency_validation_fixed():
+    """Testa correção do bug de validação de dependências com steps já completados"""
+    print_test_header("VALIDAÇÃO DE DEPENDÊNCIAS - BUG CORRIGIDO")
+    
+    setup_test_environment()
+    
+    # 1. Primeiro: completar steps base (document_type, account_type, personal_name)
+    result = multi_step_service.invoke({
+        "service_name": "bank_account",
+        "payload": '{"document_type": "CPF", "account_type": "corrente", "personal_name": "João Silva"}',
+        "user_id": "dep_bug_test"
+    })
+    print_result("Steps base completados")
+    assert result["status"] == "progress"
+    assert "document_type" in result["completed_steps"]
+    assert "account_type" in result["completed_steps"]
+    assert "personal_name" in result["completed_steps"]
+    
+    # 2. Segundo: tentar steps que dependem dos anteriores (document_number, initial_deposit)
+    result = multi_step_service.invoke({
+        "service_name": "bank_account",
+        "payload": '{"document_number": "12345678901", "initial_deposit": "500.00"}',
+        "user_id": "dep_bug_test"
+    })
+    print_result("Steps dependentes aceitos sem erro")
+    assert result["status"] in ["progress", "completed"]  # Pode estar completo ou em progresso
+    assert "errors" not in result or len(result.get("errors", {})) == 0
+    assert "document_number" in result["completed_steps"]
+    assert "initial_deposit" in result["completed_steps"]
+    
+    # 3. Verificar que ambos os steps dependentes foram aceitos
+    all_completed = result["completed_steps"]
+    print_result("document_number aceito (dependia de document_type)")
+    assert "document_number" in all_completed
+    print_result("initial_deposit aceito (dependia de account_type)")
+    assert "initial_deposit" in all_completed
+
+
+def test_steps_schematic():
+    """Testa o novo método get_steps_schematic do ServiceDefinition"""
+    print_test_header("ESQUEMÁTICO DOS STEPS")
+    
+    # 1. Teste com DataCollectionService (simples, sem dependências)
+    data_service = DataCollectionService("schematic_test")
+    data_definition = data_service.get_service_definition()
+    
+    # Esquemático básico
+    schematic = data_definition.get_steps_schematic()
+    print_result("Esquemático básico criado")
+    assert schematic["service_name"] == "data_collection"
+    assert schematic["total_steps"] == 3
+    assert len(schematic["steps"]) == 3
+    assert "dependency_map" in schematic
+    assert "dependency_tree" in schematic
+    
+    # 2. Teste com BankAccountService (complexo, com dependências)
+    bank_service = BankAccountService("schematic_test")
+    bank_definition = bank_service.get_service_definition()
+    
+    schematic_bank = bank_definition.get_steps_schematic()
+    print_result("Esquemático com dependências criado")
+    assert schematic_bank["service_name"] == "bank_account"
+    assert schematic_bank["total_steps"] == 7
+    assert "document_number" in schematic_bank["dependency_map"]
+    assert schematic_bank["dependency_map"]["document_number"] == ["document_type"]
+    
+    # 3. Teste com dados parciais (status dos steps)
+    partial_data = {"document_type": "CPF", "account_type": "corrente"}
+    schematic_with_status = bank_definition.get_steps_schematic(partial_data)
+    print_result("Esquemático com status dos steps")
+    assert schematic_with_status["state_analysis"] is not None
+    
+    # Verificar status específicos
+    steps_by_name = {step["name"]: step for step in schematic_with_status["steps"]}
+    assert steps_by_name["document_type"]["status"] == "completed"
+    assert steps_by_name["document_number"]["status"] == "available_required"
+    assert steps_by_name["email"]["status"] == "pending"
+    
+    # 4. Teste da árvore de dependências
+    tree = schematic_bank["dependency_tree"]
+    print_result("Árvore de dependências estruturada")
+    assert len(tree) > 0  # Deve ter pelo menos alguns nós raiz
+    
+    # Encontrar nó document_type na árvore
+    doc_type_node = None
+    for node in tree:
+        if node["name"] == "document_type":
+            doc_type_node = node
+            break
+    
+    assert doc_type_node is not None
+    assert len(doc_type_node["children"]) > 0  # document_number depende de document_type
+
+
+def test_visual_schematic_in_responses():
+    """Testa se o campo visual_schematic está sendo incluído nas respostas do multi_step_service"""
+    print_test_header("VISUAL SCHEMATIC NAS RESPOSTAS")
+    
+    setup_test_environment()
+    
+    # 1. Teste estado inicial - deve ter visual_schematic
+    result = multi_step_service.invoke({
+        "service_name": "bank_account",
+        "payload": "{}",
+        "user_id": "visual_response_test"
+    })
+    print_result("Campo visual_schematic presente no estado inicial")
+    assert "visual_schematic" in result
+    assert isinstance(result["visual_schematic"], str)
+    assert "📋 BANK_ACCOUNT" in result["visual_schematic"]
+    assert "🌳 DEPENDENCY TREE:" in result["visual_schematic"]
+    
+    # 2. Teste com dados parciais - deve mostrar progresso
+    result = multi_step_service.invoke({
+        "service_name": "bank_account",
+        "payload": '{"document_type": "CPF", "personal_name": "João Silva"}',
+        "user_id": "visual_response_test"
+    })
+    print_result("Visual_schematic com progresso")
+    assert "visual_schematic" in result
+    assert "🎯 STATUS:" in result["visual_schematic"]
+    assert "✅ Completed:" in result["visual_schematic"]
+    assert "📊 Progress:" in result["visual_schematic"]
+    
+    # 3. Teste com erro de validação - deve ter visual_schematic mesmo com erro
+    result = multi_step_service.invoke({
+        "service_name": "data_collection",
+        "payload": '{"cpf": "123"}',  # CPF inválido
+        "user_id": "visual_error_test"
+    })
+    print_result("Visual_schematic presente mesmo com erro de validação")
+    assert result["status"] == "validation_error"
+    assert "visual_schematic" in result
+    assert "📋 DATA_COLLECTION" in result["visual_schematic"]
+    
+    # 4. Teste serviço completado - deve ter visual_schematic
+    result = multi_step_service.invoke({
+        "service_name": "data_collection",
+        "payload": '{"cpf": "12345678901", "email": "test@example.com", "name": "João Silva"}',
+        "user_id": "visual_complete_test"
+    })
+    print_result("Visual_schematic no serviço completado")
+    assert result["status"] == "completed"
+    assert "visual_schematic" in result
+    assert "✅ Completed:" in result["visual_schematic"]
+
+
 # =============================================================================
 # RUNNER PRINCIPAL
 # =============================================================================
@@ -403,6 +550,9 @@ def run_complete_tests():
         # Integração
         test_multi_user_isolation,
         test_error_handling,
+        test_dependency_validation_fixed,
+        test_steps_schematic,
+        test_visual_schematic_in_responses,
     ]
     
     passed = 0

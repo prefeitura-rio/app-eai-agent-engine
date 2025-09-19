@@ -247,7 +247,11 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
         """Create and configure the React Agent."""
-        llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
+        llm = ChatVertexAI(
+            model_name=self._model,
+            temperature=self._temperature,
+            perform_literal_eval_on_string_raw_content=False,
+        )
         # llm_with_tools = llm.bind_tools(tools=self._tools, parallel_tool_calls=False)
         llm_with_tools = llm.bind_tools(tools=self._tools)
 

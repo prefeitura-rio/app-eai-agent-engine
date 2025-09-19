@@ -123,6 +123,233 @@ class ServiceDefinition(BaseModel):
                 return step
         return None
     
+    def get_steps_schematic(self, completed_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Retorna um esquemático visual dos steps do serviço com dependências e status.
+        
+        Args:
+            completed_data: Dados já completados para mostrar status atual (opcional)
+            
+        Returns:
+            Dict com informações estruturadas dos steps incluindo:
+            - Lista de steps com suas propriedades
+            - Mapa de dependências
+            - Status atual se completed_data fornecido
+            - Visualização em árvore das dependências
+        """
+        completed_data = completed_data or {}
+        
+        # Informações básicas de cada step
+        steps_info = []
+        for step in self.steps:
+            step_data = {
+                "name": step.name,
+                "description": step.description,
+                "required": step.required,
+                "depends_on": step.depends_on,
+                "conflicts_with": step.conflicts_with,
+                "example": getattr(step, 'example', None),
+            }
+            
+            # Adicionar status se completed_data fornecido
+            if completed_data is not None:
+                if step.name in completed_data:
+                    step_data["status"] = "completed"
+                    step_data["value"] = completed_data[step.name]
+                else:
+                    available_steps = self.get_available_steps(completed_data)
+                    if step.name in available_steps:
+                        if step.required or self._is_conditionally_required(step, completed_data):
+                            step_data["status"] = "available_required"
+                        else:
+                            step_data["status"] = "available_optional"
+                    else:
+                        step_data["status"] = "pending"
+            
+            # Informações condicionais
+            if step.conditional:
+                step_data["conditional"] = {
+                    "if_condition": step.conditional.if_condition,
+                    "then_required": step.conditional.then_required,
+                    "else_required": step.conditional.else_required,
+                }
+                
+                # Se temos dados, avaliar a condição atual
+                if completed_data:
+                    condition_met = self._evaluate_condition(step.conditional.if_condition, completed_data)
+                    step_data["conditional"]["current_condition_met"] = condition_met
+                    step_data["conditional"]["current_required_deps"] = (
+                        step.conditional.then_required if condition_met 
+                        else step.conditional.else_required
+                    )
+            
+            steps_info.append(step_data)
+        
+        # Mapa de dependências (quem depende de quem)
+        dependency_map = {}
+        for step in self.steps:
+            if step.depends_on:
+                dependency_map[step.name] = step.depends_on
+        
+        # Mapa reverso (quem é dependência de quem)
+        reverse_dependency_map = {}
+        for step in self.steps:
+            reverse_dependency_map[step.name] = []
+        
+        for step_name, deps in dependency_map.items():
+            for dep in deps:
+                if dep in reverse_dependency_map:
+                    reverse_dependency_map[dep].append(step_name)
+        
+        # Análise de estado se dados fornecidos
+        state_analysis = None
+        if completed_data:
+            state_analysis = self.get_state_analysis(completed_data)
+        
+        # Árvore de dependências visual
+        dependency_tree = self._build_dependency_tree()
+        
+        return {
+            "service_name": self.service_name,
+            "description": self.description,
+            "total_steps": len(self.steps),
+            "steps": steps_info,
+            "dependency_map": dependency_map,
+            "reverse_dependency_map": reverse_dependency_map,
+            "dependency_tree": dependency_tree,
+            "state_analysis": state_analysis,
+        }
+    
+    def _build_dependency_tree(self) -> List[Dict[str, Any]]:
+        """Constrói árvore visual de dependências"""
+        # Encontrar steps raiz (sem dependências)
+        root_steps = [step for step in self.steps if not step.depends_on]
+        
+        def build_node(step: StepInfo, visited: Optional[set] = None) -> Dict[str, Any]:
+            if visited is None:
+                visited = set()
+            
+            if step.name in visited:
+                return {"name": step.name, "circular": True}
+            
+            visited.add(step.name)
+            
+            # Encontrar steps que dependem deste
+            children = []
+            for other_step in self.steps:
+                if step.name in other_step.depends_on:
+                    children.append(build_node(other_step, visited.copy()))
+            
+            node = {
+                "name": step.name,
+                "description": step.description,
+                "required": step.required,
+                "children": children
+            }
+            
+            if step.conditional:
+                node["conditional"] = True
+            
+            return node
+        
+        return [build_node(step) for step in root_steps]
+    
+    def get_visual_schematic(self, completed_data: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Retorna representação visual em texto dos steps e dependências.
+        Formato amigável para leitura humana.
+        """
+        completed_data = completed_data or {}
+        schematic = self.get_steps_schematic(completed_data)
+        
+        lines = []
+        lines.append(f"📋 {schematic['service_name'].upper()}")
+        lines.append(f"   {schematic['description']}")
+        lines.append(f"   Total: {schematic['total_steps']} steps")
+        lines.append("")
+        
+        # Status legend se temos dados
+        if completed_data:
+            lines.append("🎯 STATUS:")
+            analysis = schematic['state_analysis']
+            if analysis:
+                lines.append(f"   ✅ Completed: {len(analysis['completed_steps'])}")
+                lines.append(f"   🟡 Available: {len(analysis['available_steps'])}")
+                lines.append(f"   ⏳ Pending: {len(analysis['pending_steps'])}")
+                lines.append(f"   📊 Progress: {analysis['progress']['percentage']:.1f}%")
+            lines.append("")
+        
+        # Dependency tree visual
+        lines.append("🌳 DEPENDENCY TREE:")
+        tree = schematic['dependency_tree']
+        for root in tree:
+            lines.extend(self._render_tree_node(root, completed_data))
+        lines.append("")
+        
+        # Steps summary com status
+        lines.append("📝 STEPS SUMMARY:")
+        steps_by_status = {}
+        for step in schematic['steps']:
+            status = step.get('status', 'unknown')
+            if status not in steps_by_status:
+                steps_by_status[status] = []
+            steps_by_status[status].append(step)
+        
+        status_icons = {
+            'completed': '✅',
+            'available_required': '🔴',
+            'available_optional': '🟡', 
+            'pending': '⏳',
+            'unknown': '❓'
+        }
+        
+        for status, steps in steps_by_status.items():
+            if steps:
+                icon = status_icons.get(status, '❓')
+                status_name = status.replace('_', ' ').title()
+                lines.append(f"   {icon} {status_name}:")
+                for step in steps:
+                    value_info = f" = {step.get('value', '')}" if step.get('value') else ""
+                    conditional_info = " (conditional)" if step.get('conditional') else ""
+                    lines.append(f"      • {step['name']}{value_info} - {step['description']}{conditional_info}")
+                lines.append("")
+        
+        return "\n".join(lines)
+    
+    def _render_tree_node(self, node: Dict[str, Any], completed_data: Dict[str, Any], prefix: str = "", is_last: bool = True) -> List[str]:
+        """Renderiza um nó da árvore com formatação ASCII"""
+        lines = []
+        
+        # Determinar ícone baseado no status
+        node_name = node['name']
+        if node_name in completed_data:
+            icon = "✅"
+            status = f" = {completed_data[node_name]}"
+        elif node.get('required', False):
+            icon = "🔴"
+            status = " (required)"
+        else:
+            icon = "🟡" if not node.get('conditional') else "🔄"
+            status = " (optional)" + (" conditional" if node.get('conditional') else "")
+        
+        # Conectores da árvore
+        connector = "└── " if is_last else "├── "
+        
+        # Linha do nó atual
+        lines.append(f"{prefix}{connector}{icon} {node_name}{status}")
+        
+        # Renderizar filhos
+        children = node.get('children', [])
+        if children:
+            # Novo prefixo para filhos
+            child_prefix = prefix + ("    " if is_last else "│   ")
+            
+            for i, child in enumerate(children):
+                is_last_child = (i == len(children) - 1)
+                lines.extend(self._render_tree_node(child, completed_data, child_prefix, is_last_child))
+        
+        return lines
+    
     def get_state_analysis(self, completed_data: Dict[str, Any]) -> Dict[str, Any]:
         """Análise completa do estado atual do serviço"""
         all_steps = {step.name: step for step in self.steps}
@@ -372,20 +599,23 @@ class ServiceDefinition(BaseModel):
                 else:
                     field_errors[step_name] = error_msg
 
-        # Second pass: validate dependencies with temporary data
-        temp_data = {}
+        # Second pass: validate dependencies with combined data (existing + new)
+        # Get existing service data
+        existing_data = getattr(service_executor, 'data', {})
+        temp_data = dict(existing_data)  # Start with existing data
         processing_order = self.get_processing_order(list(valid_data.keys()))
         
         for step in processing_order:
             if step in valid_data:
-                # Check dependencies with current state
+                # Add new step to combined data
                 temp_data[step] = valid_data[step]
+                # Validate dependencies with combined state (existing + new)
                 is_dep_valid, dep_error = self.validate_dependencies_with_temp_data(step, temp_data)
                 if not is_dep_valid:
                     dependency_errors[step] = dep_error
                     # Remove from valid data if dependencies fail
                     valid_data.pop(step, None)
-                    temp_data.pop(step, None)
+                    temp_data.pop(step, None)  # Remove from temp as well
         
         return valid_data, field_errors, dependency_errors
     

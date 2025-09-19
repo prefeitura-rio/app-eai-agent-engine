@@ -2,10 +2,7 @@
   "service_class": "BankAccountService",
   "service_name": "bank_account",
   "user_id": "hahahahahaha5",
-  "data": {
-    "document_type": "CPF",
-    "account_type": "corrente"
-  },
-  "created_at": "2025-09-19T10:54:35.641193",
-  "last_updated": "2025-09-19T10:57:28.769637"
+  "data": {},
+  "created_at": "2025-09-19T11:57:13.205424",
+  "last_updated": "2025-09-19T11:57:13.205906"
 }

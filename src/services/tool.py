@@ -115,6 +115,7 @@ def create_multi_step_service_tool(service_registry):
                 response["next_action_suggestion"] = (
                     definition.get_next_action_suggestion(service.data)
                 )
+                response["visual_schematic"] = definition.get_visual_schematic(service.data)
 
                 # Save state even on validation error
                 save_service_state(
@@ -141,6 +142,7 @@ def create_multi_step_service_tool(service_registry):
                 "service_name": service_name,
                 "current_data": dict(service.data),
                 "completion_message": service.get_completion_message(),
+                "visual_schematic": definition.get_visual_schematic(service.data),
             }
         else:
             status = "ready" if not service.data else "progress"
@@ -155,6 +157,7 @@ def create_multi_step_service_tool(service_registry):
                 "next_action_suggestion": definition.get_next_action_suggestion(
                     service.data
                 ),
+                "visual_schematic": definition.get_visual_schematic(service.data),
             }
             response.update(analysis)
 
