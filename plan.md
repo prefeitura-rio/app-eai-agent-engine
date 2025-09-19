@@ -1,482 +1,345 @@
-# Plano: Sistema de Schema Dinâmico e Payload Unificado
+# Análise Profunda do Framework de Serviços Multi-Step
 
-## 🎯 Visão Geral da Melhoria
+## 📋 Resumo Executivo
 
-### Conceito Principal
-Transformar o sistema atual em uma experiência step-by-step inteligente onde:
-- **Payload sempre é dict**: `{"step_name": "value"}` em todas as interações
-- **Schema dinâmico**: Retorna apenas os campos disponíveis no momento atual
-- **next_step_info como lista**: Múltiplos próximos steps baseados em dependências
-- **Progressão guiada**: O agente vê exatamente o que pode fazer a cada momento
+Este documento apresenta uma análise completa do framework de serviços multi-step localizado em `src/services/`. O framework é uma solução robusta para criação de serviços baseados em etapas sequenciais com dependências complexas, validação de dados e persistência de estado.
 
-## 🔄 Fluxo Proposto
+## 🏗️ Arquitetura Atual
 
-### Interação Atual vs. Nova
+### 📁 Estrutura de Arquivos
 
-**Antes (Atual - Complexo):**
-```json
-// Start - modo especial
-{"status": "bulk_request", "service_definition": {...}, "completed": false}
-
-// Bulk mode - JSON string
-'{"cpf": "123", "email": "test@example.com", "name": "João"}'
-
-// Individual mode - string simples  
-"corrente"
-
-// Lógica confusa: bulk vs individual, JSON vs string
+```
+src/services/
+├── __init__.py           # Ponto de entrada, exports e registry
+├── base_service.py       # Classe base abstrata para serviços
+├── schema.py             # Modelos Pydantic e lógica de dependências
+├── tool.py               # Ferramenta LangChain para integração
+├── state.py              # Gerenciamento de persistência de estado
+├── tests.py              # Bateria completa de testes
+└── repository/           # Implementações concretas de serviços
+    ├── __init__.py
+    ├── data_collection.py          # Serviço simples de coleta de dados
+    ├── bank_account.py             # Serviço com dependências complexas
+    └── bank_account_advanced.py    # Serviço híbrido com substeps
 ```
 
-**Depois (Proposto - Simples):**
-```json
-// Start - mesmo padrão de sempre
-{
-  "status": "ready", 
-  "available_steps": ["document_type", "account_type"],
-  "next_steps_schema": {...}
-}
+### 🧱 Componentes Principais
 
-// SEMPRE dict - sem exceções
-{"document_type": "CPF"}
+#### 1. **BaseService** (`base_service.py`)
+- **Responsabilidade**: Classe base abstrata que define a interface para todos os serviços
+- **Características**:
+  - Métodos abstratos obrigatórios: `get_service_definition()`, `execute_step()`, `get_completion_message()`
+  - Gerenciamento automático de `user_id` e dados de estado (`self.data`)
+  - Validação obrigatória de `service_name` em cada classe filha
+  - Registry automático através de `build_service_registry()`
 
-// Múltiplos campos - ainda dict
-{"document_number": "12345678901", "account_type": "corrente"}
+#### 2. **ServiceDefinition** (`schema.py`)
+- **Responsabilidade**: "Single source of truth" para configuração e lógica de serviços
+- **Características**:
+  - Contém toda a lógica de dependências, validação e processamento
+  - Esquemas JSON automáticos gerados a partir de `StepInfo`
+  - Sistema de dependências avançado (sequenciais, condicionais, conflitos)
+  - Visualização esquemática em árvore ASCII
+  - Processamento bulk de dados com validação em duas fases
+  - Suporte a substeps e tipos de dados complexos
 
-// Um campo - ainda dict  
-{"email": "test@example.com"}
+#### 3. **StepInfo** (`schema.py`)
+- **Responsabilidade**: Modelo Pydantic para definição de etapas
+- **Características**:
+  - Validação de nomes (regex: `^[a-zA-Z_][a-zA-Z0-9_]*$`)
+  - Sistema de dependências: `depends_on`, `conflicts_with`, `conditional`
+  - Suporte a substeps recursivos para estruturas aninhadas
+  - Tipos de dados: `str`, `dict`, `list`, `list_dict` com comportamento automático
+  - Validação contextual baseada em dados anteriores
 
-// Consistência total: payload sempre é Dict[str, str]
+#### 4. **Tool Integration** (`tool.py`)
+- **Responsabilidade**: Integração com LangChain através de factory pattern
+- **Características**:
+  - Factory function com injeção de dependências
+  - Interface unificada: `multi_step_service(service_name, payload, user_id)`
+  - Resposta padronizada com estado completo, schema dinâmico e progressos
+  - Gestão automática de erros de validação e dependências
+  - Documentação auto-gerada dos serviços disponíveis
+
+#### 5. **State Management** (`state.py`)
+- **Responsabilidade**: Persistência e recuperação de estado dos serviços
+- **Características**:
+  - Arquivos JSON individuais por usuário/serviço (`{user_id}__{service_name}.json`)
+  - Metadados de criação e última atualização
+  - Carregamento automático de estado existente
+  - Funcionalidades de limpeza e listagem
+  - Isolamento total entre usuários
+
+### 🔄 Fluxo de Funcionamento
+
+1. **Inicialização**: `SERVICE_REGISTRY` é construído automaticamente a partir das classes de serviço
+2. **Criação da Tool**: Factory function cria `multi_step_service` com registry injetado
+3. **Chamada da Tool**: Agente chama com `service_name`, `payload` e `user_id`
+4. **Carregamento de Estado**: Sistema busca estado existente ou cria novo serviço
+5. **Processamento**: `ServiceDefinition.process_bulk_data()` valida dependências e campos
+6. **Validação**: Duas fases - campos individuais e dependências entre steps
+7. **Atualização**: Estado do serviço é atualizado com dados válidos
+8. **Resposta**: Retorna estado completo com schema dinâmico e visualizações
+9. **Persistência**: Estado é salvo automaticamente após processamento
+
+## 🎯 Funcionalidades Avançadas
+
+### Sistema de Dependências
+- **Sequenciais**: Step A deve ser completado antes de Step B
+- **Condicionais**: Se campo X = valor Y, então Step Z se torna obrigatório
+- **Conflitos**: Steps mutuamente exclusivos
+- **Validação contextual**: Validação de Step depende de dados de outros Steps
+
+### Tipos de Dados Inteligentes
+- **`str`**: Strings simples com validação básica
+- **`dict`**: JSON objects com validação estrutural
+- **`list`**: Arrays simples
+- **`list_dict`**: Arrays de objetos com modo append automático
+
+### Substeps Híbridos
+- **Individual**: Aceita substeps um por um (`user_info_name`, `user_info_email`)
+- **JSON Completo**: Aceita objeto JSON completo (`user_info: {...}`)
+- **Detecção Automática**: Sistema detecta formato e processa adequadamente
+- **Validação Granular**: Cada substep é validado individualmente
+
+### Visualização e UX
+- **Schema Dinâmico**: Apenas steps disponíveis são expostos no schema
+- **Visualização ASCII**: Árvore de dependências em formato texto
+- **Progresso Visual**: Status de cada step com ícones e cores
+- **Sugestões Contextuais**: Sistema sugere próximos passos baseado no estado
+
+## 📊 Serviços Implementados
+
+### 1. DataCollectionService
+- **Complexidade**: Básica
+- **Steps**: CPF, email, nome (todos obrigatórios, sem dependências)
+- **Uso**: Demonstração de serviço simples
+
+### 2. BankAccountService  
+- **Complexidade**: Avançada
+- **Steps**: 7 steps com dependências complexas
+- **Características**: Dependências condicionais, conflitos, validação contextual
+- **Exemplo**: `initial_deposit` obrigatório apenas para contas correntes
+
+### 3. BankAccountAdvancedService
+- **Complexidade**: Híbrida/Experimental
+- **Steps**: 5 steps com substeps e arrays
+- **Características**: Substeps recursivos, append automático, dados estruturados
+- **Inovação**: Combina granularidade individual com eficiência de JSON bulk
+
+## 🔍 Pontos Fortes da Arquitetura
+
+### ✅ Forças Técnicas
+
+1. **Single Source of Truth**: `ServiceDefinition` centraliza toda lógica
+2. **Validação Robusta**: Pydantic + validação personalizada em duas fases
+3. **Extensibilidade**: Novos serviços herdam automaticamente todas funcionalidades
+4. **Isolamento**: Cada usuário tem estado completamente isolado
+5. **Flexibilidade**: Suporte a dependências complexas e tipos de dados diversos
+6. **Observabilidade**: Visualizações detalhadas de progresso e estado
+7. **Testabilidade**: Framework facilita criação de testes abrangentes
+
+### ✅ Forças de Design
+
+1. **Factory Pattern**: Injeção de dependências limpa
+2. **Abstract Base Class**: Interface consistente garantida
+3. **Registry Pattern**: Descoberta automática de serviços
+4. **State Pattern**: Persistência transparente
+5. **Decorator Pattern**: Integração LangChain não-intrusiva
+
+## ⚠️ Pontos de Melhoria Identificados
+
+### 🔴 Complexidade Excessiva
+
+#### Problema: Schema.py Monolítico
+- **Issue**: 942 linhas em um único arquivo
+- **Impact**: Difícil manutenção, curva de aprendizado alta
+- **Exemplo**: `ServiceDefinition` tem responsabilidades demais (validação, visualização, dependências, schema generation)
+
+#### Problema: Funcionalidades Sobrepostas
+- **Issue**: Múltiplas formas de fazer a mesma coisa
+- **Impact**: Confusão para desenvolvedores novos
+- **Exemplo**: Substeps podem ser enviados individualmente OU como JSON completo
+
+### 🟡 Documentação e DX (Developer Experience)
+
+#### Problema: Curva de Aprendizado Íngreme
+- **Issue**: Muitos conceitos para absorver simultaneamente
+- **Impact**: Desenvolvedores levam tempo para ser produtivos
+- **Evidência**: Necessidade de arquivo de 942 linhas para um conceito
+
+#### Problema: Exemplos Limitados
+- **Issue**: Poucos exemplos práticos de uso
+- **Impact**: Desenvolvedores precisam "descobrir" como usar
+- **Solução**: Mais exemplos e documentação passo-a-passo
+
+### 🟠 Performance e Escalabilidade
+
+#### Problema: Validação Repetitiva
+- **Issue**: Schema é regenerado a cada chamada
+- **Impact**: Overhead desnecessário em alta frequência
+- **Solução**: Cache de schemas gerados
+
+#### Problema: I/O de Arquivo por Request
+- **Issue**: Estado salvo em arquivo a cada processamento
+- **Impact**: Gargalo em alta concorrência
+- **Solução**: Batching de saves ou cache em memória
+
+## 🚀 Propostas de Melhoria
+
+### 📋 Fase 1: Simplificação Imediata (1-2 semanas)
+
+#### 1.1 Separação de Responsabilidades
+```
+schema/
+├── __init__.py
+├── step_info.py          # StepInfo e ConditionalDependency
+├── service_definition.py # ServiceDefinition (apenas core)
+├── validation.py         # Lógica de validação
+├── visualization.py      # Métodos de visualização
+└── dependency_engine.py  # Sistema de dependências
 ```
 
-## 🏗️ Arquitetura Proposta
-
-### 1. ServiceDefinition Aprimorada com Estado Completo
-
+#### 1.2 Interface Simplificada para Novos Desenvolvedores
 ```python
-class ServiceDefinition(BaseModel):
-    service_name: str
-    description: str
-    steps: List[StepInfo]
+# API Simples para casos básicos
+@simple_service("user_registration")
+class UserRegistrationService:
+    steps = [
+        SimpleStep("email", required=True),
+        SimpleStep("password", required=True),
+        SimpleStep("name", required=True),
+    ]
     
-    def get_state_analysis(self, completed_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Análise completa do estado atual do serviço"""
-        all_steps = {step.name: step for step in self.steps}
-        completed_steps = list(completed_data.keys())
-        available_steps = self.get_available_steps(completed_data)
-        
-        # Classificar steps disponíveis
-        required_available = []
-        optional_available = []
-        for step_name in available_steps:
-            step = all_steps[step_name]
-            if step.required or self._is_conditionally_required(step, completed_data):
-                required_available.append(step_name)
-            else:
-                optional_available.append(step_name)
-        
-        # Steps ainda pendentes (não disponíveis por dependências)
-        pending_steps = []
-        for step in self.steps:
-            if step.name not in completed_steps and step.name not in available_steps:
-                pending_steps.append(step.name)
-        
-        total_steps = len(self.steps)
-        completed_count = len(completed_steps)
-        
-        return {
-            "completed_steps": completed_steps,
-            "available_steps": available_steps,
-            "required_steps": required_available,
-            "optional_steps": optional_available, 
-            "pending_steps": pending_steps,
-            "progress": {
-                "completed": completed_count,
-                "available": len(available_steps),
-                "pending": len(pending_steps),
-                "total": total_steps,
-                "percentage": round((completed_count / total_steps) * 100, 1),
-                "completion_estimate": self._estimate_completion(completed_count, total_steps)
-            }
-        }
+    def validate_email(self, value): 
+        return "@" in value
     
-    def get_contextual_schema(self, completed_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Schema dinâmico baseado no estado atual"""
-        available_steps = self.get_available_steps(completed_data)
-        schema = {"type": "object", "properties": {}}
-        
-        for step_name in available_steps:
-            step_info = self.get_step_info(step_name)
-            step_schema = self._get_step_contextual_schema(step_name, completed_data)
-            step_schema.update({
-                "description": self._get_contextual_description(step_name, completed_data),
-                "required": step_info.required or self._is_conditionally_required(step_info, completed_data)
-            })
-            schema["properties"][step_name] = step_schema
-        
-        return schema
-    
-    def get_state_summary(self, completed_data: Dict[str, Any]) -> str:
-        """Resumo em linguagem natural do estado atual"""
-        analysis = self.get_state_analysis(completed_data)
-        
-        if not completed_data:
-            return f"Iniciando {self.service_name}. Escolha os primeiros campos disponíveis."
-        
-        completed_desc = ", ".join(analysis["completed_steps"])
-        required_desc = ", ".join(analysis["required_steps"]) 
-        
-        summary = f"Concluído: {completed_desc}. "
-        if required_desc:
-            summary += f"Próximos obrigatórios: {required_desc}. "
-        if analysis["optional_steps"]:
-            summary += f"Opcionais disponíveis: {len(analysis['optional_steps'])}. "
-        
-        return summary
-    
-    def get_next_action_suggestion(self, completed_data: Dict[str, Any]) -> str:
-        """Sugestão específica do que fazer a seguir"""
-        analysis = self.get_state_analysis(completed_data)
-        
-        if analysis["required_steps"]:
-            if len(analysis["required_steps"]) == 1:
-                step_name = analysis["required_steps"][0]
-                step_info = self.get_step_info(step_name)
-                return f"Forneça {step_info.description.lower()}" + (f" (ex: {step_info.example})" if step_info.example else "")
-            else:
-                return f"Forneça qualquer um dos campos obrigatórios: {', '.join(analysis['required_steps'])}"
-        elif analysis["optional_steps"]:
-            return f"Todos campos obrigatórios concluídos. Opcionalmente: {', '.join(analysis['optional_steps'])}"
-        else:
-            return "Pronto para finalizar o serviço."
+    def validate_password(self, value):
+        return len(value) >= 8
 ```
 
-### 2. Tool Interface Ultra-Simplificada
+#### 1.3 Documentação Interativa
+- README com exemplos progressivos (simples → complexo)
+- Tutorial passo-a-passo com código executável
+- Referência de API gerada automaticamente
+- Exemplos visuais do sistema de dependências
 
+### 📋 Fase 2: Otimização de Performance (2-3 semanas)
+
+#### 2.1 Sistema de Cache
 ```python
-@tool
-def multi_step_service(service_name: str, payload: Dict[str, str], user_id: str) -> Dict[str, Any]:
-    """
-    Sistema de serviços multi-step com schema dinâmico e estado transparente.
+class ServiceDefinitionCache:
+    """Cache inteligente para schemas e metadados"""
     
-    INTERFACE UNIFICADA: 
-    - ✅ Sempre recebe Dict[str, str] (nunca string, nunca JSON, nunca start)
-    - ✅ Sempre retorna mesmo formato de response (estado + schema + progresso)
-    - ✅ Elimina complexidade de bulk vs individual vs start modes
-    
-    Args:
-        service_name: Nome do serviço (ex: "bank_account")
-        payload: Dict com campos (ex: {"document_type": "CPF", "account_type": "corrente"})
-        user_id: ID do usuário
-    
-    Returns:
-        Estado completo: current_data, available_steps, schema dinâmico, progresso
-    
-    Exemplos:
-        # Início - payload vazio
-        payload = {}
-        
-        # Um campo
-        payload = {"document_type": "CPF"}
-        
-        # Múltiplos campos
-        payload = {"document_number": "12345678901", "account_type": "corrente"}
-    """
+    def get_schema(self, service_name: str, completed_data: Dict) -> Dict:
+        cache_key = f"{service_name}:{hash(tuple(completed_data.keys()))}"
+        return self._cache.get(cache_key) or self._generate_and_cache(...)
 ```
 
-### 3. Response Structure Unificada com Estado Completo
-
+#### 2.2 Estado em Memória (Opcional)
 ```python
-# Todas as respostas seguem este padrão expandido:
-{
-    "status": "ready|progress|completed|error",
-    "service_name": "bank_account",
+class StateManager:
+    """Gerenciador híbrido: memória + persistência"""
     
-    # ESTADO ATUAL - O que já foi coletado
-    "current_data": {
-        "document_type": "CPF",
-        "account_type": "corrente"
-    },
-    
-    # PROGRESSÃO DETALHADA
-    "completed_steps": ["document_type", "account_type"],
-    "available_steps": ["document_number", "personal_name", "initial_deposit"],
-    "pending_steps": ["email"],  # Steps ainda não disponíveis por dependências
-    "optional_steps": ["initial_deposit"],  # Steps opcionais disponíveis
-    "required_steps": ["document_number", "personal_name"],  # Steps obrigatórios disponíveis
-    
-    # SCHEMA DINÂMICO - Apenas para steps disponíveis
-    "next_steps_schema": {
-        "document_number": {
-            "type": "string",
-            "description": "CPF com 11 dígitos (baseado no tipo selecionado)",
-            "pattern": "^[0-9]{11}$",  # Dinâmico baseado em document_type
-            "example": "12345678901",
-            "required": true
-        },
-        "personal_name": {
-            "type": "string", 
-            "description": "Nome completo da pessoa física",
-            "minLength": 2,
-            "required": true
-        },
-        "initial_deposit": {
-            "type": "number",
-            "description": "Depósito inicial obrigatório para conta corrente",
-            "minimum": 100,  # Dinâmico baseado em account_type
-            "required": true  # Mudou para true por causa do account_type
-        }
-    },
-    
-    # VISÃO GERAL DO PROGRESSO
-    "progress": {
-        "completed": 2,
-        "available": 3, 
-        "pending": 1,
-        "total": 6,
-        "percentage": 33.3,
-        "completion_estimate": "2-3 more steps"
-    },
-    
-    # CONTEXTO ADICIONAL
-    "state_summary": "Documento CPF selecionado, conta corrente escolhida. Agora precisa: número do CPF, nome e depósito mínimo.",
-    "next_action_suggestion": "Forneça o número do CPF (11 dígitos) e seu nome completo.",
-    
-    # APENAS SE HOUVER PROBLEMAS
-    "errors": {},
-    "warnings": ["Conta corrente requer depósito mínimo de R$ 100"],
-    
-    # APENAS SE COMPLETED
-    "completion_message": "..."
-}
+    def __init__(self, mode="hybrid"):  # memory, file, hybrid
+        self.memory_cache = {}
+        self.persistence = FilePersistence() if mode != "memory" else None
 ```
 
-## 🚀 Benefícios da Nova Abordagem
+### 📋 Fase 3: Developer Experience (2-3 semanas)
 
-### 1. Experiência do Agente
-- ✅ **Interface unificada**: Sempre `Dict[str, str]` - sem exceções
-- ✅ **Zero complexidade**: Eliminada confusão bulk vs individual vs start
-- ✅ **Estado transparente**: Vê dados coletados + disponíveis + pendentes  
-- ✅ **Schema contextual**: Validações adaptadas ao estado atual
-- ✅ **Progressão visual**: Sabe exatamente quanto falta para completar
+#### 3.1 CLI para Scaffolding
+```bash
+# Geração de novos serviços
+$ services-cli generate --name user_profile --type basic
+$ services-cli generate --name bank_loan --type advanced --dependencies
 
-### 2. Flexibilidade
-- ✅ **Steps paralelos**: Pode fazer document_type e account_type juntos
-- ✅ **Schema adaptativo**: document_number muda baseado em document_type
-- ✅ **Dependências inteligentes**: Mostra apenas o que faz sentido
-- ✅ **Validação dinâmica**: Regras mudam conforme o contexto
+# Validação e testes
+$ services-cli validate src/services/repository/my_service.py
+$ services-cli test --service user_profile --coverage
+```
 
-### 3. Performance
-- ✅ **Menos dados**: Retorna apenas o necessário
-- ✅ **Validação eficiente**: Apenas nos campos enviados
-- ✅ **Cache inteligente**: Schema computado apenas quando muda
-
-## 📋 Implementação Step-by-Step
-
-### Fase 1: Estender ServiceDefinition
-- [ ] Adicionar `get_progressive_schema(completed_data)`
-- [ ] Adicionar `get_next_steps_info(completed_data)`
-- [ ] Implementar schema contextual (ex: CPF vs CNPJ)
-- [ ] Adicionar cálculo de progresso
-
-### Fase 2: Refatorar Tool Interface
-- [ ] Mudar assinatura para sempre receber `Dict[str, str]`
-- [ ] **ELIMINAR** conceitos de `bulk_request`, `start`, `bulk` mode
-- [ ] **REMOVER** lógica condicional bulk vs individual vs step
-- [ ] Implementar processamento unificado: sempre dict → sempre mesmo response
-- [ ] Implementar response structure com estado completo
-
-### Fase 3: Melhorar StepInfo
-- [ ] Adicionar `validation_pattern` dinâmico
-- [ ] Implementar `contextual_schema(current_data)`
-- [ ] Adicionar `enum_values` baseado em estado
-- [ ] Suporte a validações condicionais avançadas
-
-### Fase 4: UX Enhancements
-- [ ] Implementar progress tracking
-- [ ] Adicionar estimativa de conclusão
-- [ ] Melhorar mensagens de erro contextuais
-- [ ] Implementar sugestões de valores
-
-## 🔍 Casos de Uso Detalhados
-
-### Cenário 1: Bank Account Creation - Visibilidade Completa do Estado
-
+#### 3.2 Debugging e Observabilidade
 ```python
-# Step 1: Start - Estado inicial
-payload = {}
-response = {
-    "status": "ready",
-    "service_name": "bank_account",
-    "current_data": {},  # Nada coletado ainda
+class ServiceDebugger:
+    """Ferramentas de debug para desenvolvimento"""
     
-    "completed_steps": [],
-    "available_steps": ["document_type", "account_type"],  # Podem ser feitos em paralelo
-    "pending_steps": ["document_number", "personal_name", "business_name", "email", "initial_deposit"],
-    "required_steps": ["document_type", "account_type"],  # Ambos obrigatórios no início
-    "optional_steps": [],
+    def trace_dependencies(self, service_name: str) -> str:
+        """Visualiza árvore de dependências"""
     
-    "next_steps_schema": {
-        "document_type": {"type": "string", "enum": ["CPF", "CNPJ"], "required": true},
-        "account_type": {"type": "string", "enum": ["corrente", "poupança"], "required": true}
-    },
+    def simulate_flow(self, service_name: str, payloads: List[Dict]) -> List[Dict]:
+        """Simula fluxo completo step-by-step"""
     
-    "progress": {"completed": 0, "available": 2, "pending": 5, "total": 7, "percentage": 0},
-    "state_summary": "Iniciando bank_account. Escolha os primeiros campos disponíveis.",
-    "next_action_suggestion": "Forneça qualquer um dos campos obrigatórios: document_type, account_type"
-}
-
-# Step 2: Document type selected - Agente vê o impacto imediato
-payload = {"document_type": "CPF"}
-response = {
-    "status": "progress",
-    "service_name": "bank_account", 
-    "current_data": {"document_type": "CPF"},  # Estado atual visível
-    
-    "completed_steps": ["document_type"],
-    "available_steps": ["document_number", "personal_name", "account_type"],  # business_name sumiu!
-    "pending_steps": ["email", "initial_deposit"],  # email depende de document_number
-    "required_steps": ["document_number", "personal_name", "account_type"],
-    "optional_steps": [],
-    
-    "next_steps_schema": {
-        "document_number": {
-            "type": "string",
-            "pattern": "^[0-9]{11}$",  # Schema mudou para CPF!
-            "description": "CPF com 11 dígitos (baseado no tipo selecionado)",
-            "example": "12345678901",
-            "required": true
-        },
-        "personal_name": {  # Apareceu porque document_type=CPF
-            "type": "string", 
-            "description": "Nome completo da pessoa física",
-            "minLength": 2,
-            "required": true
-        },
-        "account_type": {"type": "string", "enum": ["corrente", "poupança"], "required": true}
-    },
-    
-    "progress": {"completed": 1, "available": 3, "pending": 2, "total": 6, "percentage": 16.7},
-    "state_summary": "Concluído: document_type. Próximos obrigatórios: document_number, personal_name, account_type.",
-    "next_action_suggestion": "Forneça qualquer um dos campos obrigatórios: document_number, personal_name, account_type",
-    "warnings": []
-}
-
-# Step 3: Multiple fields - O agente vê mudança dinâmica de regras
-payload = {"document_number": "12345678901", "account_type": "corrente"}
-response = {
-    "status": "progress",
-    "service_name": "bank_account",
-    "current_data": {  # Estado completo sempre visível
-        "document_type": "CPF",
-        "document_number": "12345678901", 
-        "account_type": "corrente"
-    },
-    
-    "completed_steps": ["document_type", "document_number", "account_type"],
-    "available_steps": ["personal_name", "initial_deposit", "email"],  # email liberou!
-    "pending_steps": [],  # Todos disponíveis agora
-    "required_steps": ["personal_name", "initial_deposit"],  # initial_deposit virou obrigatório!
-    "optional_steps": ["email"],
-    
-    "next_steps_schema": {
-        "personal_name": {"type": "string", "minLength": 2, "required": true},
-        "initial_deposit": {
-            "type": "number",
-            "minimum": 100,  # Regra dinâmica por conta_type=corrente
-            "description": "Depósito inicial obrigatório para conta corrente",
-            "required": true  # Mudou para obrigatório!
-        },
-        "email": {"type": "string", "format": "email", "required": false}
-    },
-    
-    "progress": {"completed": 3, "available": 3, "pending": 0, "total": 6, "percentage": 50.0},
-    "state_summary": "Concluído: document_type, document_number, account_type. Próximos obrigatórios: personal_name, initial_deposit.",
-    "next_action_suggestion": "Forneça nome completo da pessoa física (ex: João da Silva)",
-    "warnings": ["Conta corrente requer depósito mínimo de R$ 100"]
-}
-
-# Step 4: Finalizando - Agente vê o que falta claramente
-payload = {"personal_name": "João da Silva", "email": "joao@email.com"}
-response = {
-    "status": "progress",
-    "service_name": "bank_account",
-    "current_data": {
-        "document_type": "CPF",
-        "document_number": "12345678901",
-        "account_type": "corrente", 
-        "personal_name": "João da Silva",
-        "email": "joao@email.com"
-    },
-    
-    "completed_steps": ["document_type", "document_number", "account_type", "personal_name", "email"],
-    "available_steps": ["initial_deposit"],  # Só falta 1!
-    "pending_steps": [],
-    "required_steps": ["initial_deposit"],
-    "optional_steps": [],
-    
-    "next_steps_schema": {
-        "initial_deposit": {
-            "type": "number",
-            "minimum": 100,
-            "description": "Depósito inicial obrigatório para conta corrente",
-            "required": true
-        }
-    },
-    
-    "progress": {"completed": 5, "available": 1, "pending": 0, "total": 6, "percentage": 83.3},
-    "state_summary": "Concluído: document_type, document_number, account_type, personal_name, email. Próximos obrigatórios: initial_deposit.",
-    "next_action_suggestion": "Forneça depósito inicial obrigatório para conta corrente (mínimo R$ 100)",
-    "warnings": []
-}
+    def validate_service(self, service_class: Type[BaseService]) -> List[str]:
+        """Valida configuração do serviço"""
 ```
 
-### Cenário 2: Schema Contextual Avançado
+### 📋 Fase 4: Funcionalidades Avançadas (3-4 semanas)
 
+#### 4.1 Sistema de Plugins
 ```python
-class BankAccountService(BaseService):
-    def get_contextual_schema(self, step_name: str, current_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Schema que muda baseado no contexto atual"""
-        if step_name == "document_number":
-            doc_type = current_data.get("document_type")
-            if doc_type == "CPF":
-                return {"type": "string", "pattern": "^[0-9]{11}$", "description": "CPF com 11 dígitos"}
-            elif doc_type == "CNPJ":
-                return {"type": "string", "pattern": "^[0-9]{14}$", "description": "CNPJ com 14 dígitos"}
-        
-        if step_name == "initial_deposit":
-            account_type = current_data.get("account_type")
-            if account_type == "corrente":
-                return {"type": "number", "minimum": 100, "description": "Mínimo R$ 100"}
-            else:
-                return {"type": "number", "minimum": 0, "description": "Valor opcional"}
+class ServicePlugin:
+    """Plugin system para extensibilidade"""
+    
+    def pre_validate(self, step: str, payload: str, context: Dict) -> Tuple[str, Dict]:
+        """Hook antes da validação"""
+    
+    def post_process(self, step: str, result: Dict, context: Dict) -> Dict:
+        """Hook após processamento"""
+
+# Exemplos de plugins
+AuditPlugin()          # Log de todas as ações
+MetricsPlugin()        # Coleta de métricas
+NotificationPlugin()   # Notificações de eventos
 ```
 
-## 🎯 Resultado Final Esperado
-
-### API Limpa e Intuitiva
+#### 4.2 Validação Avançada
 ```python
-# Sempre a mesma interface
-service_tool.invoke({
-    "service_name": "bank_account",
-    "payload": {"document_type": "CPF", "account_type": "corrente"},
-    "user_id": "user123"
-})
-
-# Response sempre consistente
-{
-    "status": "progress",
-    "available_steps": ["document_number", "personal_name"],
-    "next_steps_schema": {...},  # Apenas o que pode ser feito agora
-    "progress": {"completed": 2, "total": 6}
-}
+class AdvancedValidator:
+    """Validador com regras declarativas"""
+    
+    rules = [
+        Rule("cpf").matches(CPF_REGEX).custom(validate_cpf_algorithm),
+        Rule("email").email().not_disposable(),
+        Rule("password").min_length(8).has_uppercase().has_number(),
+        Rule("age").when("country == 'BR'").min_value(18),
+    ]
 ```
 
-### Vantagens para o Agente
-1. **Zero ambiguidade**: Sempre sabe exatamente o que pode fazer
-2. **Context-aware**: Schema muda baseado nas escolhas anteriores  
-3. **Eficiência**: Pode preencher múltiplos campos de uma vez
-4. **Feedback claro**: Progresso visual e próximos passos óbvios
+## 🎯 Estratégia de Migração
 
----
+### Princípios Orientadores
+1. **Zero Breaking Changes**: Manter compatibilidade total com código existente
+2. **Opt-in Improvements**: Melhorias disponíveis gradualmente
+3. **Backward Compatibility**: APIs antigas continuam funcionando
+4. **Progressive Enhancement**: Funcionalidades antigas podem ser melhoradas incrementalmente
 
-**Próximo Passo**: Validar este plano e começar a implementação pela Fase 1.
+### Cronograma Sugerido
+
+| Fase | Duração | Prioridade | Impacto |
+|------|---------|-----------|---------|
+| Separação de Responsabilidades | 1-2 sem | Alta | Manutenibilidade |
+| Interface Simplificada | 1 sem | Alta | Developer Experience |
+| Documentação | 1 sem | Alta | Adoção |
+| Sistema de Cache | 2 sem | Média | Performance |
+| CLI e Debugging | 2 sem | Média | Produtividade |
+| Sistema de Plugins | 3 sem | Baixa | Extensibilidade |
+
+## 🏁 Conclusão
+
+O framework de serviços multi-step é uma **arquitetura sólida e bem pensada** que resolve problemas complexos de forma elegante. Suas funcionalidades avançadas (dependências condicionais, substeps, visualização) são impressionantes e úteis.
+
+### Pontos Críticos para Melhoria:
+1. **Simplificação da entrada**: API mais simples para casos básicos
+2. **Documentação**: Exemplos progressivos e tutoriais interativos  
+3. **Separação de responsabilidades**: Dividir schema.py em módulos menores
+4. **Performance**: Cache de schemas e otimização de I/O
+
+### Recomendação Final:
+O framework está **pronto para uso em produção**, mas beneficiaria significativamente das melhorias propostas para:
+- Reduzir tempo de onboarding de novos desenvolvedores
+- Facilitar manutenção a longo prazo  
+- Melhorar performance em cenários de alta carga
+- Expandir adoção através de melhor Developer Experience
+
+A estratégia de migração proposta mantém toda funcionalidade existente enquanto introduz melhorias de forma incremental e não-intrusiva.
