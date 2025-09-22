@@ -233,17 +233,17 @@ class ResponseGenerator:
         if len(pending_steps) == 1 and not pending_steps[0].substeps:
             step = pending_steps[0]
             
+            # V3: Use the new get_json_schema method for better schema handling
+            step_schema = step.get_json_schema()
+            
             # The payload schema properties should be keyed by the full step name
             properties = {
-                step.name: {
-                    "type": "string" # Assuming string for simplicity, schema could be copied
-                }
-                for prop_name in step.payload_schema.get("properties", {}).keys()
+                step.name: step_schema.get("properties", {}).get(step.name, {"type": "string"})
             }
 
             return NextStepInfo(
                 step_name=step.name,
-                description=step.description.format(**self.service_state.get("data", {})),
+                description=step.description,
                 payload_schema={
                     "type": "object",
                     "properties": properties,
@@ -276,19 +276,19 @@ class ResponseGenerator:
             payload_schema={"type": "object", "properties": {}, "required": []}
         )
 
-        data_context = self.service_state.get("data", {})
         for step in pending_steps:
             # Add child substep info only if the parent is a true container
             if parent_step_info.name != step.name:
                 child_next_step = NextStepInfo(
                     step_name=step.name,
-                    description=step.description.format(**data_context),
-                    payload_schema=step.payload_schema
+                    description=step.description,
+                    payload_schema=step.get_json_schema()
                 )
                 parent_next_step.substeps.append(child_next_step)
 
-            # Consolidate schema into parent
-            for prop_name, prop_schema in step.payload_schema.get("properties", {}).items():
+            # V3: Consolidate schema into parent using new method
+            step_schema = step.get_json_schema()
+            for prop_name, prop_schema in step_schema.get("properties", {}).items():
                 # Use the full step name as the key in the parent schema
                 parent_next_step.payload_schema["properties"][step.name] = prop_schema
                 if step.required:
