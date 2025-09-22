@@ -18,23 +18,26 @@ class BankAccountServiceV2(BaseService):
     def _check_account_exists(self, state: Dict[str, Any]) -> ExecutionResult:
         """Action that decides what happens next based on account existence."""
         data = state.get("data", {})
-        # Handle both nested (user_info: {email: ...}) and flat (user_info.email: ...) formats
-        user_info = data.get("user_info", {})
-        user_email = user_info.get("email") or data.get("user_info.email")
         
-        # Simulate existing user check
-        if user_email == "existing@example.com":
+        # Check if user already has an account (from previous service execution)
+        existing_account_number = data.get("account_number")
+        existing_deposits = data.get("deposits", [])
+        
+        if existing_account_number:
+            # User already has an account - go straight to operations!
             return ExecutionResult(
                 success=True,
                 outcome="ACCOUNT_EXISTS",
                 updated_data={
-                    "account_details": {"account_number": 123456789},
-                    "deposits": [250.0, 100.0],  # Existing deposits
+                    # Preserve existing account data
+                    "account_number": existing_account_number,
+                    "deposits": existing_deposits,
                 },
                 # Action decides: go straight to account operations!
                 next_steps=["ask_action"]
             )
         else:
+            # New user - need to create account first
             return ExecutionResult(
                 success=True,
                 outcome="ACCOUNT_NOT_FOUND",
@@ -46,16 +49,12 @@ class BankAccountServiceV2(BaseService):
     def _create_account(self, state: Dict[str, Any]) -> ExecutionResult:
         """Creates account and decides what's next."""
         account_number = random.randint(100000000, 999999999)
-        account_type = state.get("data", {}).get("account_type", "checking")
         
         return ExecutionResult(
             success=True,
             outcome="ACCOUNT_CREATED",
             updated_data={
-                "account_details": {
-                    "account_number": account_number,
-                    "account_type": account_type
-                },
+                "account_number": account_number,
                 "deposits": [],  # Start with empty deposits
             },
             # Action decides: account created, now offer operations!
@@ -64,7 +63,7 @@ class BankAccountServiceV2(BaseService):
 
     def _process_action_choice(self, state: Dict[str, Any]) -> ExecutionResult:
         """Processes user's choice and decides next step."""
-        choice = state.get("data", {}).get("ask_action", {}).get("action")
+        choice = state.get("data", {}).get("ask_action")
         
         if choice == "deposit":
             return ExecutionResult(
@@ -74,11 +73,17 @@ class BankAccountServiceV2(BaseService):
                 next_steps=["deposit_amount"]
             )
         elif choice == "balance":
+            # Execute balance calculation directly here since no more input needed
+            deposits = state.get("data", {}).get("deposits", [])
+            balance = sum(deposits)
+            
             return ExecutionResult(
                 success=True,
-                outcome="BALANCE_CHOSEN",
-                # Action decides: calculate balance now!
-                next_steps=["get_balance"]
+                outcome="BALANCE_CALCULATED",
+                updated_data={"balance": balance},
+                # Action decides: we're done!
+                is_complete=True,
+                completion_message=f"Your current balance is ${balance}."
             )
         else:
             return ExecutionResult(
@@ -103,19 +108,6 @@ class BankAccountServiceV2(BaseService):
             completion_message=f"Deposit of ${new_deposit_amount} successful! Your new balance is ${new_balance}."
         )
 
-    def _get_balance(self, state: Dict[str, Any]) -> ExecutionResult:
-        """Calculates balance and completes the service."""
-        deposits = state.get("data", {}).get("deposits", [])
-        balance = sum(deposits)
-        
-        return ExecutionResult(
-            success=True,
-            outcome="BALANCE_CALCULATED",
-            updated_data={"balance": balance},
-            # Action decides: we're done!
-            is_complete=True,
-            completion_message=f"Your current balance is ${balance}."
-        )
 
     # --- Service Definition (Much cleaner!) ---
 
@@ -134,7 +126,7 @@ class BankAccountServiceV2(BaseService):
                             description="Please provide your full name",
                             payload_schema={
                                 "type": "object",
-                                "properties": {"name": {"type": "string"}},
+                                "properties": {"user_info.name": {"type": "string"}},
                             },
                         ),
                         StepInfo(
@@ -142,7 +134,7 @@ class BankAccountServiceV2(BaseService):
                             description="What is your email address?",
                             payload_schema={
                                 "type": "object",
-                                "properties": {"email": {"type": "string"}},
+                                "properties": {"user_info.email": {"type": "string"}},
                             },
                         ),
                     ],
@@ -184,14 +176,20 @@ class BankAccountServiceV2(BaseService):
                     payload_schema={
                         "type": "object",
                         "properties": {
-                            "action": {
+                            "ask_action": {
                                 "type": "string",
                                 "enum": ["deposit", "balance"],
                             }
                         },
                     },
                     depends_on=["check_account"],  # Only available after account check
+                ),
+                
+                # 5b. Process Action Choice (Processes the user's choice)
+                StepInfo(
+                    name="process_action_choice",
                     action=self._process_action_choice,  # Action processes choice
+                    depends_on=["ask_action"],  # Only available after action is chosen
                 ),
                 
                 # 6. Deposit Amount (Only if deposit chosen)
@@ -202,15 +200,9 @@ class BankAccountServiceV2(BaseService):
                         "type": "object",
                         "properties": {"deposit_amount": {"type": "number"}},
                     },
-                    depends_on=["ask_action"],  # Only available after action choice
+                    depends_on=["process_action_choice"],  # Only available after action choice processed
                     action=self._make_deposit,  # Action completes deposit
                 ),
                 
-                # 7. Get Balance (Only if balance chosen)
-                StepInfo(
-                    name="get_balance",
-                    depends_on=["ask_action"],  # Only available after action choice  
-                    action=self._get_balance,  # Action completes balance check
-                ),
             ],
         )

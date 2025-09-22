@@ -126,8 +126,15 @@ class ServiceOrchestrator:
         is_self_complete = (
             state_manager.get(f"_internal.completed_steps.{step.name}", service_state_data) is True
         )
-        if is_self_complete:
-            return False
+        
+        # Special case: If step has an action, check if the action has been executed (has outcome)
+        if step.action:
+            action_executed = state_manager.get(f"_internal.outcomes.{step.name}", service_state_data) is not None
+            if action_executed:
+                return False  # Action already executed, step is truly complete
+            # If action not executed, continue to check dependencies even if data exists
+        elif is_self_complete:
+            return False  # Data-only step that's complete
 
         all_deps_met = all(
             self._is_dependency_met(dep_name, state_manager, service_state_data)
@@ -329,6 +336,10 @@ class ServiceOrchestrator:
                         True,
                         service_state,
                     )
+                    
+                    # If action marked service as complete, break the loop
+                    if result.is_complete:
+                        break
                 except Exception as e:
                     error_message = f"Unexpected error in action '{next_step.action.__name__}': {e}"
                     break

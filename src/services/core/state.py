@@ -61,14 +61,28 @@ class ServiceState:
         keys = key.split('.')
         current_level = service_state
         for k in keys[:-1]:
+            # If the current level is not a dict, we need to replace it with a dict
+            if not isinstance(current_level, dict):
+                # This should not happen in normal usage, but let's handle it gracefully
+                raise ValueError(f"Cannot navigate through non-dict value at key '{k}'")
+            
+            # If the key exists and is not a dict, replace it with a dict
+            if k in current_level and not isinstance(current_level[k], dict):
+                current_level[k] = {}
+            
             current_level = current_level.setdefault(k, {})
         
         # Handle the case where the final key might represent a merge
         final_key = keys[-1]
-        if isinstance(current_level.get(final_key), dict) and isinstance(value, dict):
+        if (isinstance(current_level, dict) and 
+            isinstance(current_level.get(final_key), dict) and 
+            isinstance(value, dict)):
             current_level[final_key].update(value)
         else:
-            current_level[final_key] = value
+            if isinstance(current_level, dict):
+                current_level[final_key] = value
+            else:
+                raise ValueError(f"Cannot set key '{final_key}' on non-dict value")
 
     def merge_data(self, data: Dict[str, Any], service_state: Dict[str, Any]):
         """

@@ -10,13 +10,15 @@ def main():
     print("Sistema de serviços multi-step com schema dinâmico e estado transparente.\n")
 
     # user_id = f"test_user_{int(time.time())}"
-    user_id = "agent_fresh1"
+    # user_id = f"agent_{int(time.time())}"
+    user_id = "agent2"
     service_name = "bank_account_opening_v2"
     partial_payload = {
-        # "user_info.name": "Jane New User",
-        # "user_info.email": "jane@newuser.com",
+        "user_info.name": "Jane New User",
+        "user_info.email": "jane@newuser.com",
         # "account_type": "savings",
-        # "initial_deposit": 500,
+        # "ask_action": "balance",
+        # "deposit_amount": 500.00,
     }
     response = multi_step_service.invoke(
         {
