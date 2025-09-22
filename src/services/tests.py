@@ -592,12 +592,22 @@ def test_bank_account_advanced():
     assert result["service_name"] == "bank_account_advanced"
     assert "user_info" in result["available_steps"]
     
-    # 2. Teste user_info com JSON estruturado
+    # 2. Teste user_info com JSON estruturado (nested structure)
     user_info = {
         "name": "João Silva",
-        "document_number": "12345678901",
-        "email": "test@example.com", 
-        "document_type": "CPF"
+        "document": {
+            "number": "12345678901",
+            "type": "CPF"
+        },
+        "contact": {
+            "email": "test@example.com",
+            "phone": "11999999999"
+        },
+        "address": {
+            "street": "Rua das Flores",
+            "number": 123,
+            "district": "Centro"
+        }
     }
     
     result = multi_step_service.invoke({
@@ -610,33 +620,42 @@ def test_bank_account_advanced():
     assert "user_info" in result["completed_steps"]
     assert "account_info" in result["available_steps"]
     
-    # 3. Múltiplos steps JSON de uma vez
+    # 3. Adicionar account_info para completar serviço obrigatório
     account_info = {
         "account_type": "corrente",
         "bank_name": "Banco do Brasil", 
         "agency_number": "1234",
         "account_number": "56789-0"
     }
-    address = {"street": "Rua A", "number": 123}
-    contact = {"email": "test@example.com", "phone": "1234567890"}
     
     result = multi_step_service.invoke({
         "service_name": "bank_account_advanced",
-        "payload": {
-            "account_info": account_info,
-            "address": address,
-            "contact": contact
-        },
+        "payload": {"account_info": account_info},
         "user_id": "advanced_test"
     })
-    print_result("Múltiplos steps JSON processados")
+    print_result("Account_info JSON processado")
     assert result["status"] == "completed"
-    assert len(result["current_data"]) == 4  # user_info + account_info + address + contact
+    assert len(result["current_data"]) == 2  # user_info + account_info
+    assert "user_info" in result["current_data"]
+    assert "account_info" in result["current_data"]
+    assert "completion_message" in result
     
     # 4. Teste deposits opcionais
     setup_test_environment()  # Reset environment
     
     # Completar tudo incluindo deposits
+    user_info_complete = {
+        "name": "Carlos Silva",
+        "document": {"number": "11122233344", "type": "CPF"},
+        "contact": {"email": "carlos@test.com", "phone": "11888888888"},
+        "address": {"street": "Av. Brasil", "number": 500, "district": "Centro"}
+    }
+    account_info_complete = {
+        "account_type": "corrente",
+        "bank_name": "Banco do Brasil", 
+        "agency_number": "1234",
+        "account_number": "56789-0"
+    }
     deposits = [
         {"amount": 1000.0, "date": "2025-09-19T11:57:13.205906"},
         {"amount": 500.0, "date": "2025-09-19T11:59:13.205906"}
@@ -645,18 +664,18 @@ def test_bank_account_advanced():
     result = multi_step_service.invoke({
         "service_name": "bank_account_advanced",
         "payload": {
-            "user_info": user_info,
-            "account_info": account_info,
-            "address": address,
-            "contact": contact,
+            "user_info": user_info_complete,
+            "account_info": account_info_complete,
             "deposits": deposits
         },
         "user_id": "advanced_deposits_test"
     })
     print_result("Todos os steps incluindo deposits aceitos")
     assert result["status"] == "completed"
-    assert len(result["current_data"]) == 5  # Todos os 5 steps
+    assert len(result["current_data"]) == 3  # user_info + account_info + deposits
     assert "deposits" in result["current_data"]
+    assert isinstance(result["current_data"]["deposits"], list)
+    assert len(result["current_data"]["deposits"]) == 2
     
     # 5. Teste validação de JSON inválido
     result = multi_step_service.invoke({

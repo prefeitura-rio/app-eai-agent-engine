@@ -4,7 +4,7 @@ Demonstra capacidades de processamento de JSON estruturado e dependências avan�
 """
 
 import json
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, List
 from datetime import datetime
 
 from src.services.base_service import BaseService
@@ -53,46 +53,185 @@ class BankAccountAdvancedService(BaseService):
             service_name=self.service_name,
             description="Hybrid bank account service with substeps for user_info and append-mode for deposits",
             steps=[
-                # User Info - Step with substeps
+                # User Info - Step with infinite nested substeps
                 StepInfo(
                     name="user_info",
-                    description="Informações completas do usuário (JSON final, mas com substeps)",
+                    description="Informações completas do usuário com nesting infinito",
                     payload_example={
                         "name": "João Silva",
-                        "document_number": "12345678901",
-                        "email": "test@example.com",
-                        "document_type": "CPF",
+                        "document": {
+                            "number": "12345678901",
+                            "type": "CPF"
+                        },
+                        "contact": {
+                            "email": "test@example.com",
+                            "phone": "11999999999"
+                        },
+                        "address": {
+                            "street": "Rua das Flores",
+                            "number": 123,
+                            "district": "Centro",
+                            "coordinates": {
+                                "latitude": -23.5505,
+                                "longitude": -46.6333,
+                                "precision": {
+                                    "level": "high",
+                                    "meters": 5
+                                }
+                            }
+                        }
                     },
                     required=True,
-                    data_type="dict",
                     substeps=[
                         StepInfo(
                             name="name",
                             description="Nome completo do usuário",
                             payload_example={"name": "João Silva"},
                             required=True,
-                            data_type="str",
                         ),
                         StepInfo(
-                            name="document_number",
-                            description="Número do documento (CPF ou CNPJ)",
-                            payload_example={"document_number": "12345678901"},
+                            name="document",
+                            description="Informações do documento",
+                            payload_example={
+                                "document": {
+                                    "number": "12345678901",
+                                    "type": "CPF"
+                                }
+                            },
                             required=True,
-                            data_type="str",
+                            substeps=[
+                                StepInfo(
+                                    name="number",
+                                    description="Número do documento",
+                                    payload_example={"number": "12345678901"},
+                                    required=True,
+                                ),
+                                StepInfo(
+                                    name="type",
+                                    description="Tipo do documento (CPF/CNPJ)",
+                                    payload_example={"type": "CPF"},
+                                    required=True,
+                                ),
+                            ],
                         ),
                         StepInfo(
-                            name="email",
-                            description="E-mail do usuário",
-                            payload_example={"email": "test@example.com"},
+                            name="contact",
+                            description="Informações de contato",
+                            payload_example={
+                                "contact": {
+                                    "email": "test@example.com",
+                                    "phone": "11999999999"
+                                }
+                            },
                             required=True,
-                            data_type="str",
+                            substeps=[
+                                StepInfo(
+                                    name="email",
+                                    description="E-mail principal",
+                                    payload_example={"email": "test@example.com"},
+                                    required=True,
+                                ),
+                                StepInfo(
+                                    name="phone",
+                                    description="Telefone principal",
+                                    payload_example={"phone": "11999999999"},
+                                    required=False,
+                                ),
+                            ],
                         ),
                         StepInfo(
-                            name="document_type",
-                            description="Tipo de documento (CPF ou CNPJ)",
-                            payload_example={"document_type": "CPF"},
+                            name="address",
+                            description="Endereço completo com coordenadas",
+                            payload_example={
+                                "address": {
+                                    "street": "Rua das Flores",
+                                    "number": 123,
+                                    "district": "Centro",
+                                    "coordinates": {
+                                        "latitude": -23.5505,
+                                        "longitude": -46.6333,
+                                        "precision": {
+                                            "level": "high",
+                                            "meters": 5
+                                        }
+                                    }
+                                }
+                            },
                             required=True,
-                            data_type="str",
+                            substeps=[
+                                StepInfo(
+                                    name="street",
+                                    description="Nome da rua",
+                                    payload_example={"street": "Rua das Flores"},
+                                    required=True,
+                                ),
+                                StepInfo(
+                                    name="number",
+                                    description="Número da residência",
+                                    payload_example={"number": 123},
+                                    required=True,
+                                ),
+                                StepInfo(
+                                    name="district",
+                                    description="Bairro",
+                                    payload_example={"district": "Centro"},
+                                    required=False,
+                                ),
+                                StepInfo(
+                                    name="coordinates",
+                                    description="Coordenadas geográficas com precisão",
+                                    payload_example={
+                                        "coordinates": {
+                                            "latitude": -23.5505,
+                                            "longitude": -46.6333,
+                                            "precision": {
+                                                "level": "high",
+                                                "meters": 5
+                                            }
+                                        }
+                                    },
+                                    required=False,
+                                    substeps=[
+                                        StepInfo(
+                                            name="latitude",
+                                            description="Latitude (decimal)",
+                                            payload_example={"latitude": -23.5505},
+                                            required=True,
+                                        ),
+                                        StepInfo(
+                                            name="longitude",
+                                            description="Longitude (decimal)",
+                                            payload_example={"longitude": -46.6333},
+                                            required=True,
+                                        ),
+                                        StepInfo(
+                                            name="precision",
+                                            description="Informações de precisão da coordenada",
+                                            payload_example={
+                                                "precision": {
+                                                    "level": "high",
+                                                    "meters": 5
+                                                }
+                                            },
+                                            required=False,
+                                            substeps=[
+                                                StepInfo(
+                                                    name="level",
+                                                    description="Nível de precisão (low/medium/high)",
+                                                    payload_example={"level": "high"},
+                                                    required=True,
+                                                ),
+                                                StepInfo(
+                                                    name="meters",
+                                                    description="Precisão em metros",
+                                                    payload_example={"meters": 5},
+                                                    required=False,
+                                                ),
+                                            ],
+                                        ),
+                                    ],
+                                ),
+                            ],
                         ),
                     ],
                 ),
@@ -109,27 +248,6 @@ class BankAccountAdvancedService(BaseService):
                         }
                     },
                     required=True,
-                    data_type="dict",
-                    depends_on=["user_info"],
-                ),
-                # Address Group (mantém JSON simples)
-                StepInfo(
-                    name="address",
-                    description="Endereço completo em formato JSON",
-                    payload_example={"address": {"street": "Rua A", "number": 123}},
-                    required=True,
-                    data_type="dict",
-                    depends_on=["user_info"],
-                ),
-                # Contact Group (mantém JSON simples)
-                StepInfo(
-                    name="contact",
-                    description="Informações de contato em formato JSON",
-                    payload_example={
-                        "contact": {"email": "test@example.com", "phone": "1234567890"}
-                    },
-                    required=True,
-                    data_type="dict",
                     depends_on=["user_info"],
                 ),
                 # Deposits - Array step (append mode automático)
@@ -142,19 +260,15 @@ class BankAccountAdvancedService(BaseService):
                         ]
                     },
                     required=False,
-                    data_type="list_dict",
-                    depends_on=["account_info", "address", "contact"],
+                    depends_on=["account_info"],
                 ),
             ],
         )
 
     def execute_step(self, step: str, payload: str) -> Tuple[bool, str]:
         """
-        Valida e processa cada step com detecção automática baseada em data_type.
-        Suporta substeps individuais (user_info_name, user_info_email, etc.)
-        - data_type="dict": salva JSON como dicionário
-        - data_type="list_dict": detecção automática de append em arrays
-        - data_type="string": salva como string (default)
+        Valida e processa cada step com detecção automática baseada no payload_example.
+        Suporta substeps infinitos com dot notation.
         """
         payload = payload.strip()
 
@@ -164,35 +278,37 @@ class BankAccountAdvancedService(BaseService):
 
         # Se é um step principal válido, processar como tal
         if step_info:
-            pass  # Continue with main step logic
-        # Se não é step principal e tem underscore, pode ser substep
-        elif "_" in step:
-            return self._handle_substep(step, payload)
+            # Detectar tipo baseado no payload_example
+            if step_info.payload_example:
+                # Verificar o tipo do payload_example como um todo
+                if isinstance(step_info.payload_example, dict):
+                    # Verificar se é um dict com array como valor principal
+                    values = list(step_info.payload_example.values())
+                    if len(values) == 1 and isinstance(values[0], list):
+                        # Modo append automático para listas de objetos
+                        return self._handle_array_step(step, payload)
+                    else:
+                        # JSON como dicionário
+                        return self._handle_dict_step(step, payload)
+                elif isinstance(step_info.payload_example, list):
+                    # Lista direta
+                    return self._handle_array_step(step, payload)
+                else:
+                    # String simples
+                    return self._handle_string_step(step, payload)
+            else:
+                # Default para string se não tem payload_example
+                return self._handle_string_step(step, payload)
+                
+        # Se não é step principal, pode ser substep com dot notation
         else:
-            return False, f"Step '{step}' não reconhecido"
-
-        # Processar baseado no data_type
-        if step_info.data_type == "list_dict":
-            # Modo append automático para listas de objetos
-            return self._handle_array_step(step, payload)
-
-        elif step_info.data_type == "dict":
-            # JSON como dicionário
-            return self._handle_dict_step(step, payload)
-
-        elif step_info.data_type == "str":
-            # String simples
-            return self._handle_string_step(step, payload)
-
-        else:
-            return (
-                False,
-                f"data_type '{step_info.data_type}' não suportado para step '{step}'",
-            )
+            return self._handle_nested_substep(step, payload)
+            
+        return False, f"Step '{step}' não reconhecido"
 
     def _handle_array_step(self, step: str, payload: str) -> Tuple[bool, str]:
         """
-        Manipula steps com data_type="list_dict" com detecção automática de append.
+        Manipula steps com array (detectado pelo payload_example) com append automático.
         Se o step já existe, faz append. Caso contrário, inicializa a lista.
         """
         try:
@@ -231,7 +347,7 @@ class BankAccountAdvancedService(BaseService):
         else:
             return False, f"{step} deve ser um objeto JSON ou array de objetos"
 
-    def _handle_substep(self, substep_key: str, payload: str) -> Tuple[bool, str]:
+    def _handle_nested_substep(self, substep_key: str, payload: str) -> Tuple[bool, str]:
         """
         Manipula substeps individuais (ex: user_info_name, user_info_email).
         Acumula os dados e monta o JSON final quando todos estão completos.
@@ -243,6 +359,7 @@ class BankAccountAdvancedService(BaseService):
         main_step = None
         substep_name = None
 
+        # Primeiro, verificar formato antigo: user_info_name
         for step_info in definition.steps:
             if step_info.substeps and substep_key.startswith(step_info.name + "_"):
                 main_step = step_info.name
@@ -251,8 +368,19 @@ class BankAccountAdvancedService(BaseService):
                 ]  # Remove "step_name_"
                 break
 
+        # Se não encontrou, verificar se é um substep direto (formato novo)
+        if not main_step:
+            for step_info in definition.steps:
+                if step_info.substeps:
+                    # Verificar se substep_key é um substep direto deste step
+                    substep_found = step_info.find_step_by_path(substep_key)
+                    if substep_found:
+                        main_step = step_info.name
+                        substep_name = substep_key
+                        break
+
         if not main_step or not substep_name:
-            return False, f"Formato de substep inválido: {substep_key}"
+            return False, f"Substep '{substep_key}' não encontrado em nenhum step principal"
 
         # Verificar se o step principal existe e tem substeps
         definition = self.get_service_definition()
@@ -260,46 +388,126 @@ class BankAccountAdvancedService(BaseService):
         if not step_info or not step_info.substeps:
             return False, f"Step '{main_step}' não tem substeps"
 
-        # Verificar se o substep existe
-        substep_info = None
-        for sub in step_info.substeps:
-            if sub.name == substep_name:
-                substep_info = sub
-                break
+        # Verificar se o substep existe (suporta dot notation)
+        if "." in substep_name:
+            # Dot notation - usar find_step_by_path
+            substep_info = step_info.find_step_by_path(substep_name)
+        else:
+            # Substep direto
+            substep_info = None
+            for sub in step_info.substeps:
+                if sub.name == substep_name:
+                    substep_info = sub
+                    break
 
         if not substep_info:
             return False, f"Substep '{substep_name}' não encontrado em '{main_step}'"
 
-        # Validar o valor do substep baseado no data_type
-        if substep_info.data_type == "str":
-            if not payload or not payload.strip():
-                return False, f"{substep_name} não pode estar vazio"
+        # Validar o valor do substep
+        if not payload or not payload.strip():
+            return False, f"{substep_name} não pode estar vazio"
 
-            # Validações específicas para cada substep
-            is_valid, error_msg = self._validate_substep_value(
-                main_step, substep_name, payload.strip()
-            )
-            if not is_valid:
-                return False, error_msg
+        # Validações específicas para cada substep
+        is_valid, error_msg = self._validate_substep_value(
+            main_step, substep_name, payload.strip()
+        )
+        if not is_valid:
+            return False, error_msg
 
-        # Inicializar o step principal como dict se não existir
-        if main_step not in self.data:
-            self.data[main_step] = {}
+        # Inicializar estrutura de dados temporária para substeps
+        temp_key = f"__{main_step}_substeps"
+        if temp_key not in self.data:
+            self.data[temp_key] = {}
 
-        # Salvar o substep diretamente no step principal
-        self.data[main_step][substep_name] = payload.strip()
+        # Salvar o substep usando dot notation se necessário
+        self.data[temp_key][substep_name] = payload.strip()
 
         # Verificar se todos os substeps obrigatórios estão completos
-        required_substeps = [sub.name for sub in step_info.substeps if sub.required]
-        completed_substeps = self.data[main_step]
+        required_paths = self._get_all_required_paths(step_info)
+        completed_paths = set(self.data[temp_key].keys())
 
-        # Se não tem todos os substeps obrigatórios, o step ainda não está "completo"
-        # mas os dados estão sendo salvos de forma limpa
-        if not all(sub in completed_substeps for sub in required_substeps):
-            # Step parcialmente completo - dados salvos de forma limpa no formato final
-            pass
+        if all(req_path in completed_paths for req_path in required_paths):
+            # Todos obrigatórios completos - montar estrutura nested final
+            nested_data = self._build_nested_structure(self.data[temp_key], step_info)
+
+            # Validar estrutura final se necessário
+            if main_step == "user_info":
+                json_str = json.dumps(nested_data, ensure_ascii=False)
+                is_valid, error_msg = self._validate_user_info(json_str)
+                if not is_valid:
+                    return False, error_msg
+
+            # Salvar estrutura final e limpar temporários
+            self.data[main_step] = nested_data
+            del self.data[temp_key]
 
         return True, ""
+
+    def _get_all_required_paths(self, step_info: StepInfo, prefix: str = "") -> List[str]:
+        """Obter todos os paths obrigatórios recursivamente (apenas leaf nodes)"""
+        required_paths = []
+
+        if step_info.substeps:
+            for substep in step_info.substeps:
+                current_path = f"{prefix}.{substep.name}" if prefix else substep.name
+
+                if substep.required:
+                    # Se tem substeps, não adicionar este path, apenas os leaf nodes
+                    if substep.substeps:
+                        # Recursivamente para sub-substeps
+                        required_paths.extend(
+                            self._get_all_required_paths(substep, current_path)
+                        )
+                    else:
+                        # É um leaf node - adicionar
+                        required_paths.append(current_path)
+
+        return required_paths
+
+    def _build_nested_structure(self, flat_data: Dict[str, str], step_info: StepInfo) -> Dict[str, Any]:
+        """Constrói estrutura nested a partir de dados flat com dot notation"""
+        result = {}
+
+        for path, value in flat_data.items():
+            parts = path.split(".")
+            current = result
+
+            # Navegar até o nível correto
+            for part in parts[:-1]:
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+
+            # Definir valor final, convertendo tipo se necessário
+            final_value = self._convert_value_type(value, path, step_info)
+            current[parts[-1]] = final_value
+
+        return result
+
+    def _convert_value_type(self, value: str, path: str, step_info: StepInfo) -> Any:
+        """Converte valor baseado no payload_example do substep"""
+        # Encontrar o substep correspondente ao path para verificar o tipo esperado
+        substep_info = step_info.find_step_by_path(path)
+
+        if substep_info and substep_info.payload_example:
+            example_value = list(substep_info.payload_example.values())[0]
+
+            # Tentar converter para o tipo do exemplo
+            if isinstance(example_value, int):
+                try:
+                    return int(value)
+                except ValueError:
+                    pass
+            elif isinstance(example_value, float):
+                try:
+                    return float(value)
+                except ValueError:
+                    pass
+            elif isinstance(example_value, bool):
+                return value.lower() in ('true', '1', 'yes', 'on')
+
+        # Default para string
+        return value
 
     def _validate_substep_value(
         self, main_step: str, substep_name: str, value: str
@@ -374,7 +582,7 @@ class BankAccountAdvancedService(BaseService):
 
     def _handle_dict_step(self, step: str, payload: str) -> Tuple[bool, str]:
         """
-        Manipula steps com data_type=dict - valida JSON e salva como dicionário.
+        Manipula steps com dict (detectado pelo payload_example) - valida JSON e salva como dicionário.
         Detecta automaticamente se são substeps parciais ou JSON completo.
         """
         try:
@@ -410,7 +618,7 @@ class BankAccountAdvancedService(BaseService):
 
     def _handle_string_step(self, step: str, payload: str) -> Tuple[bool, str]:
         """
-        Manipula steps com data_type=str - salva como string.
+        Manipula steps com string (detectado pelo payload_example) - salva como string.
         """
         if not payload or not payload.strip():
             return False, f"{step} não pode estar vazio"
@@ -452,12 +660,22 @@ class BankAccountAdvancedService(BaseService):
         return True, ""
 
     def _validate_user_info(self, payload: str) -> Tuple[bool, str]:
-        """Valida estrutura user_info"""
+        """Valida estrutura user_info com suporte a nested structure"""
         try:
             data = json.loads(payload)
         except json.JSONDecodeError:
             return False, "user_info deve ser um JSON válido"
 
+        # Verificar se tem estrutura nested ou flat
+        if "document" in data and isinstance(data["document"], dict):
+            # Nova estrutura nested
+            return self._validate_nested_user_info(data)
+        else:
+            # Estrutura flat (backward compatibility)
+            return self._validate_flat_user_info(data)
+
+    def _validate_flat_user_info(self, data: Dict[str, Any]) -> Tuple[bool, str]:
+        """Valida estrutura user_info flat (compatibilidade)"""
         required_fields = ["name", "document_number", "email", "document_type"]
         for field in required_fields:
             if field not in data:
@@ -481,6 +699,58 @@ class BankAccountAdvancedService(BaseService):
         # Validar email básico
         if "@" not in data["email"] or "." not in data["email"]:
             return False, "Email deve ter formato válido"
+
+        return True, ""
+
+    def _validate_nested_user_info(self, data: Dict[str, Any]) -> Tuple[bool, str]:
+        """Valida estrutura user_info nested"""
+        # Validar name
+        if "name" not in data or not isinstance(data["name"], str) or not data["name"].strip():
+            return False, "Campo obrigatório 'name' ausente ou inválido em user_info"
+
+        # Validar document structure
+        if "document" not in data or not isinstance(data["document"], dict):
+            return False, "Campo obrigatório 'document' ausente em user_info"
+        
+        document = data["document"]
+        if "number" not in document or not isinstance(document["number"], str) or not document["number"].strip():
+            return False, "Campo obrigatório 'document.number' ausente ou inválido"
+        
+        if "type" not in document or not isinstance(document["type"], str) or not document["type"].strip():
+            return False, "Campo obrigatório 'document.type' ausente ou inválido"
+
+        if document["type"] not in ["CPF", "CNPJ"]:
+            return False, "document.type deve ser 'CPF' ou 'CNPJ'"
+
+        # Validar CPF/CNPJ
+        doc_num = document["number"].replace(".", "").replace("-", "").replace("/", "")
+        if document["type"] == "CPF" and len(doc_num) != 11:
+            return False, "CPF deve ter 11 dígitos"
+        elif document["type"] == "CNPJ" and len(doc_num) != 14:
+            return False, "CNPJ deve ter 14 dígitos"
+
+        # Validar contact structure  
+        if "contact" not in data or not isinstance(data["contact"], dict):
+            return False, "Campo obrigatório 'contact' ausente em user_info"
+        
+        contact = data["contact"]
+        if "email" not in contact or not isinstance(contact["email"], str) or not contact["email"].strip():
+            return False, "Campo obrigatório 'contact.email' ausente ou inválido"
+
+        # Validar email básico
+        if "@" not in contact["email"] or "." not in contact["email"]:
+            return False, "Email deve ter formato válido"
+
+        # Validar address structure
+        if "address" not in data or not isinstance(data["address"], dict):
+            return False, "Campo obrigatório 'address' ausente em user_info"
+        
+        address = data["address"]
+        if "street" not in address or not isinstance(address["street"], str) or not address["street"].strip():
+            return False, "Campo obrigatório 'address.street' ausente ou inválido"
+        
+        if "number" not in address:
+            return False, "Campo obrigatório 'address.number' ausente"
 
         return True, ""
 

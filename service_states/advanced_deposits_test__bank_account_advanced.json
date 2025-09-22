@@ -4,24 +4,26 @@
   "user_id": "advanced_deposits_test",
   "data": {
     "user_info": {
-      "name": "João Silva",
-      "document_number": "12345678901",
-      "email": "test@example.com",
-      "document_type": "CPF"
+      "name": "Carlos Silva",
+      "document": {
+        "number": "11122233344",
+        "type": "CPF"
+      },
+      "contact": {
+        "email": "carlos@test.com",
+        "phone": "11888888888"
+      },
+      "address": {
+        "street": "Av. Brasil",
+        "number": 500,
+        "district": "Centro"
+      }
     },
     "account_info": {
       "account_type": "corrente",
       "bank_name": "Banco do Brasil",
       "agency_number": "1234",
       "account_number": "56789-0"
-    },
-    "address": {
-      "street": "Rua A",
-      "number": 123
-    },
-    "contact": {
-      "email": "test@example.com",
-      "phone": "1234567890"
     },
     "deposits": [
       {
@@ -34,6 +36,6 @@
       }
     ]
   },
-  "created_at": "2025-09-22T07:19:01.918808",
-  "last_updated": "2025-09-22T07:19:01.919574"
+  "created_at": "2025-09-22T08:33:56.268432",
+  "last_updated": "2025-09-22T08:33:56.268957"
 }

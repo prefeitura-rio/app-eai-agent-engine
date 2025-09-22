@@ -11,11 +11,8 @@ class ValidationEngine:
         self.steps = steps
         self.dependency_engine = DependencyEngine(steps)
         self._steps_by_name = {step.name: step for step in steps}
-        self._substep_map = {
-            substep.name: step.name
-            for step in steps if step.substeps
-            for substep in step.substeps
-        }
+        # Build substep map with infinite nesting support
+        self._substep_map = self._build_substep_map(steps)
 
     def process_bulk_data(
         self, payload: Dict[str, Any], service_executor
@@ -56,24 +53,65 @@ class ValidationEngine:
         return valid_data, field_errors, dependency_errors
 
     def _normalize_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Auto-detect substeps and normalize"""
+        """Simple pass-through normalization - let services handle complex logic"""
         normalized = {}
         
         for field_name, field_value in payload.items():
             if field_name in self._steps_by_name:
+                # Direct step
                 normalized[field_name] = field_value
-            elif field_name in self._substep_map:
-                # Substep - group under parent
-                parent_step = self._substep_map[field_name]
-                if parent_step not in normalized:
-                    normalized[parent_step] = {}
-                if not isinstance(normalized[parent_step], dict):
-                    normalized[parent_step] = {}
-                normalized[parent_step][field_name] = field_value
             else:
+                # For now, pass through individual fields as-is
+                # The service's execute_step method will handle the detection
                 normalized[field_name] = field_value
         
         return normalized
+
+    def _set_nested_value(self, parent_dict: dict, full_path: str, value: Any, parent_step: str):
+        """Set value in nested dictionary using dot notation path"""
+        # Remove parent step from path if present
+        if full_path.startswith(f"{parent_step}."):
+            path = full_path[len(parent_step)+1:]
+        else:
+            path = full_path
+        
+        parts = path.split(".")
+        current = parent_dict
+        
+        # Navigate to the correct nesting level
+        for part in parts[:-1]:
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+        
+        # Set the final value
+        current[parts[-1]] = value
+
+    def _build_substep_map(self, steps: List[StepInfo]) -> Dict[str, str]:
+        """Build substep map with infinite nesting support using dot notation"""
+        substep_map = {}
+        
+        for step in steps:
+            if step.substeps:
+                self._add_substeps_to_map(step.substeps, step.name, substep_map)
+        
+        return substep_map
+
+    def _add_substeps_to_map(self, substeps: List[StepInfo], parent_path: str, substep_map: Dict[str, str]):
+        """Recursively add substeps to map with dot notation paths"""
+        for substep in substeps:
+            # Add dot notation mapping (full path)
+            dot_path = f"{parent_path}.{substep.name}"
+            substep_map[dot_path] = parent_path
+            
+            # Only add direct name mapping if it doesn't conflict with existing ones
+            # Priority: more specific paths win over generic ones
+            if substep.name not in substep_map:
+                substep_map[substep.name] = parent_path
+            
+            # Recursively process sub-substeps
+            if substep.substeps:
+                self._add_substeps_to_map(substep.substeps, dot_path, substep_map)
 
     def validate_required_fields_complete(self, completed_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Check if all required fields are completed"""

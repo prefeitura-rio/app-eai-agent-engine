@@ -119,7 +119,7 @@ class ServiceDefinition(BaseModel):
         return self._dependency_engine.get_step_info(step_name)
 
     def get_contextual_schema(self, completed_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Schema dinâmico baseado no estado atual - apenas steps principais com substeps estruturados"""
+        """Schema dinâmico baseado no estado atual com suporte a substeps infinitos"""
         available_steps = self.get_available_steps(completed_data)
         schema = {"type": "object", "properties": {}, "required": []}
 
@@ -129,41 +129,66 @@ class ServiceDefinition(BaseModel):
                 # Criar schema para o step principal
                 step_schema = {
                     "description": step_info.description,
-                    "data_type": step_info.data_type,
                 }
                 # Usar exemplo de payload direto do StepInfo (obrigatório para todos os steps)
                 if step_info.payload_example:
                     step_schema["payload_example"] = step_info.payload_example
 
-                # Adicionar substeps se existirem
+                # Adicionar substeps se existirem (com suporte infinito)
                 if step_info.substeps:
-                    # Substeps como objeto direto (não JSON string)
-                    substeps_info = {}
-                    for substep in step_info.substeps:
-                        substeps_info[substep.name] = {
-                            "description": substep.description,
-                            "data_type": substep.data_type,
-                        }
-                        if substep.payload_example:
-                            substeps_info[substep.name][
-                                "payload_example"
-                            ] = substep.payload_example
-
-                    step_schema["substeps"] = substeps_info
+                    step_schema["substeps"] = self._build_substeps_schema(step_info.substeps)
 
                 schema["properties"][step_name] = step_schema
 
                 # Para steps com substeps, adicionar substeps obrigatórios ao required
                 if step_info.substeps:
-                    for substep in step_info.substeps:
-                        if substep.required:
-                            schema["required"].append(substep.name)
+                    required_substeps = self._get_required_substep_paths(step_info)
+                    schema["required"].extend(required_substeps)
                 else:
                     # Para steps sem substeps, adicionar o step ao required se for obrigatório
                     if step_info.required:
                         schema["required"].append(step_name)
 
         return schema
+
+    def _build_substeps_schema(self, substeps: List[StepInfo]) -> Dict[str, Any]:
+        """Constrói schema de substeps recursivamente para suporte infinito"""
+        substeps_schema = {}
+        
+        for substep in substeps:
+            substep_info = {
+                "description": substep.description,
+            }
+            
+            if substep.payload_example:
+                substep_info["payload_example"] = substep.payload_example
+            
+            # Recursivamente adicionar sub-substeps
+            if substep.substeps:
+                substep_info["substeps"] = self._build_substeps_schema(substep.substeps)
+            
+            substeps_schema[substep.name] = substep_info
+        
+        return substeps_schema
+
+    def _get_required_substep_paths(self, step_info: StepInfo, prefix: str = "") -> List[str]:
+        """Obter todos os paths de substeps obrigatórios recursivamente"""
+        required_paths = []
+        
+        if step_info.substeps:
+            for substep in step_info.substeps:
+                current_path = f"{prefix}.{substep.name}" if prefix else substep.name
+                
+                if substep.required:
+                    required_paths.append(current_path)
+                
+                # Recursivamente verificar sub-substeps
+                if substep.substeps:
+                    required_paths.extend(
+                        self._get_required_substep_paths(substep, current_path)
+                    )
+        
+        return required_paths
 
 
     def to_dict(
