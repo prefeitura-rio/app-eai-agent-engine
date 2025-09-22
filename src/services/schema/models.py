@@ -1,20 +1,26 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field
+from typing import Any, Callable, Dict, List, Optional, Union
+from pydantic import BaseModel, Field, ConfigDict
 
 class StepInfo(BaseModel):
     """
     Defines a single step in the service flow.
+    Simplified: Actions control the flow, no more complex conditions!
     """
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     name: str = Field(..., description="Unique name for the step, supporting dot notation for hierarchy (e.g., 'user_info.address').")
-    description: str = Field(..., description="Instruction for the AI agent on what to ask the user. Can contain state variables like '{user.name}'.")
+    description: str = Field("", description="Instruction for the AI agent on what to ask the user. Can contain state variables like '{user.name}'.")
     payload_schema: Dict[str, Any] = Field({}, description="JSON Schema defining the expected payload for this step.")
-    substeps: List[StepInfo] = Field([], description="List of nested steps to create a hierarchy.")
+    substeps: List['StepInfo'] = Field([], description="List of nested steps to create a hierarchy.")
+    
+    # Simplified: Only basic dependencies, actions control the rest!
     depends_on: List[str] = Field([], description="List of step names that must be completed before this step can be activated.")
-    condition: Optional[str] = Field(None, description='Logical expression to be evaluated against the service state (e.g., \'search_debts.outcome == "DEBTS_FOUND"\').')
-    is_end: bool = Field(False, description="If true, marks this step as a successful end point of the flow.")
     required: bool = Field(True, description="Indicates if the step is mandatory.")
-    action: Optional[str] = Field(None, description="Reference to a function/method that executes the step's business logic.")
+    action: Optional[Callable[[Dict[str, Any]], 'ExecutionResult']] = Field(None, description="A callable method that executes the step's business logic and controls flow.")
+    
+    # Removed: condition (actions decide), is_end (actions decide)
+
 
 class ServiceDefinition(BaseModel):
     """
@@ -32,6 +38,11 @@ class ExecutionResult(BaseModel):
     outcome: str = Field(..., description="Semantic outcome of the action (e.g., 'DEBTS_FOUND', 'USER_NOT_FOUND').")
     updated_data: Dict[str, Any] = Field({}, description="Data to be merged into the ServiceState.")
     error_message: Optional[str] = None
+    
+    # New: Actions control the flow
+    next_steps: List[str] = Field([], description="List of step names that should be available next. Action decides the flow!")
+    is_complete: bool = Field(False, description="If true, marks the service as completed. Action decides when to end!")
+    completion_message: Optional[str] = Field(None, description="Message to display when service is complete.")
 
 class NextStepInfo(BaseModel):
     """

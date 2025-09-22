@@ -21,39 +21,51 @@ class ResponseGenerator:
         self.service_state = service_state
 
     def _generate_dependency_tree_ascii(self) -> str:
-        """Creates a visual text representation of the service's progress."""
-        tree_lines = ["🌳 DEPENDENCY TREE:"]
-        pending_step = self.state_manager.get("_internal.pending_step", self.service_state)
-
+        """
+        Creates a visual representation of the service's structure and execution flow.
+        """
+        tree_lines = ["🌳 EXECUTION GRAPH:"]
         pending_steps_names = self.state_manager.get("_internal.pending_steps", self.service_state) or []
+
+        memo_is_complete = {}
+        def is_step_complete(step: StepInfo) -> bool:
+            step_name = step.name
+            if step_name in memo_is_complete: return memo_is_complete[step_name]
+            
+            if self.state_manager.get(f"_internal.completed_steps.{step_name}", self.service_state) is True:
+                memo_is_complete[step_name] = True
+                return True
+            
+            if step.substeps:
+                required = [s for s in step.substeps if s.required]
+                if required and all(is_step_complete(s) for s in required):
+                    memo_is_complete[step_name] = True
+                    return True
+
+            memo_is_complete[step_name] = False
+            return False
 
         def build_tree(steps: List[StepInfo], prefix: str = ""):
             for i, step in enumerate(steps):
                 is_last = i == len(steps) - 1
                 connector = "└── " if is_last else "├── "
                 
-                # Determine status icon accurately
-                if self.state_manager.get(f"_internal.completed_steps.{step.name}", self.service_state) is True:
-                    icon = "🟢"
-                elif step.name in pending_steps_names:
-                    icon = "🟡"
-                else:
-                    # Check if a parent container is implicitly completed by its children
-                    is_parent_done = all(
-                        self.state_manager.get(f"_internal.completed_steps.{s.name}", self.service_state) is True 
-                        for s in step.substeps if s.required
-                    ) if step.substeps else False
-                    
-                    if is_parent_done:
-                         icon = "🟢"
-                    else:
-                        icon = "🔴"
+                icon = "🔴"
+                if is_step_complete(step): icon = "🟢"
+                elif step.name in pending_steps_names: icon = "🟡"
 
                 line = f"{prefix}{connector}{icon} {step.name}"
-                if step.required:
-                    line += " (required)"
+                
+                annotations = []
+                if step.depends_on:
+                    annotations.append(f"deps: {', '.join(step.depends_on)}")
+                if step.action:
+                    annotations.append("action")
+                if annotations:
+                    line += f" [{'; '.join(annotations)}]"
+
                 if step.name in pending_steps_names:
-                    line += "   <-- CURRENT STEP"
+                    line += "   <-- CURRENT"
                 
                 tree_lines.append(line)
 
@@ -61,7 +73,7 @@ class ResponseGenerator:
                     new_prefix = prefix + ("    " if is_last else "│   ")
                     build_tree(step.substeps, new_prefix)
 
-        build_tree(self.service_def.steps)
+        build_tree(self.service_def.steps, "")
         return "\n".join(tree_lines)
 
     def _consolidate_schemas(self) -> Dict[str, Any]:

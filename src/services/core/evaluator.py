@@ -30,6 +30,16 @@ class ConditionEvaluator:
         Returns:
             True if the condition is met, False otherwise.
         """
+        # Handle boolean logic (AND, OR)
+        if ' or ' in condition:
+            parts = [p.strip() for p in condition.split(' or ')]
+            return any(self.evaluate(part, state) for part in parts)
+        
+        if ' and ' in condition:
+            parts = [p.strip() for p in condition.split(' and ')]
+            return all(self.evaluate(part, state) for part in parts)
+        
+        # Handle simple comparison operators
         for op_str, op_func in self.OPERATORS.items():
             if op_str in condition:
                 parts = [p.strip() for p in condition.split(op_str, 1)]
