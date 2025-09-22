@@ -1,18 +1,20 @@
-# Multi-Step Service Framework v2
+# Multi-Step Service Framework V3
 
 ## Visão Geral
 
-O Multi-Step Service Framework v2 é uma arquitetura action-driven completamente agnóstica para orquestração de serviços multi-step com gerenciamento de estado persistente, validação de dependências e visualização hierárquica do fluxo de execução.
+O Multi-Step Service Framework V3 é uma arquitetura action-driven completamente agnóstica para orquestração de serviços multi-step com **Strict Graph Executor**, validação Pydantic, gerenciamento de estado avançado e visualização hierárquica completa do fluxo de execução.
 
 ## 🏗️ Arquitetura Core
 
-### Princípios Fundamentais
+### Princípios Fundamentais V3
 
 1. **100% Agnóstico**: O core não contém nenhuma lógica específica de serviços
-2. **Action-Driven**: Actions controlam o fluxo através de `ExecutionResult.next_steps`
-3. **Dependency-First**: Validação rigorosa de dependências antes da execução
-4. **State Persistence**: Gerenciamento automático de estado com diferentes níveis de persistência
-5. **Visualização Dinâmica**: Árvore de dependências gerada automaticamente
+2. **Strict Graph Executor**: Validação rigorosa que só processa steps ativos (dependency-compliant)
+3. **Action-Driven**: Actions controlam o fluxo através de `ExecutionResult.next_steps`
+4. **Cascade Execution**: Transition loop executa actions em cascata até completion
+5. **Pydantic Validation**: Validação de payload robusta com mensagens de erro claras
+6. **State Persistence**: Gerenciamento automático de estado com diferentes níveis de persistência
+7. **Complete Tree Visualization**: Árvore preservada antes dos resets para visualização completa
 
 ### Componentes Core
 
@@ -33,14 +35,15 @@ src/services/
 
 ## 🔧 Componentes Principais
 
-### 1. ServiceOrchestrator
+### 1. ServiceOrchestrator (V3 Enhanced)
 
-O cérebro do framework, responsável por:
+O cérebro do framework V3, responsável por:
 
-- **Execução de Turns**: Processa cada interação do usuário
-- **Validação de Dependências**: Garante que dependências sejam atendidas antes da execução
-- **Gerenciamento de Estado**: Aplica hydratação e persistence resets
-- **Loop de Execução**: Executa actions e gerencia o fluxo
+- **Strict Graph Execution**: Calcula steps ativos e só processa aqueles com dependências atendidas
+- **Transition Loop**: Executa actions em cascata até não haver mais actions disponíveis
+- **Enhanced Error Handling**: Tratamento robusto de erros com recovery automático
+- **Complete Tree Capture**: Preserva árvore completa antes dos resets de persistência
+- **Gerenciamento de Estado**: Aplica hydratação e persistence resets com melhor sincronização
 
 ```python
 from src.services.core.orchestrator import ServiceOrchestrator
@@ -49,12 +52,17 @@ orchestrator = ServiceOrchestrator(service_definition)
 response = orchestrator.execute_turn(user_id, payload)
 ```
 
-### 2. ServiceDefinition & StepInfo
+### 2. ServiceDefinition & StepInfo (V3 Enhanced)
 
-Definição declarativa de serviços através de steps hierárquicos:
+Definição declarativa de serviços com validação Pydantic integrada:
 
 ```python
 from src.services.schema.models import ServiceDefinition, StepInfo
+from pydantic import BaseModel, Field
+
+# V3: Pydantic validation schemas
+class UserNamePayload(BaseModel):
+    name: str = Field(..., min_length=1, description="User full name")
 
 definition = ServiceDefinition(
     service_name="example_service",
@@ -67,10 +75,7 @@ definition = ServiceDefinition(
                 StepInfo(
                     name="user_info.name",
                     description="User name",
-                    payload_schema={
-                        "type": "object",
-                        "properties": {"user_info.name": {"type": "string"}},
-                    },
+                    payload_schema=UserNamePayload,  # V3: Pydantic integration
                 ),
             ],
         ),
@@ -78,6 +83,7 @@ definition = ServiceDefinition(
             name="process_data",
             action=self._process_data_action,
             depends_on=["user_info"],
+            persistence_level="operation",  # V3: Enhanced persistence control
         ),
     ],
 )
@@ -164,9 +170,116 @@ O framework gera automaticamente uma árvore de dependências visual baseada pur
 - 🟡 Current/Pending
 - 🔴 Pending/Blocked
 
-### Pre-Reset Tree Capture
+### Pre-Reset Tree Capture (V3 New Feature)
 
-Quando um serviço completa, o framework captura a árvore **antes** de aplicar os resets de `persistence_level`, preservando o caminho completo de execução para visualização.
+🎯 **Problema Resolvido**: Anteriormente, após a conclusão do serviço, os resets de `persistence_level` faziam com que alguns steps aparecessem como pendentes (⭕) ao invés de completos (✅) na árvore final.
+
+🔧 **Solução V3**: O framework agora captura a árvore **antes** de aplicar os resets de `persistence_level`, preservando o caminho completo de execução para visualização. A árvore é temporariamente mantida em memória (não salva no estado) e retornada na resposta final.
+
+✅ **Resultado**: Quando um serviço completa, todos os steps executados aparecem como ✅ (verde) na árvore final, mostrando o caminho real de execução.
+
+## 🆕 Melhorias V3
+
+### 1. Strict Graph Executor
+
+**Problema V2**: Steps podiam ser processados mesmo com dependências não atendidas, causando inconsistências.
+
+**Solução V3**: O Strict Graph Executor calcula quais steps estão **ativos** (dependency-compliant) e só processa esses steps:
+
+```python
+# V3: Strict validation - only active steps are processed
+active_steps = self._get_active_steps(state_manager, service_state)
+active_step_names = {step.name for step in active_steps}
+
+for step_name, value in payload.items():
+    if step_name in active_step_names:
+        # Process step
+    else:
+        # Ignore field due to dependency requirements
+        ignored_fields.append(step_name)
+```
+
+**Benefício**: Previne violações de dependência e garante execução ordenada.
+
+### 2. Transition Loop (Cascade Execution)
+
+**Problema V2**: Actions eram executadas uma por vez, exigindo múltiplas iterações.
+
+**Solução V3**: O transition loop executa actions em cascata até não haver mais actions disponíveis:
+
+```python
+# V3: Cascade action execution
+while True:
+    action_steps = [step for step in active_steps if step.action]
+    if not action_steps:
+        break  # No more actions to execute
+    
+    # Execute next action and continue loop
+    next_action = action_steps[0]
+    result = next_action.action(service_state)
+    # Process result and continue...
+```
+
+**Benefício**: Execução mais eficiente e fluxo mais fluido.
+
+### 3. Enhanced Pydantic Validation
+
+**Problema V2**: Validação básica com mensagens de erro genéricas.
+
+**Solução V3**: Integração nativa com Pydantic para validação robusta:
+
+```python
+# V3: Pydantic payload schemas
+class UserEmailPayload(BaseModel):
+    email: str = Field(..., pattern=r'^[^@]+@[^@]+\.[^@]+$')
+
+# Validation with clear error messages
+is_valid, validation_error, validated_data = step.validate_payload(payload)
+# Returns: "String should match pattern '^[^@]+@[^@]+\.[^@]+$'"
+```
+
+**Benefício**: Mensagens de erro claras e validação tipada.
+
+### 4. Enhanced Error Handling & Recovery
+
+**Problema V2**: Erros podiam deixar o serviço em estado inconsistente.
+
+**Solução V3**: Sistema robusto de tratamento de erros com recovery automático:
+
+```python
+# V3: Enhanced error handling
+try:
+    result = action.execute(state)
+except Exception as e:
+    return AgentResponse(
+        status="FAILED",
+        error_message=f"Unexpected error in action '{action.name}': {e}",
+        # State remains consistent
+    )
+```
+
+**Benefício**: Serviços mais robustos e debuging facilitado.
+
+### 5. Complete Tree Visualization
+
+**Problema V2**: Árvore final não mostrava corretamente os steps executados após resets.
+
+**Solução V3**: Captura da árvore antes dos resets de persistência:
+
+```python
+# V3: Capture complete tree before resets
+if result.is_complete:
+    # Capture tree BEFORE applying persistence resets
+    complete_tree = response_gen._generate_dependency_tree_ascii()
+    
+    # Apply persistence resets
+    self._apply_persistence_resets(state_manager, service_state)
+    
+    # Return complete tree in response
+    return complete_tree
+```
+
+**Benefício**: Visualização precisa do caminho de execução completo.
 
 ## 🚀 Como Criar um Novo Serviço
 
@@ -257,8 +370,7 @@ Resposta completa do framework:
     },
     "execution_summary": {
         "tree": "ascii_tree_visualization"
-    },
-    "final_output": {...}  # Only when completed
+    }
 }
 ```
 
@@ -316,14 +428,14 @@ def _validate_order(self, state):
         return ExecutionResult(outcome="ORDER_EMPTY", next_steps=["order_items"])
 ```
 
-## 🧪 Testing
+## 🧪 Testing (V3 Enhanced)
 
-### Setup de Teste
+### Setup de Teste V3
 
 ```python
 from src.services.tool import multi_step_service
 
-# Test complete flow
+# Test complete flow with V3 features
 result = multi_step_service.invoke({
     "service_name": "bank_account_opening_v2",
     "user_id": "test_user",
@@ -336,13 +448,32 @@ result = multi_step_service.invoke({
 print(result["execution_summary"]["tree"])
 ```
 
-### Casos de Teste Importantes
+### V3 Test Suite
 
-1. **Dependency Validation**: Tentar executar steps fora de ordem
-2. **Persistence Levels**: Verificar resets após operations
-3. **Action Flow Control**: Testar diferentes outcomes de actions
-4. **Multi-Service**: Testar diferentes tipos de serviços
-5. **State Hydration**: Verificar recuperação de estado existente
+Execute os testes V3 via comando centralizado:
+
+```bash
+# Run all V3 framework tests
+python src/services/tests/run.py
+
+# Run specific test
+python src/services/tests/run.py test_strict_graph_executor
+python src/services/tests/run.py test_tree_completion_visualization
+python src/services/tests/run.py test_clean_state
+```
+
+### Casos de Teste V3
+
+1. **Strict Graph Executor**: Verificar que só steps ativos são processados
+2. **Cascade Action Execution**: Testar transition loop com múltiplas actions
+3. **Pydantic Validation**: Verificar mensagens de erro claras
+4. **Enhanced Error Handling**: Testar recovery de erros
+5. **Complete Tree Visualization**: Verificar árvore com todos steps verdes após completion
+6. **Clean State Management**: Confirmar que execution_tree_complete não é salvo
+7. **Dependency Validation**: Tentar executar steps fora de ordem
+8. **Persistence Levels**: Verificar resets após operations
+9. **Multi-Service**: Testar diferentes tipos de serviços
+10. **State Hydration**: Verificar recuperação de estado existente
 
 ## 🔧 Debugging
 
@@ -395,7 +526,7 @@ A árvore visual mostra exatamente o estado de cada step:
 
 ## 📈 Evolução do Framework
 
-### V1 → V2 Principais Mudanças
+### V1 → V2 → V3 Principais Mudanças
 
 #### ❌ **V1 Problems (Fixed)**
 - **Complex Condition Strings**: Condições JMESPath complexas e propensas a erro
@@ -412,9 +543,17 @@ A árvore visual mostra exatamente o estado de cada step:
 - **Rigorous Dependency Validation**: Validação rigorosa antes de qualquer execução
 - **Automatic State Metadata**: IDs únicos, created_at, updated_at automáticos
 - **Flexible Persistence Levels**: 4 níveis de persistência (permanent, session, operation, transient)
-- **Pre-Reset Tree Capture**: Preserva árvore completa antes dos resets
 
-### Comparison Example
+#### 🚀 **V3 Enhancements (New)**
+- **Strict Graph Executor**: Só processa steps ativos (dependency-compliant)
+- **Cascade Action Execution**: Transition loop executa actions em cascata
+- **Enhanced Pydantic Validation**: Validação robusta com mensagens claras
+- **Enhanced Error Handling**: Recovery automático e estado consistente
+- **Complete Tree Visualization**: Árvore preservada antes dos resets de persistência
+- **Improved State Synchronization**: Melhor sincronização entre status, tree e next_step_info
+- **Clean State Management**: execution_tree_complete não é salvo no estado
+
+### V1 → V2 → V3 Evolution Example
 
 **V1 (Old Way):**
 ```python
@@ -429,7 +568,7 @@ if step.name == "check_account":  # Hardcoded in core!
     tree_lines.append("check_account logic...")
 ```
 
-**V2 (New Way):**
+**V2 (Better):**
 ```python
 # ✅ Action-driven flow control
 def _check_account_exists(self, state):
@@ -452,16 +591,28 @@ def render_step_and_dependents(step: StepInfo):
         render_step_and_dependents(dependent)
 ```
 
-## 🚀 Próximos Passos
+**V3 (Best):**
+```python
+# 🚀 Strict Graph Executor + Pydantic validation
+class UserEmailPayload(BaseModel):
+    email: str = Field(..., pattern=r'^[^@]+@[^@]+\.[^@]+$')
 
-### Possíveis Melhorias
+# Only active steps are processed
+active_steps = self._get_active_steps(state_manager, service_state)
+if step_name in {s.name for s in active_steps}:
+    is_valid, error, data = step.validate_payload(payload)  # Pydantic
+    if is_valid:
+        # Process step
+    else:
+        # Return clear validation error
 
-1. **Conditional Steps**: Suporte a steps condicionais baseados em dados
-2. **Parallel Execution**: Execução paralela de steps independentes
-3. **Step Rollback**: Capacidade de desfazer steps executados
-4. **Advanced Persistence**: Diferentes backends de persistência (Redis, DB)
-5. **Monitoring**: Métricas e observabilidade do framework
-6. **Schema Validation**: Validação mais rigorosa de payload schemas
+# 🚀 Cascade action execution
+service_completed, error, complete_tree = self._execute_transition_loop()
+if service_completed and complete_tree:
+    # Tree captured BEFORE persistence resets
+    return ExecutionSummary(tree=complete_tree)
+```
+
 
 ### Extensibilidade
 
@@ -472,7 +623,7 @@ O framework foi projetado para ser facilmente extensível:
 - **Multiple Backends**: State pode ser facilmente migrado para outros backends
 - **Plugin Architecture**: Suporte futuro para plugins de terceiros
 
-## 🎓 Lições Aprendidas
+## 🎓 Lições Aprendidas (V1 → V2 → V3)
 
 ### Princípios Arquiteturais Validados
 
@@ -483,24 +634,20 @@ O framework foi projetado para ser facilmente extensível:
 5. **State Metadata Pays Off**: IDs e timestamps são essenciais para debugging
 6. **Persistence Flexibility Required**: Diferentes níveis de persistência atendem casos diversos
 
-### Anti-Patterns Identificados
+### Novas Descobertas V3
 
-1. **❌ Hardcoding Service Logic in Core**: Quebra agnosticismo e manutenibilidade
-2. **❌ Complex Condition Strings**: Difíceis de debuggar e manter
-3. **❌ Implicit Flow Control**: `is_end` flags não expressam intenção claramente
-4. **❌ Weak Dependency Validation**: Permite estados inconsistentes
-5. **❌ No State Lifecycle Management**: Dados acumulam indefinidamente
+7. **Strict Validation Prevents Chaos**: Só processar steps ativos previne estados inconsistentes
+8. **Cascade Execution is More Efficient**: Transition loop reduz iterações desnecessárias
+9. **Pydantic Integration is Game-Changing**: Validação tipada melhora significativamente a UX
+10. **Tree Timing Matters**: Capturar árvore antes dos resets preserva o contexto de execução
+11. **Clean State is Essential**: Não salvar dados temporários no estado mantém a arquitetura limpa
+12. **Error Handling Must be Comprehensive**: Recovery automático evita estados corrompidos
+13. **Testing Framework Centralized**: Sistema de testes centralizado facilita CI/CD
 
----
+### Problemas Críticos Resolvidos V3
 
-**Framework Status**: ✅ **Production Ready**
-
-**Architecture Quality**: ⭐⭐⭐⭐⭐ **Enterprise Grade**
-
-**Developer Experience**: 🚀 **Excellent** - Clear patterns, great debugging
-
-**Extensibility**: 🔧 **Highly Extensible** - Plugin-ready architecture
-
-**Performance**: ⚡ **Optimized** - Efficient state management and caching
-
-**Maintainability**: 🛠️ **High** - Clean separation of concerns, zero coupling
+- **🐛 Tree Visualization Bug**: Árvore final agora mostra corretamente todos steps executados como verdes
+- **🔒 Dependency Violations**: Strict Graph Executor previne 100% das violações de dependência
+- **💥 Action Cascade Issues**: Transition loop executa actions de forma mais eficiente
+- **📝 Validation Feedback**: Mensagens de erro Pydantic são claras e acionáveis
+- **🧹 State Pollution**: execution_tree_complete não polui mais o estado persistente

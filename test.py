@@ -18,7 +18,7 @@ def main():
         # "user_info.email": "jane@newuser.com",
         # "account_type": "savings",
         # "ask_action": "deposit",
-        "deposit_amount": 500.00,
+        # "deposit_amount": 500.00,
     }
     response = multi_step_service.invoke(
         {
