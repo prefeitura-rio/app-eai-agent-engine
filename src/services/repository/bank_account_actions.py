@@ -9,8 +9,9 @@ def create_bank_account(state: Dict) -> ExecutionResult:
     A dummy action that simulates creating a bank account.
     It randomly succeeds or fails.
     """
+    user_data = state.get("data", {})
     print("--- Executing action: create_bank_account ---")
-    print(f"--- State received: {state} ---")
+    print(f"--- State data received: {user_data} ---")
 
     # Simulate some business logic
     if random.random() > 0.2: # 80% success rate

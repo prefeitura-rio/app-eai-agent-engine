@@ -56,29 +56,19 @@ class ServiceState:
 
     def set(self, key: str, value: Any, service_state: Dict[str, Any]):
         """
-        Sets a value in the service state using dot notation.
-
-        Args:
-            key: The dot-separated key (e.g., 'user.address.zip_code').
-            value: The value to set.
-            service_state: The specific service state dictionary to modify.
+        Sets a value in the service state using dot notation, creating nested dicts as needed.
         """
-        keys = key.split(".")
+        keys = key.split('.')
         current_level = service_state
-        for i, k in enumerate(keys[:-1]):
+        for k in keys[:-1]:
             current_level = current_level.setdefault(k, {})
-            if not isinstance(current_level, dict):
-                # This case handles trying to set a nested value on a non-dict parent.
-                # For simplicity, we'll overwrite, but a more robust implementation could raise an error.
-                current_level = {}
-                # This part is tricky, we need to re-assign it back to the parent
-                parent_keys = keys[:i]
-                parent_ref = service_state
-                for pk in parent_keys:
-                    parent_ref = parent_ref[pk]
-                parent_ref[k] = current_level
-
-        current_level[keys[-1]] = value
+        
+        # Handle the case where the final key might represent a merge
+        final_key = keys[-1]
+        if isinstance(current_level.get(final_key), dict) and isinstance(value, dict):
+            current_level[final_key].update(value)
+        else:
+            current_level[final_key] = value
 
     def merge_data(self, data: Dict[str, Any], service_state: Dict[str, Any]):
         """

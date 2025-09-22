@@ -35,11 +35,13 @@ class ExecutionResult(BaseModel):
 
 class NextStepInfo(BaseModel):
     """
-    Information about the next step that requires user input.
+    Information about the next step(s) that require user input.
+    Can be nested to represent a hierarchy.
     """
-    step_name: str = Field(..., description="The name of the step awaiting data.")
-    description: str = Field(..., description="The instruction for the agent, from StepInfo.description.")
-    payload_schema: Dict[str, Any] = Field(..., description="The JSON Schema for the required data input.")
+    step_name: str = Field(..., description="The name of the step or parent group awaiting data.")
+    description: str = Field(..., description="The consolidated instruction for the agent.")
+    payload_schema: Dict[str, Any] = Field(..., description="The consolidated JSON Schema for the required data.")
+    substeps: List[NextStepInfo] = Field([], description="A list of child steps, if this is a parent group.")
 
 class ExecutionSummary(BaseModel):
     """

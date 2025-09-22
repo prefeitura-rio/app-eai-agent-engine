@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, List, Optional
 
 from src.services.core.state import ServiceState
@@ -81,29 +82,72 @@ class ResponseGenerator:
         return consolidated_schema
 
     def get_next_step_info(self) -> Optional[NextStepInfo]:
-        """Constructs the NextStepInfo object if a step is pending user input."""
-        pending_step_name = self.state_manager.get("_internal.pending_step", self.service_state)
-        if not pending_step_name:
+        """
+        Constructs a hierarchical NextStepInfo object based on all pending data collection steps.
+        """
+        pending_step_names = self.state_manager.get("_internal.pending_steps", self.service_state)
+        if not pending_step_names:
             return None
 
-        def find_step(steps: List[StepInfo]) -> Optional[StepInfo]:
+        pending_steps: List[StepInfo] = []
+        def find_steps_by_names(steps: List[StepInfo]):
             for step in steps:
-                if step.name == pending_step_name:
-                    return step
+                if step.name in pending_step_names:
+                    pending_steps.append(step)
                 if step.substeps:
-                    found = find_step(step.substeps)
-                    if found:
-                        return found
+                    find_steps_by_names(step.substeps)
+        
+        find_steps_by_names(self.service_def.steps)
+        if not pending_steps:
             return None
 
-        step = find_step(self.service_def.steps)
-        if step:
-            return NextStepInfo(
+        # Find the common parent of all pending steps using path logic
+        if not pending_steps:
+            return None
+        
+        step_paths = [s.name.replace('.', '/') for s in pending_steps]
+        common_path_prefix = os.path.commonpath(step_paths).replace('/', '.')
+        
+        # Find the actual StepInfo for the common parent
+        parent_step = None
+        def find_parent_step(steps: List[StepInfo]):
+            nonlocal parent_step
+            for step in steps:
+                if step.name == common_path_prefix:
+                    parent_step = step
+                    return
+                if step.substeps:
+                    find_parent_step(step.substeps)
+        
+        find_parent_step(self.service_def.steps)
+
+        if not parent_step:
+            parent_step = StepInfo(name="root", description="Please provide the following information.")
+
+        # Build the hierarchical response
+        parent_next_step = NextStepInfo(
+            step_name=parent_step.name,
+            description=parent_step.description,
+            payload_schema={"type": "object", "properties": {}, "required": []}
+        )
+
+        data_context = self.service_state.get("data", {})
+        for step in pending_steps:
+            # Add child substep info
+            child_next_step = NextStepInfo(
                 step_name=step.name,
-                description=step.description.format(**self.service_state), # Basic templating
+                description=step.description.format(**data_context),
                 payload_schema=step.payload_schema
             )
-        return None
+            parent_next_step.substeps.append(child_next_step)
+
+            # Consolidate schema into parent, using full step name as key
+            for prop_name, prop_schema in step.payload_schema.get("properties", {}).items():
+                parent_next_step.payload_schema["properties"][step.name] = prop_schema # e.g., "user_info.name": {...}
+                if step.payload_schema.get("required"):
+                     parent_next_step.payload_schema["required"].append(step.name)
+
+        return parent_next_step
 
     def get_execution_summary(self) -> ExecutionSummary:
         """Constructs the ExecutionSummary object."""

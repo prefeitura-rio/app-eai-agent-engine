@@ -11,6 +11,7 @@ bank_account_service_def = ServiceDefinition(
                 StepInfo(
                     name="user_info.name",
                     description="Please provide your full name.",
+                    required=True,
                     payload_schema={
                         "type": "object",
                         "properties": {"name": {"type": "string"}},
@@ -19,6 +20,7 @@ bank_account_service_def = ServiceDefinition(
                 StepInfo(
                     name="user_info.email",
                     description="What is your email address?",
+                    required=True,
                     payload_schema={
                         "type": "object",
                         "properties": {"email": {"type": "string"}},
