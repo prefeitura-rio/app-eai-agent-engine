@@ -26,6 +26,15 @@ bank_account_service_def = ServiceDefinition(
                         "properties": {"email": {"type": "string"}},
                     },
                 ),
+                StepInfo(
+                    name="user_info.doc_type",
+                    description="What document type will you use? (e.g., passport, driver's license)",
+                    required=True,
+                    payload_schema={
+                        "type": "object",
+                        "properties": {"doc_type": {"type": "string"}},
+                    },
+                ),
             ],
         ),
         StepInfo(

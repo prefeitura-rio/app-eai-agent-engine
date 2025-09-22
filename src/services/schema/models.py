@@ -47,8 +47,7 @@ class ExecutionSummary(BaseModel):
     """
     Provides a summary of the execution progress.
     """
-    completed_data_schema: Dict[str, Any] = Field(..., description="A consolidated JSON Schema of all data collected so far.")
-    dependency_tree_ascii: str = Field(..., description="A text representation of the service's dependency graph and its current state.")
+    tree: str = Field(..., description="A text representation of the service's dependency graph and its current state.")
 
 class AgentResponse(BaseModel):
     """

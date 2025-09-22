@@ -32,71 +32,58 @@ class ServiceOrchestrator:
 
         return search(self.service_def.steps)
 
-    def _find_parent(self, child_name: str) -> Optional[StepInfo]:
-        """Finds the parent of a step by the child's name."""
-        
-        def search(steps: List[StepInfo], parent: Optional[StepInfo]) -> Optional[StepInfo]:
-            for step in steps:
-                if step.name == child_name:
-                    return parent
-                if step.substeps:
-                    found = search(step.substeps, step)
-                    if found:
-                        return found
-            return None
+    def _is_dependency_met(self, step_name: str, state_manager: ServiceState, service_state: Dict[str, Any]) -> bool:
+        """
+        Recursively checks if a step or a container's required children are complete.
+        """
+        # First, check the state directly
+        completion_status = state_manager.get(f"_internal.completed_steps.{step_name}", service_state)
+        if completion_status is True:
+            return True
 
-        return search(self.service_def.steps, None)
+        # If not explicitly complete, check if it's a container whose children are complete
+        dep_step = self._find_step(step_name)
+        if dep_step and dep_step.substeps:
+            required_substeps = [s for s in dep_step.substeps if s.required]
+            if not required_substeps:
+                return True # A container with no required children is implicitly complete for dependency purposes
+            
+            # Recursively check if all required children are met
+            return all(self._is_dependency_met(s.name, state_manager, service_state) for s in required_substeps)
 
-    def _check_and_complete_parent(self, step: StepInfo, state_manager: ServiceState, service_state: Dict[str, Any]):
-        """Checks if a completed step's parent container can also be marked as complete."""
-        parent = self._find_parent(step.name)
-        if not parent:
-            return
-
-        required_substeps = [s for s in parent.substeps if s.required]
-        if not required_substeps:
-            return
-
-        all_required_done = all(
-            state_manager.get(f"_internal.completed_steps.{s.name}", service_state) is True
-            for s in required_substeps
-        )
-
-        if all_required_done and state_manager.get(f"_internal.completed_steps.{parent.name}", service_state) is not True:
-            state_manager.set(f"_internal.completed_steps.{parent.name}", True, service_state)
-            self._check_and_complete_parent(parent, state_manager, service_state)
+        return False
 
     def _find_next_steps(
-        self, state: ServiceState, service_state_data: Dict[str, Any]
+        self, state_manager: ServiceState, service_state_data: Dict[str, Any]
     ) -> List[StepInfo]:
         """
         Finds all next valid steps, prioritizing parallel data collection steps.
-        If no data collection steps are found, it returns the next single action/end step.
         """
         
         def is_step_valid(step: StepInfo) -> bool:
-            return (
-                state.get(f"_internal.completed_steps.{step.name}", service_state_data) is not True
-                and all(
-                    state.get(f"_internal.completed_steps.{dep}", service_state_data) is True
-                    for dep in step.depends_on
-                )
-                and (not step.condition or self.evaluator.evaluate(step.condition, service_state_data.get("data", {})))
-            )
+            is_self_complete = state_manager.get(f"_internal.completed_steps.{step.name}", service_state_data) is True
+            if is_self_complete:
+                return False
 
-        # First, find all possible parallel data steps
+            all_deps_met = all(
+                self._is_dependency_met(dep_name, state_manager, service_state_data)
+                for dep_name in step.depends_on
+            )
+            if not all_deps_met:
+                return False
+
+            return (not step.condition or self.evaluator.evaluate(step.condition, service_state_data.get("data", {})))
+
+        # Find all possible parallel data steps
         pending_data_steps = []
         
         def find_data_steps(steps: List[StepInfo]):
-            # Find valid steps at the current level
             valid_steps_at_level = [s for s in steps if is_step_valid(s)]
             
-            # If any valid step at this level is a data request, collect it
             level_data_steps = [s for s in valid_steps_at_level if not s.action and s.payload_schema]
             if level_data_steps:
                 pending_data_steps.extend(level_data_steps)
 
-            # If we found data steps, we don't need to go deeper or check for actions yet
             if not pending_data_steps:
                 for step in valid_steps_at_level:
                     if step.substeps:
@@ -115,7 +102,6 @@ class ServiceOrchestrator:
                     found = find_action_step(step.substeps)
                     if found:
                         return found
-                # If it's a leaf (action or end step), return it
                 if not step.substeps or step.action or step.is_end:
                     return step
             return None
@@ -138,17 +124,11 @@ class ServiceOrchestrator:
             if pending_step_names:
                 for step_name, value in payload.items():
                     if step_name in pending_step_names:
-                        step_to_update = self._find_step(step_name)
-                        if step_to_update:
-                            # Construct the full path for the data, e.g., data.user_info.name
-                            # The value from the payload is the raw value (e.g., "John Doe")
-                            # The key in the state should be the last part of the step name
-                            parent_key = step_name.rsplit('.', 1)[0]
-                            data_key = step_name.split('.')[-1]
-                            
-                            state_manager.set(f"data.{parent_key}.{data_key}", value, service_state)
-                            state_manager.set(f"_internal.completed_steps.{step_name}", True, service_state)
-                            self._check_and_complete_parent(step_to_update, state_manager, service_state)
+                        parent_key = step_name.rsplit('.', 1)[0]
+                        data_key = step_name.split('.')[-1]
+                        
+                        state_manager.set(f"data.{parent_key}.{data_key}", value, service_state)
+                        state_manager.set(f"_internal.completed_steps.{step_name}", True, service_state)
 
                 state_manager.set("_internal.pending_steps", None, service_state)
 
@@ -159,12 +139,10 @@ class ServiceOrchestrator:
             if not next_steps:
                 break
 
-            # If there are data steps, we need user input
             if not next_steps[0].action and not next_steps[0].is_end:
                 state_manager.set("_internal.pending_steps", [s.name for s in next_steps], service_state)
                 break
 
-            # Handle single action/end step
             next_step = next_steps[0]
             if next_step.action:
                 try:
@@ -175,13 +153,11 @@ class ServiceOrchestrator:
                         error_message = result.error_message or f"Action '{next_step.action}' failed."
                         break
                     state_manager.set(f"_internal.completed_steps.{next_step.name}", True, service_state)
-                    self._check_and_complete_parent(next_step, state_manager, service_state)
                 except Exception as e:
                     error_message = f"Unexpected error in action '{next_step.action}': {e}"
                     break
             elif next_step.is_end:
                 state_manager.set(f"_internal.completed_steps.{next_step.name}", True, service_state)
-                self._check_and_complete_parent(next_step, state_manager, service_state)
         
         state_manager.save()
 
@@ -193,17 +169,9 @@ class ServiceOrchestrator:
         if error_message:
             status = "FAILED"
         elif not next_step_info:
-            def is_end_step_complete(steps: List[StepInfo]) -> bool:
-                for step in steps:
-                    if step.is_end and state_manager.get(f"_internal.completed_steps.{step.name}", service_state):
-                        return True
-                    if step.substeps and is_end_step_complete(step.substeps):
-                        return True
-                return False
-
-            if is_end_step_complete(self.service_def.steps):
-                status = "COMPLETED"
-                final_output = service_state.get("data", {})
+            if self._is_dependency_met("account_created_success", state_manager, service_state) or self._is_dependency_met("account_creation_failed", state_manager, service_state):
+                 status = "COMPLETED"
+                 final_output = service_state.get("data", {})
             else:
                 status = "FAILED"
                 error_message = "Service flow ended without reaching a designated end step."
