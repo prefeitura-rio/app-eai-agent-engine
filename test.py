@@ -11,7 +11,7 @@ def main():
 
     # user_id = f"test_user_{int(time.time())}"
     # user_id = f"agent_{int(time.time())}"
-    user_id = "agent66"
+    user_id = "hahahahahaha6"
     service_name = "bank_account_opening_v2"
     partial_payload = {
         # "user_info.name": "Jane New User",
