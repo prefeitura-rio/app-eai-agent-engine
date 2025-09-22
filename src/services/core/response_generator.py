@@ -22,12 +22,12 @@ class ResponseGenerator:
 
     def _generate_dependency_tree_ascii(self) -> str:
         """
-        Creates a decision tree style visualization showing the flow and possible outcomes.
+        Creates a generic dependency tree visualization based purely on ServiceDefinition structure.
+        100% service-agnostic - works with any service definition.
         """
-        tree_lines = [f"🌳 DECISION TREE: {self.service_def.service_name}"]
+        tree_lines = [f"🌳 DEPENDENCY TREE: {self.service_def.service_name}"]
         tree_lines.append("│")
         
-        # Helper functions
         def get_step_status(step_name: str) -> str:
             if self.state_manager.get(f"_internal.completed_steps.{step_name}", self.service_state) is True:
                 return "🟢"
@@ -39,120 +39,100 @@ class ResponseGenerator:
         def get_outcome(step_name: str) -> str:
             return self.state_manager.get(f"_internal.outcomes.{step_name}", self.service_state)
         
-        def add_step_with_substeps(step: StepInfo, prefix: str = ""):
+        def render_step(step: StepInfo, prefix: str = "", is_last: bool = True):
+            """Renders a step and all its substeps recursively."""
+            connector = "└──" if is_last else "├──"
             status = get_step_status(step.name)
-            tree_lines.append(f"{prefix}└── {status} {step.name}")
             
+            # Build step description
+            step_desc = step.name
+            if step.action:
+                step_desc += f" (action)"
+            
+            # Add outcome if it's an action step
+            outcome = get_outcome(step.name)
+            if outcome:
+                step_desc += f" → {outcome}"
+            
+            tree_lines.append(f"{prefix}{connector} {status} {step_desc}")
+            
+            # Render substeps if any
             if step.substeps:
                 for i, substep in enumerate(step.substeps):
                     is_last_substep = i == len(step.substeps) - 1
-                    substep_connector = "└──" if is_last_substep else "├──"
-                    substep_status = "🟢" if status == "🟢" else get_step_status(substep.name)
-                    tree_lines.append(f"{prefix}    {substep_connector} {substep_status} {substep.name}")
+                    next_prefix = prefix + ("    " if is_last else "│   ")
+                    render_step(substep, next_prefix, is_last_substep)
         
-        def add_flow_arrow(prefix: str = ""):
-            tree_lines.append(f"{prefix}    │")
-            tree_lines.append(f"{prefix}    ▼")
-        
-        def add_outcome_branch(step_name: str, outcome: str, next_steps: List[str], prefix: str = ""):
-            tree_lines.append(f"{prefix}    ├── outcome: {outcome}")
-            for next_step in next_steps:
-                tree_lines.append(f"{prefix}    │       ▼")
-                tree_lines.append(f"{prefix}    │   {get_step_status(next_step)} {next_step}")
-        
-        # Build the decision tree flow
-        def build_flow():
-            # 1. Start with user_info collection
-            user_info_step = None
-            check_account_step = None
+        # Find root steps (steps with no dependencies or dependencies outside current service)
+        def find_root_steps():
+            all_step_names = set()
+            def collect_names(steps):
+                for step in steps:
+                    all_step_names.add(step.name)
+                    if step.substeps:
+                        collect_names(step.substeps)
+            collect_names(self.service_def.steps)
             
+            root_steps = []
             for step in self.service_def.steps:
-                if step.name == "user_info":
-                    user_info_step = step
-                elif step.name == "check_account":
-                    check_account_step = step
+                # A step is root if it has no dependencies or all dependencies are external
+                if not step.depends_on or not any(dep in all_step_names for dep in step.depends_on):
+                    root_steps.append(step)
+            return root_steps
+        
+        # Build dependency graph and render in execution order
+        def build_dependency_graph():
+            """Build a topological ordering of steps based on dependencies."""
+            all_steps = []
             
-            if user_info_step:
-                add_step_with_substeps(user_info_step)
-                add_flow_arrow()
+            def collect_all_steps(steps):
+                for step in steps:
+                    all_steps.append(step)
+                    if step.substeps:
+                        collect_all_steps(step.substeps)
             
-            # 2. Check account action with branching outcomes
-            if check_account_step:
-                status = get_step_status("check_account")
-                tree_lines.append(f"└── {status} check_account (action: _check_account_exists)")
+            collect_all_steps(self.service_def.steps)
+            
+            # Simple topological sort
+            visited = set()
+            result = []
+            
+            def visit(step_name):
+                if step_name in visited:
+                    return
+                visited.add(step_name)
                 
-                outcome = get_outcome("check_account")
-                if outcome:
-                    if outcome == "ACCOUNT_EXISTS":
-                        tree_lines.append("    ├── outcome: ACCOUNT_EXISTS")
-                        tree_lines.append("    │       ▼")
-                        add_action_flow("ask_action", "    │   ")
-                    elif outcome == "ACCOUNT_NOT_FOUND":
-                        tree_lines.append("    └── outcome: ACCOUNT_NOT_FOUND")
-                        tree_lines.append("            ▼")
-                        add_new_account_flow("        ")
-                else:
-                    # Show both possible paths
-                    tree_lines.append("    ├── outcome: ACCOUNT_EXISTS")
-                    tree_lines.append("    │       ▼")
-                    tree_lines.append("    │   🔴 ask_action")
-                    tree_lines.append("    │       │")
-                    tree_lines.append("    │       ▼")
-                    tree_lines.append("    │   🔴 process_action_choice → [operations...]")
-                    tree_lines.append("    │")
-                    tree_lines.append("    └── outcome: ACCOUNT_NOT_FOUND")
-                    tree_lines.append("            ▼")
-                    tree_lines.append("        🔴 account_type")
-                    tree_lines.append("            │")
-                    tree_lines.append("            ▼")
-                    tree_lines.append("        🔴 create_account → ask_action → [operations...]")
-        
-        def add_action_flow(step_name: str, prefix: str):
-            status = get_step_status(step_name)
-            tree_lines.append(f"{prefix}{status} {step_name}")
-            
-            if step_name == "ask_action":
-                tree_lines.append(f"{prefix}    │")
-                tree_lines.append(f"{prefix}    ▼")
-                process_status = get_step_status("process_action_choice")
-                tree_lines.append(f"{prefix}{process_status} process_action_choice (action: _process_action_choice)")
+                # Find the step object
+                step_obj = None
+                for s in all_steps:
+                    if s.name == step_name:
+                        step_obj = s
+                        break
                 
-                process_outcome = get_outcome("process_action_choice")
-                if process_outcome:
-                    if process_outcome == "DEPOSIT_CHOSEN":
-                        tree_lines.append(f"{prefix}    ├── outcome: DEPOSIT_CHOSEN")
-                        tree_lines.append(f"{prefix}    │       ▼")
-                        deposit_status = get_step_status("deposit_amount")
-                        tree_lines.append(f"{prefix}    │   {deposit_status} deposit_amount")
-                        tree_lines.append(f"{prefix}    │       │")
-                        tree_lines.append(f"{prefix}    │       ▼")
-                        execute_status = get_step_status("execute_deposit")
-                        tree_lines.append(f"{prefix}    │   {execute_status} execute_deposit (action: _make_deposit) → [Fim]")
-                    elif process_outcome == "BALANCE_CALCULATED":
-                        tree_lines.append(f"{prefix}    └── outcome: BALANCE_CALCULATED → [Fim]")
-                else:
-                    # Show both possible paths
-                    tree_lines.append(f"{prefix}    ├── outcome: DEPOSIT_CHOSEN")
-                    tree_lines.append(f"{prefix}    │       ▼")
-                    tree_lines.append(f"{prefix}    │   🔴 deposit_amount")
-                    tree_lines.append(f"{prefix}    │       │")
-                    tree_lines.append(f"{prefix}    │       ▼")
-                    tree_lines.append(f"{prefix}    │   🔴 execute_deposit → [Fim]")
-                    tree_lines.append(f"{prefix}    │")
-                    tree_lines.append(f"{prefix}    └── outcome: BALANCE_CALCULATED → [Fim]")
+                if step_obj:
+                    # Visit dependencies first
+                    for dep in step_obj.depends_on:
+                        visit(dep)
+                    result.append(step_obj)
+            
+            # Start with root steps
+            for step in self.service_def.steps:
+                visit(step.name)
+            
+            return result
         
-        def add_new_account_flow(prefix: str):
-            account_type_status = get_step_status("account_type")
-            tree_lines.append(f"{prefix}{account_type_status} account_type")
-            tree_lines.append(f"{prefix}    │")
-            tree_lines.append(f"{prefix}    ▼")
-            create_status = get_step_status("create_account")
-            tree_lines.append(f"{prefix}{create_status} create_account (action: _create_account)")
-            tree_lines.append(f"{prefix}    │")
-            tree_lines.append(f"{prefix}    ▼")
-            add_action_flow("ask_action", prefix)
-        
-        build_flow()
+        # Render steps in dependency order
+        ordered_steps = build_dependency_graph()
+        for i, step in enumerate(ordered_steps):
+            is_last = i == len(ordered_steps) - 1
+            render_step(step, "", is_last)
+            
+            # Add flow arrows between steps that have dependencies
+            if not is_last:
+                next_step = ordered_steps[i + 1] if i + 1 < len(ordered_steps) else None
+                if next_step and step.name in next_step.depends_on:
+                    tree_lines.append("│")
+                    tree_lines.append("▼")
         
         # Add current status indicator
         pending_steps = self.state_manager.get("_internal.pending_steps", self.service_state) or []
@@ -283,6 +263,14 @@ class ResponseGenerator:
 
     def get_execution_summary(self) -> ExecutionSummary:
         """Constructs the ExecutionSummary object."""
+        # If service is completed, use the pre-reset tree to show complete execution path
+        service_completed = self.state_manager.get("_internal.service_completed", self.service_state)
+        if service_completed:
+            complete_tree = self.state_manager.get("_internal.execution_tree_complete", self.service_state)
+            if complete_tree:
+                return ExecutionSummary(tree=complete_tree)
+        
+        # Otherwise, use current state tree
         return ExecutionSummary(
             tree=self._generate_dependency_tree_ascii()
         )

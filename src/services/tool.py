@@ -4,11 +4,12 @@ from langchain_core.tools import tool
 from src.services.core.base_service import BaseService
 from src.services.core.orchestrator import ServiceOrchestrator
 from src.services.repository.bank_account_service_v2 import BankAccountServiceV2
+from src.services.repository.order_service import OrderService
 from src.services.schema.models import AgentResponse, ServiceDefinition
 
 # --- Service Registry ---
 # Register all service classes.
-_service_classes = [BankAccountServiceV2]
+_service_classes = [BankAccountServiceV2, OrderService]
 _services: Dict[str, type[BaseService]] = {
     service.service_name: service for service in _service_classes
 }
