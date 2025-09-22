@@ -95,59 +95,79 @@ class ResponseGenerator:
                     root_steps.append(step)
             return root_steps
         
-        # Build dependency graph and render in execution order
-        def build_dependency_graph():
-            """Build a topological ordering of steps based on dependencies."""
-            all_steps = []
+        # Build hierarchical dependency tree with proper indentation
+        def render_dependency_hierarchy():
+            """Renders steps with hierarchical indentation based on dependencies."""
+            rendered = set()
             
-            def collect_all_steps(steps):
-                for step in steps:
-                    all_steps.append(step)
-                    if step.substeps:
-                        collect_all_steps(step.substeps)
-            
-            collect_all_steps(self.service_def.steps)
-            
-            # Simple topological sort
-            visited = set()
-            result = []
-            
-            def visit(step_name):
-                if step_name in visited:
+            def render_step_and_dependents(step: StepInfo, prefix: str = "", is_last_at_level: bool = True):
+                if step.name in rendered:
                     return
-                visited.add(step_name)
+                rendered.add(step.name)
                 
-                # Find the step object
-                step_obj = None
-                for s in all_steps:
-                    if s.name == step_name:
-                        step_obj = s
-                        break
+                # Render current step
+                connector = "└──" if is_last_at_level else "├──"
+                status = get_step_status(step.name)
                 
-                if step_obj:
-                    # Visit dependencies first
-                    for dep in step_obj.depends_on:
-                        visit(dep)
-                    result.append(step_obj)
+                step_desc = step.name
+                if step.action:
+                    step_desc += " (action)"
+                
+                outcome = get_outcome(step.name)
+                if outcome:
+                    step_desc += f" → {outcome}"
+                
+                tree_lines.append(f"{prefix}{connector} {status} {step_desc}")
+                
+                # Render substeps first
+                if step.substeps:
+                    for i, substep in enumerate(step.substeps):
+                        is_last_substep = i == len(step.substeps) - 1
+                        substep_connector = "└──" if is_last_substep else "├──"
+                        
+                        substep_status = get_step_status(substep.name)
+                        if status == "🟢":
+                            substep_status = "🟢"
+                        
+                        substep_prefix = prefix + ("    " if is_last_at_level else "│   ")
+                        tree_lines.append(f"{substep_prefix}{substep_connector} {substep_status} {substep.name}")
+                
+                # Find direct dependents (steps that depend on this step)
+                dependents = []
+                for s in self.service_def.steps:
+                    if step.name in s.depends_on and s.name not in rendered:
+                        dependents.append(s)
+                
+                # Render dependents with proper indentation
+                if dependents:
+                    # Add flow arrow
+                    flow_prefix = prefix + ("    " if is_last_at_level else "│   ")
+                    tree_lines.append(f"{flow_prefix}│")
+                    tree_lines.append(f"{flow_prefix}▼")
+                    
+                    # Render each dependent
+                    for i, dependent in enumerate(dependents):
+                        is_last_dependent = i == len(dependents) - 1
+                        render_step_and_dependents(
+                            dependent, 
+                            flow_prefix,
+                            is_last_dependent
+                        )
             
-            # Start with root steps
+            # Start with root steps (no dependencies)
+            root_steps = []
+            all_step_names = {s.name for s in self.service_def.steps}
+            
             for step in self.service_def.steps:
-                visit(step.name)
+                if not step.depends_on or not any(dep in all_step_names for dep in step.depends_on):
+                    root_steps.append(step)
             
-            return result
+            # Render from roots
+            for i, root_step in enumerate(root_steps):
+                is_last_root = i == len(root_steps) - 1
+                render_step_and_dependents(root_step, "", is_last_root)
         
-        # Render steps in dependency order
-        ordered_steps = build_dependency_graph()
-        for i, step in enumerate(ordered_steps):
-            is_last = i == len(ordered_steps) - 1
-            render_step(step, "", is_last)
-            
-            # Add flow arrows between steps that have dependencies
-            if not is_last:
-                next_step = ordered_steps[i + 1] if i + 1 < len(ordered_steps) else None
-                if next_step and step.name in next_step.depends_on:
-                    tree_lines.append("│")
-                    tree_lines.append("▼")
+        render_dependency_hierarchy()
         
         # Add current status indicator
         pending_steps = self.state_manager.get("_internal.pending_steps", self.service_state) or []
