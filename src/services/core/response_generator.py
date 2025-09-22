@@ -22,20 +22,28 @@ class ResponseGenerator:
 
     def _generate_dependency_tree_ascii(self) -> str:
         """
-        Creates a visual representation of the service's structure and execution flow.
+        Creates a visual dependency tree showing clear flow and relationships between steps.
         """
-        tree_lines = ["🌳 EXECUTION GRAPH:"]
+        tree_lines = ["🌳 DEPENDENCY TREE:"]
         pending_steps_names = self.state_manager.get("_internal.pending_steps", self.service_state) or []
 
         memo_is_complete = {}
-        def is_step_complete(step: StepInfo) -> bool:
+        def is_step_complete(step: StepInfo, parent_complete: bool = False) -> bool:
             step_name = step.name
-            if step_name in memo_is_complete: return memo_is_complete[step_name]
+            if step_name in memo_is_complete: 
+                return memo_is_complete[step_name]
             
+            # If parent is complete, substeps are also considered complete
+            if parent_complete:
+                memo_is_complete[step_name] = True
+                return True
+            
+            # Check if explicitly marked as complete
             if self.state_manager.get(f"_internal.completed_steps.{step_name}", self.service_state) is True:
                 memo_is_complete[step_name] = True
                 return True
             
+            # For container steps, check if all required substeps are complete
             if step.substeps:
                 required = [s for s in step.substeps if s.required]
                 if required and all(is_step_complete(s) for s in required):
@@ -45,35 +53,73 @@ class ResponseGenerator:
             memo_is_complete[step_name] = False
             return False
 
-        def build_tree(steps: List[StepInfo], prefix: str = ""):
+        def build_dependency_tree(steps: List[StepInfo], prefix: str = "", level: int = 0):
             for i, step in enumerate(steps):
                 is_last = i == len(steps) - 1
-                connector = "└── " if is_last else "├── "
                 
-                icon = "🔴"
-                if is_step_complete(step): icon = "🟢"
-                elif step.name in pending_steps_names: icon = "🟡"
+                # Different connectors based on level and dependencies
+                if level == 0:
+                    connector = "└── " if is_last else "├── "
+                else:
+                    connector = "└─► " if is_last else "├─► "
+                
+                # Check completion status
+                parent_is_complete = False
+                if level > 0:
+                    # Find parent step to check if it's complete
+                    parent_name = step.name.rsplit('.', 1)[0] if '.' in step.name else None
+                    if parent_name:
+                        parent_is_complete = self.state_manager.get(f"_internal.completed_steps.{parent_name}", self.service_state) is True
+                
+                step_complete = is_step_complete(step, parent_is_complete)
+                
+                # Icons and styling
+                if step_complete:
+                    icon = "🟢"
+                elif step.name in pending_steps_names:
+                    icon = "🟡"
+                else:
+                    icon = "🔴"
 
+                # Build step info
                 line = f"{prefix}{connector}{icon} {step.name}"
                 
-                annotations = []
+                # Add metadata
+                metadata = []
                 if step.depends_on:
-                    annotations.append(f"deps: {', '.join(step.depends_on)}")
+                    deps_status = []
+                    for dep in step.depends_on:
+                        dep_complete = self.state_manager.get(f"_internal.completed_steps.{dep}", self.service_state) is True
+                        deps_status.append(f"{'✓' if dep_complete else '✗'}{dep}")
+                    metadata.append(f"requires: {', '.join(deps_status)}")
+                
                 if step.action:
-                    annotations.append("action")
-                if annotations:
-                    line += f" [{'; '.join(annotations)}]"
+                    outcome = self.state_manager.get(f"_internal.outcomes.{step.name}", self.service_state)
+                    if outcome:
+                        metadata.append(f"action → {outcome}")
+                    else:
+                        metadata.append("action")
+                
+                if metadata:
+                    line += f" [{'; '.join(metadata)}]"
 
+                # Mark current step
                 if step.name in pending_steps_names:
-                    line += "   <-- CURRENT"
+                    line += "   ◄── NEXT"
                 
                 tree_lines.append(line)
 
+                # Recursively build substeps with increased indentation
                 if step.substeps:
                     new_prefix = prefix + ("    " if is_last else "│   ")
-                    build_tree(step.substeps, new_prefix)
+                    build_dependency_tree(step.substeps, new_prefix, level + 1)
 
-        build_tree(self.service_def.steps, "")
+        build_dependency_tree(self.service_def.steps, "")
+        
+        # Add legend
+        tree_lines.append("")
+        tree_lines.append("Legend: 🟢=Complete 🟡=Current 🔴=Pending ✓=Met ✗=Unmet")
+        
         return "\n".join(tree_lines)
 
     def _consolidate_schemas(self) -> Dict[str, Any]:
