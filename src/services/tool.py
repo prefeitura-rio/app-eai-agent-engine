@@ -59,7 +59,6 @@ def multi_step_service(
             current_data={},
             next_step_info=None,
             execution_summary=None,
-            final_output=None,
         )
         return response.model_dump()
 

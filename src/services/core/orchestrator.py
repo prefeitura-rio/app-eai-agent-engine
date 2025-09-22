@@ -451,7 +451,6 @@ class ServiceOrchestrator:
                     )
 
                     # Capture the complete execution tree BEFORE applying persistence resets
-                    from src.services.core.response_generator import ResponseGenerator
                     response_gen = ResponseGenerator(self.service_def, state_manager, service_state)
                     complete_tree = response_gen._generate_dependency_tree_ascii()
 
