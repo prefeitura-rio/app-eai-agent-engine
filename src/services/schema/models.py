@@ -19,6 +19,9 @@ class StepInfo(BaseModel):
     required: bool = Field(True, description="Indicates if the step is mandatory.")
     action: Optional[Callable[[Dict[str, Any]], 'ExecutionResult']] = Field(None, description="A callable method that executes the step's business logic and controls flow.")
     
+    # Lifecycle management - determines when step data should be reset
+    persistence_level: str = Field("permanent", description="Data persistence level: 'permanent' (never reset), 'session' (reset on session end), 'operation' (reset after each complete operation), 'transient' (reset immediately after use)")
+    
     # Removed: condition (actions decide), is_end (actions decide)
 
 

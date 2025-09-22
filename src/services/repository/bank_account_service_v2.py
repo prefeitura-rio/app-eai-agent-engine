@@ -170,6 +170,7 @@ class BankAccountServiceV2(BaseService):
                 ),
                 
                 # 5. Ask Action (Available when actions decide)
+                # persistence_level="operation" - resets after each operation so user can do multiple operations
                 StepInfo(
                     name="ask_action",
                     description="Would you like to make a deposit or check your balance?",
@@ -183,6 +184,7 @@ class BankAccountServiceV2(BaseService):
                         },
                     },
                     depends_on=["check_account"],  # Only available after account check
+                    persistence_level="operation",  # Reset after each operation
                 ),
                 
                 # 5b. Process Action Choice (Processes the user's choice)
@@ -190,9 +192,11 @@ class BankAccountServiceV2(BaseService):
                     name="process_action_choice",
                     action=self._process_action_choice,  # Action processes choice
                     depends_on=["ask_action"],  # Only available after action is chosen
+                    persistence_level="operation",  # Reset after each operation
                 ),
                 
-                # 6. Deposit Amount (Only if deposit chosen)
+                # 6. Deposit Amount Collection (Only if deposit chosen)
+                # persistence_level="operation" - resets so user can make multiple deposits
                 StepInfo(
                     name="deposit_amount",
                     description="How much would you like to deposit?",
@@ -201,7 +205,15 @@ class BankAccountServiceV2(BaseService):
                         "properties": {"deposit_amount": {"type": "number"}},
                     },
                     depends_on=["process_action_choice"],  # Only available after action choice processed
+                    persistence_level="operation",  # Reset after each operation
+                ),
+                
+                # 7. Execute Deposit (Action step)
+                StepInfo(
+                    name="execute_deposit",
                     action=self._make_deposit,  # Action completes deposit
+                    depends_on=["deposit_amount"],  # Only available after amount is collected
+                    persistence_level="operation",  # Reset after each operation
                 ),
                 
             ],

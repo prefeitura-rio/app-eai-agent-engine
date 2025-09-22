@@ -129,10 +129,11 @@ class ServiceOrchestrator:
         
         # Special case: If step has an action, check if the action has been executed (has outcome)
         if step.action:
-            action_executed = state_manager.get(f"_internal.outcomes.{step.name}", service_state_data) is not None
-            if action_executed:
+            action_outcome = state_manager.get(f"_internal.outcomes.{step.name}", service_state_data)
+            # If outcome exists and is not None (i.e., not reset), action was executed
+            if action_outcome is not None:
                 return False  # Action already executed, step is truly complete
-            # If action not executed, continue to check dependencies even if data exists
+            # If action not executed or was reset (None), continue to check dependencies
         elif is_self_complete:
             return False  # Data-only step that's complete
 
@@ -211,6 +212,80 @@ class ServiceOrchestrator:
 
         traverse_and_hydrate(self.service_def.steps)
 
+    def _apply_persistence_resets(
+        self, state_manager: ServiceState, service_state: Dict[str, Any]
+    ):
+        """
+        Applies data resets based on persistence_level of completed steps.
+        This is called when a service completes an operation.
+        """
+        def reset_step_data(steps: List[StepInfo], current_path: str = ""):
+            for step in steps:
+                # Build the full path for this step
+                step_path = f"{current_path}.{step.name}" if current_path else step.name
+                
+                # Check if this step was completed
+                is_completed = state_manager.get(
+                    f"_internal.completed_steps.{step.name}", service_state
+                ) is True
+                
+                if is_completed and hasattr(step, 'persistence_level'):
+                    if step.persistence_level == "operation":
+                        # Reset data for this step after operation completes
+                        # Only reset if the step actually has payload_schema (is a data collection step)
+                        if step.payload_schema:
+                            if "." in step_path:
+                                # Handle nested data (e.g., user_info.name)
+                                parent_path = step_path.rsplit(".", 1)[0]
+                                field_name = step_path.split(".")[-1]
+                                parent_data = state_manager.get(f"data.{parent_path}", service_state)
+                                if isinstance(parent_data, dict) and field_name in parent_data:
+                                    del parent_data[field_name]
+                            else:
+                                # Handle top-level data - only delete the specific field from payload_schema
+                                data = service_state.get("data", {})
+                                # Look at the payload schema to see which fields to reset
+                                if step.payload_schema.get("properties"):
+                                    for field_name in step.payload_schema["properties"].keys():
+                                        if field_name in data:
+                                            del data[field_name]
+                        
+                        # Reset completion status for operation-level steps
+                        state_manager.set(
+                            f"_internal.completed_steps.{step.name}",
+                            None,
+                            service_state,
+                        )
+                        
+                        # Reset action outcomes for operation-level steps with actions
+                        if step.action:
+                            state_manager.set(
+                                f"_internal.outcomes.{step.name}",
+                                None,
+                                service_state,
+                            )
+                    
+                    elif step.persistence_level == "transient":
+                        # Transient data is reset immediately after use
+                        # (This would typically be handled right after step execution,
+                        # but we include it here for completeness)
+                        if "." in step_path:
+                            parent_path = step_path.rsplit(".", 1)[0]
+                            field_name = step_path.split(".")[-1]
+                            parent_data = state_manager.get(f"data.{parent_path}", service_state)
+                            if isinstance(parent_data, dict) and field_name in parent_data:
+                                del parent_data[field_name]
+                        else:
+                            data = service_state.get("data", {})
+                            if step.name in data:
+                                del data[step.name]
+                
+                # Recursively process substeps
+                if step.substeps:
+                    reset_step_data(step.substeps, step_path)
+        
+        reset_step_data(self.service_def.steps)
+
     def execute_turn(
         self, user_id: str, payload: Optional[Dict[str, Any]] = None
     ) -> AgentResponse:
@@ -225,11 +300,15 @@ class ServiceOrchestrator:
 
         # If the service was complete and a new payload is provided, reset internal state.
         is_completed = state_manager.get("_internal.service_completed", service_state)
-        if is_completed and payload:
-            # Preserve data, reset progress
-            data = service_state.get("data", {})
-            service_state.clear()
-            service_state["data"] = data
+        if is_completed:
+            # Reset service completion flags to allow new operations
+            state_manager.set("_internal.service_completed", None, service_state)
+            state_manager.set("_internal.completion_message", None, service_state)
+            state_manager.set("_internal.action_next_steps", None, service_state)
+            state_manager.set("_internal.pending_steps", None, service_state)
+            
+            # Apply persistence-based resets for new operation
+            self._apply_persistence_resets(state_manager, service_state)
 
         if payload:
             pending_step_names = (
@@ -330,6 +409,9 @@ class ServiceOrchestrator:
                                 result.completion_message,
                                 service_state,
                             )
+                        
+                        # Apply persistence-based resets when service completes
+                        self._apply_persistence_resets(state_manager, service_state)
                     
                     state_manager.set(
                         f"_internal.completed_steps.{next_step.name}",
