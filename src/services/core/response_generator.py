@@ -60,8 +60,23 @@ class ResponseGenerator:
             if step.substeps:
                 for i, substep in enumerate(step.substeps):
                     is_last_substep = i == len(step.substeps) - 1
-                    next_prefix = prefix + ("    " if is_last else "│   ")
-                    render_step(substep, next_prefix, is_last_substep)
+                    substep_connector = "└──" if is_last_substep else "├──"
+                    
+                    # Fix substep status: if parent is complete, substeps should be complete too
+                    substep_status = get_step_status(substep.name)
+                    if status == "🟢":  # Parent is complete
+                        substep_status = "🟢"
+                    
+                    # Correct indentation for substeps
+                    substep_prefix = prefix + ("    " if is_last else "│   ")
+                    tree_lines.append(f"{substep_prefix}{substep_connector} {substep_status} {substep.name}")
+                    
+                    # Handle nested substeps recursively
+                    if substep.substeps:
+                        nested_prefix = substep_prefix + ("    " if is_last_substep else "│   ")
+                        for j, nested_step in enumerate(substep.substeps):
+                            is_last_nested = j == len(substep.substeps) - 1
+                            render_step(nested_step, nested_prefix, is_last_nested)
         
         # Find root steps (steps with no dependencies or dependencies outside current service)
         def find_root_steps():
