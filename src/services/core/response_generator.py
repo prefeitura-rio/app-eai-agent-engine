@@ -22,82 +22,81 @@ class ResponseGenerator:
 
     def _generate_dependency_tree_ascii(self) -> str:
         """
-        Creates a generic dependency tree visualization based purely on ServiceDefinition structure.
+        Creates an enhanced dependency tree visualization with improved formatting and information.
         100% service-agnostic - works with any service definition.
         """
-        tree_lines = [f"🌳 DEPENDENCY TREE: {self.service_def.service_name}"]
-        tree_lines.append("│")
+        tree_lines = []
+        tree_lines.append("═" * 60)
+        tree_lines.append(f"🌳 SERVICE EXECUTION TREE: {self.service_def.service_name.upper()}")
+        tree_lines.append("═" * 60)
+        tree_lines.append("")
         
-        def get_step_status(step_name: str) -> str:
+        # Get service completion status for enhanced messaging
+        is_service_completed = self.state_manager.get("_internal.service_completed", self.service_state)
+        completion_message = self.state_manager.get("_internal.completion_message", self.service_state)
+        
+        def get_step_status_enhanced(step_name: str) -> tuple[str, str]:
+            """Returns (emoji, description) for enhanced status display"""
+            # If service is completed, show all steps that were part of the execution path as completed
+            if is_service_completed:
+                # Check if this step has an outcome (was executed) or has data (was provided)
+                has_outcome = self.state_manager.get(f"_internal.outcomes.{step_name}", self.service_state) is not None
+                has_data = self.state_manager.get(f"data.{step_name}", self.service_state) is not None
+                if "." in step_name:
+                    # Handle nested data like user_info.name
+                    parent_key = step_name.rsplit(".", 1)[0]
+                    data_key = step_name.split(".")[-1]
+                    parent_data = self.state_manager.get(f"data.{parent_key}", self.service_state)
+                    has_data = isinstance(parent_data, dict) and data_key in parent_data
+                
+                # If step was executed/used or explicitly completed, show as completed
+                is_explicitly_completed = self.state_manager.get(f"_internal.completed_steps.{step_name}", self.service_state) is True
+                if has_outcome or has_data or is_explicitly_completed:
+                    return "✅", "COMPLETED"
+                else:
+                    return "⭕", "PENDING"  # Not used in this execution path
+            
+            # Normal logic for non-completed services
             if self.state_manager.get(f"_internal.completed_steps.{step_name}", self.service_state) is True:
-                return "🟢"
+                return "✅", "COMPLETED"
+            # If service is not completed, check for pending steps
             pending_steps = self.state_manager.get("_internal.pending_steps", self.service_state) or []
             if step_name in pending_steps:
-                return "🟡"
-            return "🔴"
+                return "⏳", "CURRENT"
+            return "⭕", "PENDING"
         
         def get_outcome(step_name: str) -> str:
             return self.state_manager.get(f"_internal.outcomes.{step_name}", self.service_state)
         
-        def render_step(step: StepInfo, prefix: str = "", is_last: bool = True):
-            """Renders a step and all its substeps recursively."""
-            connector = "└──" if is_last else "├──"
-            status = get_step_status(step.name)
-            
-            # Build step description
-            step_desc = step.name
-            if step.action:
-                step_desc += f" (action)"
-            
-            # Add outcome if it's an action step
-            outcome = get_outcome(step.name)
-            if outcome:
-                step_desc += f" → {outcome}"
-            
-            tree_lines.append(f"{prefix}{connector} {status} {step_desc}")
-            
-            # Render substeps if any
-            if step.substeps:
-                for i, substep in enumerate(step.substeps):
-                    is_last_substep = i == len(step.substeps) - 1
-                    substep_connector = "└──" if is_last_substep else "├──"
-                    
-                    # Fix substep status: if parent is complete, substeps should be complete too
-                    substep_status = get_step_status(substep.name)
-                    if status == "🟢":  # Parent is complete
-                        substep_status = "🟢"
-                    
-                    # Correct indentation for substeps
-                    substep_prefix = prefix + ("    " if is_last else "│   ")
-                    tree_lines.append(f"{substep_prefix}{substep_connector} {substep_status} {substep.name}")
-                    
-                    # Handle nested substeps recursively
-                    if substep.substeps:
-                        nested_prefix = substep_prefix + ("    " if is_last_substep else "│   ")
-                        for j, nested_step in enumerate(substep.substeps):
-                            is_last_nested = j == len(substep.substeps) - 1
-                            render_step(nested_step, nested_prefix, is_last_nested)
+        def get_data_value(step_name: str) -> str:
+            """Get the actual data value for completed data collection steps"""
+            if "." in step_name:
+                # Handle nested data like user_info.name
+                parent_key = step_name.rsplit(".", 1)[0]
+                data_key = step_name.split(".")[-1]
+                parent_data = self.state_manager.get(f"data.{parent_key}", self.service_state)
+                if isinstance(parent_data, dict) and data_key in parent_data:
+                    value = parent_data[data_key]
+                    # Truncate long values for display
+                    if isinstance(value, str) and len(value) > 30:
+                        return f'"{value[:27]}..."'
+                    elif isinstance(value, str):
+                        return f'"{value}"'
+                    return str(value)
+            else:
+                # Handle top-level data
+                value = self.state_manager.get(f"data.{step_name}", self.service_state)
+                if value is not None:
+                    if isinstance(value, str) and len(value) > 30:
+                        return f'"{value[:27]}..."'
+                    elif isinstance(value, str):
+                        return f'"{value}"'
+                    return str(value)
+            return ""
         
-        # Find root steps (steps with no dependencies or dependencies outside current service)
-        def find_root_steps():
-            all_step_names = set()
-            def collect_names(steps):
-                for step in steps:
-                    all_step_names.add(step.name)
-                    if step.substeps:
-                        collect_names(step.substeps)
-            collect_names(self.service_def.steps)
-            
-            root_steps = []
-            for step in self.service_def.steps:
-                # A step is root if it has no dependencies or all dependencies are external
-                if not step.depends_on or not any(dep in all_step_names for dep in step.depends_on):
-                    root_steps.append(step)
-            return root_steps
-        
-        # Build hierarchical dependency tree with proper indentation
+        # Build enhanced hierarchical dependency tree 
         def render_dependency_hierarchy():
-            """Renders steps with hierarchical indentation based on dependencies."""
+            """Renders steps with enhanced hierarchical indentation based on dependencies."""
             rendered = set()
             
             def render_step_and_dependents(step: StepInfo, prefix: str = "", is_last_at_level: bool = True):
@@ -105,32 +104,61 @@ class ResponseGenerator:
                     return
                 rendered.add(step.name)
                 
-                # Render current step
+                # Render current step with enhanced information
                 connector = "└──" if is_last_at_level else "├──"
-                status = get_step_status(step.name)
+                status_emoji, status_text = get_step_status_enhanced(step.name)
                 
-                step_desc = step.name
+                # Build enhanced step description
+                step_desc = f"{step.name}"
+                
+                # Add step type indicator with better icons
                 if step.action:
-                    step_desc += " (action)"
+                    step_desc += " 🎬(action)"
+                elif step.payload_schema:
+                    step_desc += " 📝(data)"
+                elif step.substeps:
+                    step_desc += " 📁(container)"
                 
+                # Add data value for completed data steps
+                if not step.action and status_text == "COMPLETED":
+                    data_value = get_data_value(step.name)
+                    if data_value:
+                        step_desc += f" = {data_value}"
+                
+                # Add outcome if it's an action step
                 outcome = get_outcome(step.name)
                 if outcome:
                     step_desc += f" → {outcome}"
                 
-                tree_lines.append(f"{prefix}{connector} {status} {step_desc}")
+                tree_lines.append(f"{prefix}{connector} {status_emoji} {step_desc}")
                 
-                # Render substeps first
+                # Render substeps with enhanced information
                 if step.substeps:
                     for i, substep in enumerate(step.substeps):
                         is_last_substep = i == len(step.substeps) - 1
                         substep_connector = "└──" if is_last_substep else "├──"
                         
-                        substep_status = get_step_status(substep.name)
-                        if status == "🟢":
-                            substep_status = "🟢"
+                        substep_status_emoji, substep_status_text = get_step_status_enhanced(substep.name)
+                        # If parent is complete, substeps should be complete too
+                        if status_text == "COMPLETED":
+                            substep_status_emoji = "✅"
                         
                         substep_prefix = prefix + ("    " if is_last_at_level else "│   ")
-                        tree_lines.append(f"{substep_prefix}{substep_connector} {substep_status} {substep.name}")
+                        
+                        # Enhanced substep description
+                        substep_desc = substep.name
+                        if substep.action:
+                            substep_desc += " 🎬(action)"
+                        elif substep.payload_schema:
+                            substep_desc += " 📝(data)"
+                            
+                        # Add data value for completed substeps
+                        if not substep.action and substep_status_text == "COMPLETED":
+                            substep_data_value = get_data_value(substep.name)
+                            if substep_data_value:
+                                substep_desc += f" = {substep_data_value}"
+                        
+                        tree_lines.append(f"{substep_prefix}{substep_connector} {substep_status_emoji} {substep_desc}")
                 
                 # Find direct dependents (steps that depend on this step)
                 dependents = []
@@ -169,15 +197,50 @@ class ResponseGenerator:
         
         render_dependency_hierarchy()
         
-        # Add current status indicator
-        pending_steps = self.state_manager.get("_internal.pending_steps", self.service_state) or []
-        if pending_steps:
-            tree_lines.append("")
-            tree_lines.append(f"◄── NEXT: {', '.join(pending_steps)}")
-        
-        # Add legend
+        # Enhanced footer with comprehensive status information
         tree_lines.append("")
-        tree_lines.append("Legend: 🟢=Complete 🟡=Current 🔴=Pending")
+        tree_lines.append("─" * 60)
+        
+        # Service completion status
+        if is_service_completed:
+            tree_lines.append("🎉 SERVICE COMPLETED SUCCESSFULLY!")
+            if completion_message:
+                tree_lines.append(f"📝 Result: {completion_message}")
+        else:
+            # Current status and next steps
+            pending_steps = self.state_manager.get("_internal.pending_steps", self.service_state) or []
+            if pending_steps:
+                tree_lines.append(f"⏳ AWAITING INPUT: {', '.join(pending_steps)}")
+            else:
+                tree_lines.append("🔄 PROCESSING...")
+        
+        # Statistics summary
+        all_steps = []
+        def collect_all_steps(steps):
+            for step in steps:
+                if step.payload_schema or step.action:  # Only count actual executable steps
+                    all_steps.append(step)
+                if step.substeps:
+                    collect_all_steps(step.substeps)
+        collect_all_steps(self.service_def.steps)
+        
+        # If service is completed, show 100% progress regardless of individual step states
+        if is_service_completed:
+            total_count = len(all_steps)
+            tree_lines.append(f"📊 Progress: {total_count}/{total_count} steps (100%)")
+        else:
+            completed_count = sum(1 for step in all_steps 
+                                 if self.state_manager.get(f"_internal.completed_steps.{step.name}", self.service_state) is True)
+            total_count = len(all_steps)
+            progress_percentage = int((completed_count / total_count) * 100) if total_count > 0 else 0
+            
+            tree_lines.append(f"📊 Progress: {completed_count}/{total_count} steps ({progress_percentage}%)")
+        
+        # Enhanced legend
+        tree_lines.append("")
+        tree_lines.append("Legend: ✅=Completed ⏳=Current ⭕=Pending")
+        tree_lines.append("Types:  🎬=Action 📝=Data 📁=Container")
+        tree_lines.append("═" * 60)
         
         return "\n".join(tree_lines)
 
@@ -212,6 +275,11 @@ class ResponseGenerator:
         """
         Constructs a hierarchical NextStepInfo object based on all pending data collection steps.
         """
+        # If service is completed, return None regardless of pending steps
+        is_service_completed = self.state_manager.get("_internal.service_completed", self.service_state)
+        if is_service_completed:
+            return None
+            
         pending_step_names = self.state_manager.get("_internal.pending_steps", self.service_state)
         if not pending_step_names:
             return None
@@ -296,16 +364,13 @@ class ResponseGenerator:
 
         return parent_next_step
 
-    def get_execution_summary(self) -> ExecutionSummary:
-        """Constructs the ExecutionSummary object."""
-        # If service is completed, use the pre-reset tree to show complete execution path
-        service_completed = self.state_manager.get("_internal.service_completed", self.service_state)
-        if service_completed:
-            complete_tree = self.state_manager.get("_internal.execution_tree_complete", self.service_state)
-            if complete_tree:
-                return ExecutionSummary(tree=complete_tree)
+    def get_execution_summary(self, complete_tree: Optional[str] = None) -> ExecutionSummary:
+        """Constructs the ExecutionSummary object using current state."""
+        # If we have a complete tree passed as parameter (from service completion), use it
+        if complete_tree:
+            return ExecutionSummary(tree=complete_tree)
         
-        # Otherwise, use current state tree
+        # Otherwise, generate current tree
         return ExecutionSummary(
             tree=self._generate_dependency_tree_ascii()
         )

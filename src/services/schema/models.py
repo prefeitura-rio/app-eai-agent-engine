@@ -161,4 +161,3 @@ class AgentResponse(BaseModel):
     current_data: Dict[str, Any] = Field(..., description="The complete, current ServiceState object.")
     next_step_info: Optional[NextStepInfo] = Field(None, description="Information about the next step, if status is 'IN_PROGRESS'.")
     execution_summary: Optional[ExecutionSummary] = None
-    final_output: Optional[Dict[str, Any]] = Field(None, description="The final result data, if status is 'COMPLETED'.")

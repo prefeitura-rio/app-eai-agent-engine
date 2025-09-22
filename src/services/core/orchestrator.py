@@ -67,39 +67,42 @@ class ServiceOrchestrator:
         """
         V3: Calculates which steps are currently active (valid for processing).
         This is the core of the Strict Graph Executor - only active steps can be processed.
-        
+
         Returns:
             List of StepInfo objects that are currently valid for data collection or action execution
         """
         active_steps = []
-        
+
         def check_step_activity(steps: List[StepInfo]):
             for step in steps:
                 # Skip if step is already completed
-                is_completed = state_manager.get(
-                    f"_internal.completed_steps.{step.name}", service_state_data
-                ) is True
-                
+                is_completed = (
+                    state_manager.get(
+                        f"_internal.completed_steps.{step.name}", service_state_data
+                    )
+                    is True
+                )
+
                 if is_completed:
                     # Process substeps even if parent is complete (for hierarchical validation)
                     if step.substeps:
                         check_step_activity(step.substeps)
                     continue
-                
+
                 # Check if dependencies are met
                 dependencies_met = all(
                     self._is_dependency_met(dep_name, state_manager, service_state_data)
                     for dep_name in step.depends_on
                 )
-                
+
                 if dependencies_met:
                     # This step is active
                     active_steps.append(step)
-                
+
                 # Always check substeps for hierarchical structures
                 if step.substeps:
                     check_step_activity(step.substeps)
-        
+
         check_step_activity(self.service_def.steps)
         return active_steps
 
@@ -363,61 +366,61 @@ class ServiceOrchestrator:
                     reset_step_data(step.substeps, step_path)
 
         reset_step_data(self.service_def.steps)
-    
+
     def _execute_transition_loop(
         self, state_manager: ServiceState, service_state: Dict[str, Any]
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, Optional[str], Optional[str]]:
         """
         V3: Executes actions in cascade until no more actions are available.
         This is the heart of the Strict Graph Executor's action execution.
-        
+
         Returns:
-            tuple[service_completed, error_message]
+            tuple[service_completed, error_message, complete_tree]
         """
         while True:
             # Get currently active steps
             active_steps = self._get_active_steps(state_manager, service_state)
-            
+
             # Find action steps that are ready to execute
             action_steps = [step for step in active_steps if step.action]
-            
+
             if not action_steps:
                 # No more actions to execute - transition loop complete
                 break
-            
+
             # Execute the first available action
             next_action = action_steps[0]
-            
+
             try:
                 print(f"🎬 V3: Executing action '{next_action.name}'")
                 result = next_action.action(service_state)
-                
+
                 # Merge updated data into the data section
                 if not service_state.get("data"):
                     service_state["data"] = {}
                 state_manager.merge_data(result.updated_data, service_state["data"])
-                
+
                 # Store action outcome
                 state_manager.set(
                     f"_internal.outcomes.{next_action.name}",
                     result.outcome,
                     service_state,
                 )
-                
+
                 if not result.success:
                     error_message = (
                         result.error_message
                         or f"Action '{next_action.action.__name__}' failed."
                     )
                     return False, error_message
-                
+
                 # Mark the action step as completed
                 state_manager.set(
                     f"_internal.completed_steps.{next_action.name}",
                     True,
                     service_state,
                 )
-                
+
                 # V3: Action controls the flow
                 if result.next_steps:
                     state_manager.set(
@@ -425,7 +428,7 @@ class ServiceOrchestrator:
                         result.next_steps,
                         service_state,
                     )
-                
+
                 # V3: Action decides when service is complete
                 if result.is_complete:
                     state_manager.set(
@@ -440,53 +443,56 @@ class ServiceOrchestrator:
                             service_state,
                         )
                     
-                    # Capture execution tree BEFORE applying resets
-                    from src.services.core.response_generator import ResponseGenerator
-                    pre_reset_response_gen = ResponseGenerator(
-                        self.service_def, state_manager, service_state
-                    )
-                    execution_tree_before_reset = (
-                        pre_reset_response_gen._generate_dependency_tree_ascii()
-                    )
+                    # Clear pending steps when service completes
                     state_manager.set(
-                        "_internal.execution_tree_complete",
-                        execution_tree_before_reset,
+                        "_internal.pending_steps",
+                        None,
                         service_state,
                     )
-                    
+
+                    # Capture the complete execution tree BEFORE applying persistence resets
+                    from src.services.core.response_generator import ResponseGenerator
+                    response_gen = ResponseGenerator(self.service_def, state_manager, service_state)
+                    complete_tree = response_gen._generate_dependency_tree_ascii()
+
                     # Apply persistence-based resets when service completes
                     self._apply_persistence_resets(state_manager, service_state)
-                    
-                    return True, None  # Service completed successfully
-                
+
+                    return True, None, complete_tree  # Service completed successfully
+
                 # Continue the loop to check for more actions
-                print(f"✅ V3: Action '{next_action.name}' completed with outcome: {result.outcome}")
-                
+                print(
+                    f"✅ V3: Action '{next_action.name}' completed with outcome: {result.outcome}"
+                )
+
             except Exception as e:
                 error_message = (
                     f"Unexpected error in action '{next_action.action.__name__}': {e}"
                 )
-                return False, error_message
-        
+                return False, error_message, None
+
         # Transition loop completed without service completion
-        return False, None
+        return False, None, None
 
     def execute_turn(
         self, user_id: str, payload: Optional[Dict[str, Any]] = None
     ) -> AgentResponse:
         """
         V3: Executes a single turn using the Strict Graph Executor approach.
-        
+
         This method implements the core V3 improvements:
         1. Strict step validation (only active steps are processed)
         2. Cascade action execution via transition loop
         3. Enhanced error handling and recovery
         """
-        print(f"🚀 V3: Starting execute_turn for service '{self.service_def.service_name}'")
-        
+        print(
+            f"🚀 V3: Starting execute_turn for service '{self.service_def.service_name}'"
+        )
+
         state_manager = ServiceState(user_id)
         service_state = state_manager.get_service_state(self.service_def.service_name)
         error_message = None
+        complete_tree = None
 
         # 1. LOAD STATE: Handle service completion resets
         is_completed = state_manager.get("_internal.service_completed", service_state)
@@ -505,13 +511,13 @@ class ServiceOrchestrator:
             print(f"📝 V3: Processing payload with {len(payload)} fields")
             active_steps = self._get_active_steps(state_manager, service_state)
             active_step_names = {step.name for step in active_steps}
-            
+
             print(f"✅ V3: Active steps: {active_step_names}")
-            
+
             # 3. PROCESS PAYLOAD (Only for Active Nodes): Strict validation
             processed_fields = []
             ignored_fields = []
-            
+
             for step_name, value in payload.items():
                 if step_name in active_step_names:
                     # Find the step for validation
@@ -524,20 +530,26 @@ class ServiceOrchestrator:
                             validation_payload = {field_name: value}
                         else:
                             validation_payload = {step_name: value}
-                        
-                        is_valid, validation_error, validated_data = step.validate_payload(validation_payload)
-                        
+
+                        is_valid, validation_error, validated_data = (
+                            step.validate_payload(validation_payload)
+                        )
+
                         if is_valid:
                             # Handle dotted notation (e.g., "user_info.name")
                             if "." in step_name:
                                 parent_key = step_name.rsplit(".", 1)[0]
                                 data_key = step_name.split(".")[-1]
                                 state_manager.set(
-                                    f"data.{parent_key}.{data_key}", value, service_state
+                                    f"data.{parent_key}.{data_key}",
+                                    value,
+                                    service_state,
                                 )
                             else:
                                 # Handle top-level step
-                                state_manager.set(f"data.{step_name}", value, service_state)
+                                state_manager.set(
+                                    f"data.{step_name}", value, service_state
+                                )
 
                             # Mark step as completed
                             state_manager.set(
@@ -554,66 +566,77 @@ class ServiceOrchestrator:
                 else:
                     ignored_fields.append(step_name)
                     print(f"🚫 V3: Ignored field '{step_name}' (not in active steps)")
-            
+
             if ignored_fields:
-                print(f"⚠️  V3: Ignored {len(ignored_fields)} fields due to dependency requirements: {ignored_fields}")
+                print(
+                    f"⚠️  V3: Ignored {len(ignored_fields)} fields due to dependency requirements: {ignored_fields}"
+                )
 
         # 4. UPDATE STATE AND EXECUTE ACTIONS (Transition Loop)
         if not error_message:
             # Hydrate state from existing data
             self._hydrate_state(state_manager, service_state)
-            
+
             # Execute the transition loop (cascade action execution)
             print("🔄 V3: Starting transition loop")
-            service_completed, loop_error = self._execute_transition_loop(state_manager, service_state)
-            
+            service_completed, loop_error, complete_tree = self._execute_transition_loop(
+                state_manager, service_state
+            )
+
             if loop_error:
                 error_message = loop_error
             elif service_completed:
                 print("🎉 V3: Service completed via transition loop")
 
         # 5. DETERMINE NEXT STEP: Only after transition loop is complete
-        if not error_message and not state_manager.get("_internal.service_completed", service_state):
+        if not error_message and not state_manager.get(
+            "_internal.service_completed", service_state
+        ):
             # Calculate next pending steps for data collection
             next_steps = self._find_next_steps(state_manager, service_state)
-            data_collection_steps = [step.name for step in next_steps if not step.action and step.payload_schema]
+            data_collection_steps = [
+                step.name
+                for step in next_steps
+                if not step.action and step.payload_schema
+            ]
             if data_collection_steps:
-                state_manager.set("_internal.pending_steps", data_collection_steps, service_state)
-        
+                state_manager.set(
+                    "_internal.pending_steps", data_collection_steps, service_state
+                )
+
         state_manager.save()
 
         response_gen = ResponseGenerator(self.service_def, state_manager, service_state)
         next_step_info = response_gen.get_next_step_info()
 
         status = "IN_PROGRESS"
-        final_output = None
 
         if error_message:
             status = "FAILED"
             print(f"❌ V3: Execution failed: {error_message}")
         elif state_manager.get("_internal.service_completed", service_state):
             status = "COMPLETED"
-            final_output = service_state.get("data", {})
-            for key, value in service_state.items():
-                if key not in ["data", "_internal"]:
-                    final_output[key] = value
             print("🎉 V3: Service execution completed successfully")
         elif not next_step_info:
             # Check if we have any available steps
             active_steps = self._get_active_steps(state_manager, service_state)
             if not active_steps:
                 status = "FAILED"
-                error_message = "Service flow ended without completion or available next steps."
+                error_message = (
+                    "Service flow ended without completion or available next steps."
+                )
                 print(f"❌ V3: {error_message}")
-        
+
         print(f"🏁 V3: Execution completed with status: {status}")
-        
+
+        # Use the complete tree if service was completed and we have it
+        execution_summary = response_gen.get_execution_summary(complete_tree)
+
         return AgentResponse(
             service_name=self.service_def.service_name,
             status=status,
             error_message=error_message,
             current_data=service_state,
             next_step_info=next_step_info,
-            execution_summary=response_gen.get_execution_summary(),
-            final_output=final_output,
+            execution_summary=execution_summary,
         )

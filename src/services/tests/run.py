@@ -30,6 +30,7 @@ SPECIFIC_TESTS = {
     "pydantic": True,         # Test Pydantic validation
     "error_handling": True,   # Test enhanced error handling
     "transition_loop": True,  # Test transition loop
+    "clean_state": True,      # Test clean state (no execution_tree_complete)
 }
 # ============================================================
 
@@ -68,7 +69,8 @@ def run_specific_tests():
         test_strict_graph_executor, 
         test_pydantic_validation,
         test_enhanced_error_handling,
-        test_transition_loop
+        test_transition_loop,
+        test_clean_state
     )
     
     print("🎯 Running SPECIFIC Multi-Step Service Framework Tests")
@@ -89,6 +91,9 @@ def run_specific_tests():
             
         if SPECIFIC_TESTS.get("transition_loop", False):
             test_transition_loop()
+            
+        if SPECIFIC_TESTS.get("clean_state", False):
+            test_clean_state()
         
         print("\n" + "=" * 70)
         print("🎉 All specified tests completed successfully!")
