@@ -1,195 +1,133 @@
-# Multi-Step Services Framework
+Excelente. Chegamos a um design robusto e completo. Abaixo está o plano consolidado e detalhado, estruturado como um documento de especificação técnica para a equipe de desenvolvimento.
 
-## Overview
+---
 
-The Multi-Step Services Framework is a sophisticated system designed to handle complex, stateful interactions through a series of interconnected steps. It provides a declarative approach to defining service workflows with automatic dependency management, validation, and state persistence.
+### **Plano de Implementação Lógica: Framework de Serviços Conversacionais v1.0**
 
-## Core Concepts
+**1. Visão Geral e Conceitos Fundamentais**
 
-### Service Definition
-Each service is defined through a **ServiceDefinition** that acts as the single source of truth for all service behavior. This definition includes:
-- Service metadata (name, description)
-- Complete step specifications
-- Dependency relationships
-- Validation rules
+**1.1. Objetivo**
+Construir um framework back-end para a execução de serviços complexos e multi-passo. O framework é projetado para ser a principal "ferramenta" (tool) de um agente de IA conversacional, que interage com o usuário final. A cada turno da conversa, o agente consultará o framework, que por sua vez informará o estado atual do serviço e qual a próxima ação necessária.
 
-### Steps and Substeps
-The framework supports **infinite nested substeps**, allowing for complex hierarchical data structures:
-- **Main Steps**: Top-level operations (e.g., `user_info`, `account_info`)
-- **Substeps**: Nested operations within main steps (e.g., `user_info.address.coordinates.precision.level`)
-- **Infinite Nesting**: No limit to substep depth, supporting complex real-world data structures
+**1.2. Princípios de Design**
 
-### Data Types and Examples
-Each step is defined with a **payload_example** that serves dual purposes:
-- **Documentation**: Shows expected data structure and format
-- **Type Detection**: Framework automatically detects how to handle data based on example structure
-- **Validation Template**: Provides reference for validating incoming data
+*   **Declarativo:** A estrutura e o fluxo de um serviço são definidos como dados (uma configuração), não como código imperativo.
+*   **Orientado a Estado:** O estado atual do serviço para um usuário é a única fonte da verdade que determina os próximos passos possíveis.
+*   **Fluxo Condicional:** Um serviço é um grafo com ramificações e múltiplos finais possíveis, controlado por condições lógicas baseadas no estado.
+*   **Hierárquico:** A estrutura de dados e os passos podem ser aninhados para representar entidades complexas do mundo real (`usuario.endereco.coordenadas`).
+*   **Informativo:** A resposta do framework ao agente de IA deve ser rica em contexto, fornecendo não apenas a próxima pergunta, mas também um resumo completo do progresso.
 
-## Architecture Components
+**2. Componentes Principais e Estruturas de Dados**
 
-### 1. Step Information (StepInfo)
-Defines individual steps with:
-- **Core Properties**: Name, description, required status
-- **Dependencies**: Prerequisites that must be completed first
-- **Payload Examples**: Expected data structure and format
-- **Infinite Substeps**: Recursive substep definitions for complex structures
+**2.1. Definição do Serviço (`ServiceDefinition`)**
+O "blueprint" imutável de um serviço.
 
-### 2. Service Definition (ServiceDefinition)
-Central orchestrator that:
-- **Manages Dependencies**: Calculates available steps based on current state
-- **Delegates Responsibilities**: Uses specialized engines for different concerns
-- **Generates Schemas**: Creates dynamic JSON schemas for current service state
-- **Validates Structures**: Ensures data integrity across all steps
+*   **`service_name`**: Identificador único em string (ex: "pagamento_iptu").
+*   **`description`**: Descrição geral do serviço.
+*   **`steps`**: Uma lista contendo as definições do primeiro nível de passos (`StepInfo`).
 
-### 3. Specialized Engines
+**2.2. Definição do Passo (`StepInfo`)**
+O átomo do framework, descrevendo um único nó no grafo do serviço.
 
-#### Dependency Engine
-- **Topological Sorting**: Determines correct step execution order
-- **Prerequisite Validation**: Ensures dependencies are satisfied before step execution
-- **Completion Detection**: Identifies when services are fully completed
-- **State Analysis**: Analyzes current progress and available actions
+*   **Identificação e Hierarquia:**
+    *   **`name`**: Nome único do passo. Deve suportar uma notação que indique hierarquia (ex: `user_info` ou `user_info.address`).
+    *   **`substeps`**: Uma lista de outras `StepInfo` para permitir aninhamento infinito.
+*   **Interação e Coleta de Dados:**
+    *   **`description`**: O texto que instrui o agente de IA sobre o que este passo faz ou o que ele precisa pedir ao usuário. Pode conter variáveis do estado (ex: "Encontrei estas dívidas: {found_debts.options}. Qual você escolhe?").
+    *   **`payload_schema`**: A definição da estrutura (em formato JSON Schema) que este passo espera receber do usuário.
+*   **Controle de Fluxo (Lógica do Grafo):**
+    *   **`depends_on`**: Uma lista de nomes de outros passos que devem ser concluídos para que este passo possa ser ativado.
+    *   **`condition`**: Uma expressão lógica em string a ser avaliada contra o estado do serviço (ex: `'search_debts.outcome == "DEBTS_FOUND"'`).
+    *   **`is_end`**: Um booleano que marca este passo como um ponto final bem-sucedido do fluxo.
+    *   **`required`**: Um booleano que indica a obrigatoriedade do passo.
+*   **Execução de Lógica de Negócio:**
+    *   **`action`**: Uma referência a uma função/método que executa a lógica de negócio do passo (ex: chamar uma API). Se um passo não tem `action`, ele é, por definição, um passo de coleta de dados do usuário.
 
-#### Validation Engine
-- **Bulk Processing**: Handles multiple step validations in single operation
-- **Substep Mapping**: Maps flat input to nested structures automatically
-- **Error Aggregation**: Collects and categorizes validation errors
-- **Dependency Cross-Validation**: Ensures dependencies remain valid during updates
+**2.3. Estado do Serviço (`ServiceState`)**
+Objeto mutável que armazena todos os dados de uma execução de serviço para um único usuário.
 
-#### Visualization Engine
-- **Progress Tracking**: Visual representation of completion status
-- **Dependency Trees**: ASCII art showing step relationships
-- **State Summaries**: Human-readable progress descriptions
-- **Next Action Suggestions**: Intelligent recommendations for next steps
+*   **Funcionalidade:** Deve operar como um dicionário aninhado.
+*   **Requisito Chave:** Deve expor métodos para ler e escrever valores usando **notação de ponto** para navegar na hierarquia de dados (ex: `state.get('user_info.address.zip_code')`).
 
-### 4. Base Service
-Abstract foundation for all services providing:
-- **State Management**: Persistent data storage and retrieval
-- **Step Execution**: Framework for processing individual steps
-- **Validation Hooks**: Integration points for custom validation logic
-- **Completion Logic**: Standardized completion detection and messaging
+**2.4. Resultado da Execução da Ação (`ExecutionResult`)**
+O contrato de retorno *interno* para toda `action`, usado pelo Orquestrador.
 
-## Data Flow and Processing
+*   **`success`**: Booleano indicando o sucesso da ação.
+*   **`outcome`**: Uma string que descreve o resultado semântico da ação (ex: "DEBTS_FOUND"), usado para alimentar as `condition`.
+*   **`updated_data`**: Um objeto com dados a serem mesclados no `ServiceState`.
+*   **`error_message`**: Mensagem de erro, caso `success` seja falso.
 
-### 1. Request Processing
-1. **Payload Reception**: Framework receives structured data payload
-2. **Service Resolution**: Identifies target service from registry
-3. **State Loading**: Retrieves current service state for user
-4. **Bulk Validation**: Processes all payload fields simultaneously
+**3. O Orquestrador do Serviço (`ServiceOrquestrator`)**
 
-### 2. Validation Pipeline
-1. **Structure Validation**: Ensures payload matches expected format
-2. **Dependency Checking**: Verifies prerequisites are satisfied
-3. **Business Validation**: Applies service-specific validation rules
-4. **Cross-Field Validation**: Checks relationships between fields
+O cérebro do framework e o único ponto de contato para o agente de IA.
 
-### 3. State Management
-1. **Atomic Updates**: All valid changes applied together
-2. **Error Isolation**: Invalid fields rejected without affecting valid ones
-3. **State Persistence**: Automatic saving after successful processing
-4. **User Isolation**: Complete separation of state between different users
+**3.1. Ponto de Entrada Lógico**
+O Orquestrador expõe uma função principal que recebe: `(service_name, user_id, payload_recebido)`.
 
-### 4. Response Generation
-1. **State Analysis**: Comprehensive analysis of current service state
-2. **Schema Generation**: Dynamic schema for available next steps
-3. **Progress Calculation**: Completion percentages and status
-4. **Visualization**: ASCII art trees and progress indicators
+**3.2. Fluxo de Execução Principal**
 
-## Advanced Features
+1.  **Carregamento:** Carrega a `ServiceDefinition` e o `ServiceState` do usuário.
+2.  **Processamento da Entrada:** Se `payload_recebido` existir, valida-o contra o `payload_schema` do passo que estava pendente e atualiza o `ServiceState`.
+3.  **Loop de Execução Automática:**
+    *   O Orquestrador entra em um loop contínuo para executar todos os passos que não requerem intervenção do usuário.
+    *   **a. Encontrar Próximo Passo Válido:** Em cada iteração, ele varre a árvore completa de `steps` e encontra o primeiro passo que satisfaça **todas** as seguintes regras:
+        1.  Não foi concluído ainda.
+        2.  Todos os seus `depends_on` foram satisfeitos.
+        3.  Sua `condition` (se existir) é avaliada como verdadeira contra o `ServiceState`.
+    *   **b. Decidir e Agir:**
+        *   **Se um passo válido é encontrado e ele possui uma `action`:** A `action` é executada. O `ServiceState` é atualizado com o `ExecutionResult`. O loop **reinicia** para reavaliar o fluxo com o novo estado.
+        *   **Se um passo válido é encontrado mas ele NÃO possui uma `action`:** O loop é **quebrado**. O framework precisa de dados do usuário.
+        *   **Se nenhum passo válido é encontrado:** O loop é **quebrado**. O fluxo chegou a um fim.
+4.  **Geração da Resposta para o Agente (`AgentResponse`)**: Após o loop quebrar, o Orquestrador monta e retorna o objeto `AgentResponse`.
 
-### Infinite Nested Substeps
-The framework supports arbitrarily deep nesting structures:
-- **Dot Notation**: Access nested fields using `parent.child.grandchild` syntax
-- **Recursive Validation**: Validates structure at all nesting levels
-- **Automatic Assembly**: Converts flat inputs to nested JSON structures
-- **Type Conversion**: Intelligent type conversion based on examples
+**4. A Resposta para o Agente (`AgentResponse`)**
 
-### Hybrid Input Modes
-Services can accept data in multiple formats:
-- **Individual Substeps**: Send one field at a time (`name: "John"`)
-- **Partial Groups**: Send subset of related fields
-- **Complete Structures**: Send entire nested JSON objects
-- **Mixed Approaches**: Combine different input styles within same service
+Este é o objeto de resposta completo e rico em contexto que o Orquestrador envia ao agente de IA a cada chamada.
 
-### Dynamic Schema Generation
-Schemas adapt to current service state:
-- **Context-Aware**: Only shows currently available steps
-- **Dependency-Driven**: Updates based on completed prerequisites
-- **Example-Rich**: Includes payload examples for all available steps
-- **Validation-Ready**: Provides complete validation information
+*   **`service_name`**: O identificador do serviço em execução.
+*   **`status`**: O estado geral do fluxo (`IN_PROGRESS`, `COMPLETED`, `FAILED`).
+*   **`error_message`**: Descrição do erro, apenas se `status` for `FAILED`.
+*   **`current_data`**: O objeto completo do `ServiceState` atual.
+*   **`next_step_info`** (presente se `status` for `IN_PROGRESS`):
+    *   `step_name`: O nome do passo que aguarda dados.
+    *   `description`: A instrução para o agente (do `StepInfo.description`).
+    *   `payload_schema`: O JSON Schema para a entrada de dados (do `StepInfo.payload_schema`).
+*   **`execution_summary`**:
+    *   `completed_data_schema`: Um JSON Schema consolidado de todos os dados já coletados.
+    *   `dependency_tree_ascii`: Uma representação textual do grafo do serviço (detalhada na seção 5.1).
+*   **`final_output`** (presente se `status` for `COMPLETED`): Os dados de resultado final do serviço.
 
-### State Visualization
-Rich visual feedback for service progress:
-- **ASCII Trees**: Hierarchical view of step dependencies
-- **Progress Indicators**: Visual completion status with percentages
-- **Status Icons**: Color-coded indicators for different step states
-- **Interactive Guidance**: Suggestions for next actions
+**5. Lógicas de Suporte para a Geração da Resposta**
 
-## Service Lifecycle
+**5.1. Gerador da Árvore de Dependências ASCII**
 
-### 1. Initialization
-- Service instance created with user-specific identifier
-- Empty state established with no completed steps
-- Available steps calculated based on dependencies
-- Initial schema generated for first available actions
+*   **Objetivo:** Criar uma representação textual visualmente rica do progresso.
+*   **Lógica:** Deve percorrer a árvore de `steps` e, para cada um, determinar seu status (Concluído, Pendente/Atual, Bloqueado) com base no `ServiceState`. A saída deve usar indentação para hierarquia e ícones para o status.
+*   **Ícones de Status:**
+    *   `🟢`: Concluído
+    *   `🟡`: Pendente/Atual (aguardando dados do usuário)
+    *   `🔴`: Bloqueado (pré-condições não satisfeitas)
+*   **Exemplo de Saída:**
+    ```
+    🌳 DEPENDENCY TREE:
+    └── 🟢 user_info (required)
+        ├── 🟢 name (required)
+        ├── 🟡 document (required)   <-- PASSO ATUAL
+        └── 🔴 address (required)
+    ```
 
-### 2. Progressive Completion
-- Steps completed incrementally as data provided
-- Dependencies automatically unlock new available steps
-- State persisted after each successful operation
-- Progress tracked and visualized throughout process
+**5.2. Consolidador de Schemas**
 
-### 3. Validation and Error Handling
-- Comprehensive validation at each step
-- Detailed error messages for invalid data
-- Partial success handling (valid steps saved, invalid rejected)
-- Recovery guidance for error resolution
+*   **Objetivo:** Criar um único JSON Schema que represente tudo o que já foi coletado.
+*   **Lógica:** Identificar todos os passos concluídos, extrair seus `payload_schema` e mesclá-los em um único JSON Schema mestre.
 
-### 4. Completion
-- Automatic detection when all required steps finished
-- Completion message generated with service summary
-- Final state preserved for future reference
-- Optional steps remain available for additional data
+**6. Requisitos Não Funcionais e Pontos de Atenção**
 
-## Benefits and Characteristics
+*   **Persistência de Estado:** A lógica de carregamento e salvamento do `ServiceState` deve ser abstrata para suportar diferentes mecanismos (ex: Redis, banco de dados).
+*   **Avaliador de Condições Seguro:** A implementação que avalia a string da `condition` deve ser segura, evitando o uso de `eval()` direto. Recomenda-se uma biblioteca de avaliação de expressões limitada.
+*   **Imutabilidade na Ação:** As `action` não devem modificar o estado diretamente. Elas devem retornar as alterações via `ExecutionResult` para serem aplicadas pelo Orquestrador.
 
-### Developer Experience
-- **Declarative Configuration**: Define behavior through data structures, not code
-- **Automatic Orchestration**: Framework handles step coordination automatically
-- **Rich Tooling**: Comprehensive visualization and debugging capabilities
-- **Type Safety**: Strong validation and type checking throughout
 
-### User Experience
-- **Progressive Disclosure**: Only show relevant options at each stage
-- **Flexible Input**: Accept data in most convenient format
-- **Clear Feedback**: Rich progress indication and error messages
-- **Forgiving Design**: Partial completion and error recovery
 
-### System Design
-- **Separation of Concerns**: Clean separation between different responsibilities
-- **Extensibility**: Easy to add new services and capabilities
-- **Maintainability**: Clear architecture with well-defined boundaries
-- **Testability**: Comprehensive test coverage with isolated components
+adendo: o payload pode ser enviado um a um {"name":"Joao"} ou em bulk {"name":"Joao", "documment":"12312332112",...} isso é definido pelo depends_on, pois se os passos sao idependentes podemos inserilos todos de uma vez ao inves de ir chamando um por vez (aumentando custo de chamadas ao agente)
 
-## Use Cases
-
-### Form Processing
-- Multi-step forms with complex validation
-- Progressive data collection with dependency-based field availability
-- Rich validation feedback and error handling
-
-### Workflow Management
-- Business process automation with step dependencies
-- State tracking through complex multi-stage operations
-- Conditional flow based on previous step results
-
-### Data Integration
-- Complex data structure assembly from multiple sources
-- Validation and transformation pipelines
-- Incremental data building with automatic structure management
-
-### Configuration Management
-- Step-by-step system configuration
-- Dependency-aware setting management
-- Validation of configuration completeness and consistency
-
-This framework provides a robust foundation for building complex, stateful services with rich validation, automatic dependency management, and excellent developer and user experiences.
