@@ -1,5 +1,7 @@
 import json
 import os
+import uuid
+from datetime import datetime
 from typing import Any, Dict
 
 
@@ -26,13 +28,32 @@ class ServiceState:
 
     def save(self):
         """Saves the current state to its JSON file."""
+        # Update all service states' updated_at timestamp
+        now = datetime.now().isoformat()
+        for service_state in self._state.values():
+            if isinstance(service_state, dict) and "_metadata" in service_state:
+                service_state["_metadata"]["updated_at"] = now
+        
         os.makedirs(self.data_dir, exist_ok=True)
         with open(self.file_path, "w") as f:
             json.dump(self._state, f, indent=4, ensure_ascii=False)
 
     def get_service_state(self, service_name: str) -> Dict[str, Any]:
         """Returns the state for a specific service, initializing if not present."""
-        return self._state.setdefault(service_name, {})
+        service_state = self._state.setdefault(service_name, {})
+        
+        # Initialize metadata if this is a new service state
+        if not service_state:
+            now = datetime.now().isoformat()
+            service_id = f"{self.user_id}_{str(uuid.uuid4())[:6].replace('-', '_')}"
+            
+            service_state["_metadata"] = {
+                "id": service_id,
+                "created_at": now,
+                "updated_at": now
+            }
+        
+        return service_state
 
     def get(self, key: str, service_state: Dict[str, Any]) -> Any:
         """
