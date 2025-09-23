@@ -1,6 +1,6 @@
 import json
 import time
-from src.services.tool import multi_step_service
+from src.services_v5.tool import multi_step_service
 
 
 def main():
@@ -11,8 +11,8 @@ def main():
 
     # user_id = f"test_user_{int(time.time())}"
     # user_id = f"agent_{int(time.time())}"
-    user_id = "hahahahahaha6"
-    service_name = "bank_account_opening_v2"
+    user_id = "asd"
+    service_name = "bank_account"
     partial_payload = {
         # "user_info.name": "Jane New User",
         # "user_info.email": "jane@newuser.com",
@@ -28,7 +28,6 @@ def main():
         }
     )
     print(json.dumps(response, indent=2, ensure_ascii=False))
-    print(response["execution_summary"]["tree"])
 
 
 if __name__ == "__main__":

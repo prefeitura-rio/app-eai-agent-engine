@@ -99,9 +99,9 @@ class ServiceOrchestrator:
                     # This step is active
                     active_steps.append(step)
 
-                # Always check substeps for hierarchical structures
-                if step.substeps:
-                    check_step_activity(step.substeps)
+                    # Always check substeps for hierarchical structures
+                    if step.substeps:
+                        check_step_activity(step.substeps)
 
         check_step_activity(self.service_def.steps)
         return active_steps
@@ -442,7 +442,7 @@ class ServiceOrchestrator:
                             result.completion_message,
                             service_state,
                         )
-                    
+
                     # Clear pending steps when service completes
                     state_manager.set(
                         "_internal.pending_steps",
@@ -451,7 +451,9 @@ class ServiceOrchestrator:
                     )
 
                     # Capture the complete execution tree BEFORE applying persistence resets
-                    response_gen = ResponseGenerator(self.service_def, state_manager, service_state)
+                    response_gen = ResponseGenerator(
+                        self.service_def, state_manager, service_state
+                    )
                     complete_tree = response_gen._generate_dependency_tree_ascii()
 
                     # Apply persistence-based resets when service completes
@@ -578,8 +580,8 @@ class ServiceOrchestrator:
 
             # Execute the transition loop (cascade action execution)
             print("🔄 V3: Starting transition loop")
-            service_completed, loop_error, complete_tree = self._execute_transition_loop(
-                state_manager, service_state
+            service_completed, loop_error, complete_tree = (
+                self._execute_transition_loop(state_manager, service_state)
             )
 
             if loop_error:
