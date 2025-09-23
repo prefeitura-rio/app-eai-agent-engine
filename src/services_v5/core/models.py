@@ -31,9 +31,9 @@ class AgentResponse(BaseModel):
     Resposta enviada para o agente a cada step.
     """
 
-    name: str
+    service_name: str
     status: str
     error_message: Optional[str] = None
     description: str = ""
+    payload_schema: Optional[Dict[str, Any]] = None
     data: Dict[str, Any] = {}
-    service_name: str
