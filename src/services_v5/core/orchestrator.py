@@ -79,7 +79,7 @@ class Orchestrator:
             state = ServiceState(
                 user_id=request.user_id,
                 service_name=request.service_name,
-                status="running",
+                status="progress",
                 data={},
             )
 

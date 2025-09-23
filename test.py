@@ -20,6 +20,9 @@ def main():
         # "ask_action": "deposit",
         # "deposit_amount": 500.00,
     }
+
+    print(multi_step_service.description)
+
     response = multi_step_service.invoke(
         {
             "service_name": service_name,

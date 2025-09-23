@@ -19,7 +19,7 @@ class ServiceState(BaseModel):
 
     user_id: str
     service_name: str
-    status: Literal["running", "completed", "error"] = "running"
+    status: Literal["progress", "completed", "error"] = "progress"
     data: Dict[str, Any] = {}
 
     class Config:
@@ -37,3 +37,12 @@ class AgentResponse(BaseModel):
     description: str = ""
     payload_schema: Optional[Dict[str, Any]] = None
     data: Dict[str, Any] = {}
+
+
+class ExecutionResult(BaseModel):
+    """
+    Resultado da execução de um workflow.
+    """
+
+    state: ServiceState
+    response: AgentResponse

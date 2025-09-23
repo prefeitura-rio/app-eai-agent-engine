@@ -15,7 +15,7 @@ class StateManager:
     def __init__(self, data_dir: str = "src/services_v5/data", user_id: str = "agent"):
         """
         Inicializa o StateManager.
-        
+
         Args:
             data_dir: Diretório base para arquivos de estado
             user_id: ID do usuário
@@ -61,9 +61,7 @@ class StateManager:
 
         self._save_user_data(user_data)
 
-    def update_service_state(
-        self, service_name: str, updates: Dict[str, Any]
-    ) -> None:
+    def update_service_state(self, service_name: str, updates: Dict[str, Any]) -> None:
         """Atualiza campos específicos do estado de um serviço."""
         state = self.load_service_state(service_name)
 
