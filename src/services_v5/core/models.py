@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, List
 
 
 class ServiceRequest(BaseModel):
@@ -21,6 +21,8 @@ class ServiceState(BaseModel):
     service_name: str
     status: Literal["progress", "completed", "error"] = "progress"
     data: Dict[str, Any] = {}
+    pending_steps: List[str] = []
+    completed_steps: Dict[str, bool] = {}
 
     class Config:
         arbitrary_types_allowed = True
@@ -32,7 +34,7 @@ class AgentResponse(BaseModel):
     """
 
     service_name: str
-    status: str
+    status: Literal["progress", "completed", "error"] = "progress"
     error_message: Optional[str] = None
     description: str = ""
     payload_schema: Optional[Dict[str, Any]] = None
