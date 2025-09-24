@@ -59,13 +59,17 @@ class BaseWorkflow(ABC):
         # 4. Extrai o estado final e a resposta para o agente
         final_service_state = final_graph_state["state"]
         agent_response = final_service_state.agent_response
-        
-        logger.info(f"📊 BASE_WORKFLOW: Estado final do grafo: {final_service_state.data}")
+
+        logger.info(
+            f"📊 BASE_WORKFLOW: Estado final do grafo: {final_service_state.data}"
+        )
         logger.info(f"📝 BASE_WORKFLOW: Agent response: {agent_response is not None}")
 
         # Se o grafo terminou sem uma resposta explícita, significa que o serviço foi concluído.
         if agent_response is None:
-            logger.info(f"✅ BASE_WORKFLOW: Serviço concluído - criando resposta de conclusão")
+            logger.info(
+                f"✅ BASE_WORKFLOW: Serviço concluído - criando resposta de conclusão"
+            )
             final_service_state.status = "completed"
             agent_response = AgentResponse(
                 service_name=self.service_name,
@@ -74,7 +78,9 @@ class BaseWorkflow(ABC):
                 data=final_service_state.data,
             )
         else:
-            logger.info(f"⏸️  BASE_WORKFLOW: Serviço pausado - aguardando input: {agent_response.description}")
+            logger.info(
+                f"⏸️  BASE_WORKFLOW: Serviço pausado - aguardando input: {agent_response.description}"
+            )
 
         # Limpa a resposta do agente do estado para não persistir entre chamadas
         final_service_state.agent_response = None

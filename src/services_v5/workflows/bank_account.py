@@ -2,21 +2,17 @@ import random
 import logging
 from typing import Literal, Dict, Any
 from pydantic import BaseModel, Field, ValidationError
-from typing_extensions import TypedDict
 
 from langgraph.graph import StateGraph, END
 
 from src.services_v5.core.base_workflow import BaseWorkflow
-from src.services_v5.core.models import ServiceState, AgentResponse
+from src.services_v5.core.models import GraphState, AgentResponse
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 
 # (Modelos Pydantic e GraphState permanecem os mesmos)
-class GraphState(TypedDict):
-    state: ServiceState
-    payload: Dict[str, Any]
 
 
 class UserInfoPayload(BaseModel):

@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing_extensions import TypedDict
 from typing import Any, Dict, Literal, Optional, List
 
 
@@ -49,3 +50,8 @@ class ExecutionResult(BaseModel):
 
     state: ServiceState
     response: AgentResponse
+
+
+class GraphState(TypedDict):
+    state: ServiceState
+    payload: Dict[str, Any]

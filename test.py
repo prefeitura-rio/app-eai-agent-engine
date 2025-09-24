@@ -17,7 +17,7 @@ def main():
         # "name": "Jane New User",
         # "email": "jane@newuser.com",
         # "account_type": "checking",
-        "ask_action": "balance",
+        # "ask_action": "balance",
         # "deposit_amount": 500,
     }
 
