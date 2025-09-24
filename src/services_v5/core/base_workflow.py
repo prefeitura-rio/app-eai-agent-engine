@@ -4,7 +4,7 @@ import logging
 
 from langgraph.graph import StateGraph
 
-from src.services_v5.core.models import ServiceState, ExecutionResult, AgentResponse
+from src.services_v5.core.models import ServiceState, AgentResponse
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -24,65 +24,67 @@ class BaseWorkflow(ABC):
     description: str = ""
 
     @abstractmethod
-    def build_graph(self) -> StateGraph:
+    def build_graph(self) -> StateGraph[ServiceState]:
         """
         Constrói e retorna o grafo LangGraph para este workflow.
         Este método deve ser implementado por cada workflow filho.
         """
         pass
 
-    def execute(self, state: ServiceState, payload: Dict[str, Any]) -> ExecutionResult:
+    def execute(self, state: ServiceState, payload: Dict[str, Any]) -> ServiceState:
         """
         Executa o workflow com o estado e payload fornecidos.
 
         Este método orquestra a execução do grafo LangGraph:
-        1. Compila o grafo.
-        2. Prepara o dicionário de entrada para o grafo.
+        1. Injeta payload no state (fonte única da verdade)
+        2. Compila o grafo.
         3. Invoca o grafo, que executa em cascata até pausar ou terminar.
-        4. Processa o estado final para construir o ExecutionResult.
+        4. Retorna o ServiceState atualizado.
         """
         logger.info(f"🔧 BASE_WORKFLOW: Compilando grafo para '{self.service_name}'")
-        # 1. Compila o grafo definido no workflow específico
+        
+        # 1. Injeta payload no state - fonte única da verdade
+        state.payload = payload or {}
+        logger.info(f"🎯 BASE_WORKFLOW: State data: {state.data}")
+        logger.info(f"🎯 BASE_WORKFLOW: Payload: {state.payload}")
+
+        # 2. Compila o grafo definido no workflow específico
         graph = self.build_graph()
         compiled_graph = graph.compile()
 
-        # 2. Prepara o input para a invocação do grafo
-        graph_input = {"state": state, "payload": payload or {}}
-        logger.info(f"🎯 BASE_WORKFLOW: Input do grafo - State data: {state.data}")
-        logger.info(f"🎯 BASE_WORKFLOW: Input do grafo - Payload: {payload}")
-
-        # 3. Invoca o grafo. A execução em cascata acontece aqui dentro.
+        # 3. Invoca o grafo diretamente com ServiceState
         logger.info(f"🚀 BASE_WORKFLOW: Iniciando execução do grafo LangGraph")
-        final_graph_state = compiled_graph.invoke(graph_input)
+        final_state_result = compiled_graph.invoke(state)
         logger.info(f"🏁 BASE_WORKFLOW: Execução do grafo concluída")
 
-        # 4. Extrai o estado final e a resposta para o agente
-        final_service_state = final_graph_state["state"]
-        agent_response = final_service_state.agent_response
+        # O LangGraph pode retornar o ServiceState diretamente ou como dict
+        # Vamos garantir que sempre trabalhamos com ServiceState
+        if isinstance(final_state_result, ServiceState):
+            final_state = final_state_result
+        else:
+            # Se retornar dict, convertemos de volta para ServiceState
+            final_state = ServiceState(**final_state_result)
 
-        logger.info(
-            f"📊 BASE_WORKFLOW: Estado final do grafo: {final_service_state.data}"
-        )
-        logger.info(f"📝 BASE_WORKFLOW: Agent response: {agent_response is not None}")
+        logger.info(f"📊 BASE_WORKFLOW: Estado final: {final_state.data}")
+        logger.info(f"📝 BASE_WORKFLOW: Agent response: {final_state.agent_response is not None}")
 
         # Se o grafo terminou sem uma resposta explícita, significa que o serviço foi concluído.
-        if agent_response is None:
-            logger.info(
-                f"✅ BASE_WORKFLOW: Serviço concluído - criando resposta de conclusão"
-            )
-            final_service_state.status = "completed"
-            agent_response = AgentResponse(
+        if final_state.agent_response is None:
+            logger.info(f"✅ BASE_WORKFLOW: Serviço concluído - criando resposta de conclusão")
+            final_state.status = "completed"
+            final_state.agent_response = AgentResponse(
                 service_name=self.service_name,
-                status="completed",
                 description="Serviço concluído com sucesso.",
-                data=final_service_state.data,
+                data=final_state.data,
             )
         else:
-            logger.info(
-                f"⏸️  BASE_WORKFLOW: Serviço pausado - aguardando input: {agent_response.description}"
-            )
+            logger.info(f"⏸️  BASE_WORKFLOW: Serviço pausado - aguardando input: {final_state.agent_response.description}")
 
-        # Limpa a resposta do agente do estado para não persistir entre chamadas
-        final_service_state.agent_response = None
+        # Limpa o payload para não persistir (dados temporários)
+        temp_agent_response = final_state.agent_response
+        final_state.payload = {}
+        
+        # Mantém a resposta para o orchestrator
+        final_state.agent_response = temp_agent_response
 
-        return ExecutionResult(state=final_service_state, response=agent_response)
+        return final_state

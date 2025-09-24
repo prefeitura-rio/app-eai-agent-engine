@@ -61,15 +61,16 @@ class Orchestrator:
         Raises:
             ValueError: Se workflow não for encontrado
         """
-        logger.info(f"🚀 ORCHESTRATOR: Executando workflow '{request.service_name}' para user '{request.user_id}'")
+        logger.info(
+            f"🚀 ORCHESTRATOR: Executando workflow '{request.service_name}' para user '{request.user_id}'"
+        )
         logger.info(f"📦 ORCHESTRATOR: Payload recebido: {request.payload}")
-        
+
         # Verifica se workflow existe
         if request.service_name not in self.workflows:
             available = ", ".join(self.list_workflows())
             return AgentResponse(
                 service_name=request.service_name,
-                status="error",
                 error_message=f"Serviço '{request.service_name}' não encontrado. Disponíveis: {available}",
                 description="Erro: Serviço não encontrado",
                 payload_schema=None,
@@ -101,26 +102,29 @@ class Orchestrator:
 
         try:
             logger.info(f"⚡ ORCHESTRATOR: Iniciando execução do workflow")
-            # Executa workflow passando state e payload separadamente
-            # O workflow é responsável por validar e aplicar o payload
-            execution_result = workflow.execute(state, request.payload)
+            # Executa workflow passando state e payload
+            # O workflow retorna ServiceState com agent_response integrado
+            final_state = workflow.execute(state, request.payload)
 
             logger.info(f"✅ ORCHESTRATOR: Workflow executado")
-            logger.info(f"💾 ORCHESTRATOR: Estado final: {execution_result.state.data}")
-            logger.info(f"📤 ORCHESTRATOR: Resposta: {execution_result.response.description}")
-            
+            logger.info(f"💾 ORCHESTRATOR: Estado final: {final_state.data}")
+            logger.info(f"📊 ORCHESTRATOR: Status final: {final_state.status}")
+            logger.info(
+                f"📤 ORCHESTRATOR: Resposta: {final_state.agent_response.description if final_state.agent_response else 'Nenhuma resposta'}"
+            )
+
             # Salva state atualizado APÓS execução do workflow
             # O state foi modificado durante a execução
-            state_manager.save_service_state(execution_result.state)
+            state_manager.save_service_state(final_state)
             logger.info(f"💾 ORCHESTRATOR: Estado salvo no arquivo")
 
-            return execution_result.response
+            # Retorna a resposta do agente que está integrada no ServiceState
+            return final_state.agent_response
 
         except Exception as e:
             # Em caso de erro, retorna resposta de erro
             return AgentResponse(
                 service_name=request.service_name,
-                status="error",
                 error_message=f"Erro na execução do serviço: {str(e)}",
                 description="Erro interno do serviço",
                 payload_schema=None,

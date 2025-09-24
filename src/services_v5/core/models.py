@@ -1,6 +1,5 @@
 from pydantic import BaseModel
-from typing_extensions import TypedDict
-from typing import Any, Dict, Literal, Optional, List
+from typing import Any, Dict, Literal, Optional
 
 
 class ServiceRequest(BaseModel):
@@ -19,7 +18,6 @@ class AgentResponse(BaseModel):
     """
 
     service_name: str
-    status: Literal["progress", "completed", "error"] = "progress"
     error_message: Optional[str] = None
     description: str = ""
     payload_schema: Optional[Dict[str, Any]] = None
@@ -28,30 +26,16 @@ class AgentResponse(BaseModel):
 
 class ServiceState(BaseModel):
     """
-    Estado completo de um serviço - onde ficam guardadas todas as informações.
+    Estado completo de um serviço - fonte única da verdade.
+    Contém dados persistidos, payload atual e resposta para o agente.
     """
 
     user_id: str
     service_name: str
     status: Literal["progress", "completed", "error"] = "progress"
     data: Dict[str, Any] = {}
-
-    # CAMPO ADICIONADO AQUI
+    payload: Dict[str, Any] = {}  # Payload atual da requisição
     agent_response: Optional[AgentResponse] = None
 
     class Config:
         arbitrary_types_allowed = True
-
-
-class ExecutionResult(BaseModel):
-    """
-    Resultado da execução de um workflow.
-    """
-
-    state: ServiceState
-    response: AgentResponse
-
-
-class GraphState(TypedDict):
-    state: ServiceState
-    payload: Dict[str, Any]
