@@ -1,4 +1,5 @@
 import random
+import logging
 from typing import Literal, Dict, Any
 from pydantic import BaseModel, Field, ValidationError
 from typing_extensions import TypedDict
@@ -7,6 +8,9 @@ from langgraph.graph import StateGraph, END
 
 from src.services_v5.core.base_workflow import BaseWorkflow
 from src.services_v5.core.models import ServiceState, AgentResponse
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 # (Modelos Pydantic e GraphState permanecem os mesmos)
@@ -44,22 +48,26 @@ class BankAccountWorkflow(BaseWorkflow):
         service_state = state["state"]
         payload = state["payload"]
 
-        try:
-            validated_data = UserInfoPayload.model_validate(payload)
-            service_state.data.update(validated_data.model_dump())
-        except ValidationError:
-            pass
-
         if "name" not in service_state.data or "email" not in service_state.data:
+            error_message = None
+            try:
+                validated_data = UserInfoPayload.model_validate(payload)
+                service_state.data.update(validated_data.model_dump())
+            except ValidationError as e:
+                error_message = str(e)
+
             service_state.agent_response = AgentResponse(
                 service_name=self.service_name,
+                error_message=error_message,
                 description="Por favor, forneça seu nome completo e email.",
                 payload_schema=UserInfoPayload.model_json_schema(),
+                data=service_state.data,
             )
+
         else:
             service_state.agent_response = None
 
-        return {"state": service_state, "payload": {}}
+        return {"state": service_state, "payload": payload}
 
     def _check_account_exists(self, state: GraphState) -> GraphState:
         service_state = state["state"]
@@ -73,22 +81,25 @@ class BankAccountWorkflow(BaseWorkflow):
         service_state = state["state"]
         payload = state["payload"]
 
-        try:
-            validated_data = AccountTypePayload.model_validate(payload)
-            service_state.data.update(validated_data.model_dump())
-        except ValidationError:
-            pass
-
         if "account_type" not in service_state.data:
+            error_message = None
+            try:
+                validated_data = AccountTypePayload.model_validate(payload)
+                service_state.data.update(validated_data.model_dump())
+            except ValidationError as e:
+                error_message = str(e)
+
             service_state.agent_response = AgentResponse(
                 service_name=self.service_name,
+                error_message=error_message,
                 description="Qual tipo de conta você gostaria de abrir: 'checking' (corrente) ou 'savings' (poupança)?",
                 payload_schema=AccountTypePayload.model_json_schema(),
+                data=service_state.data,
             )
         else:
             service_state.agent_response = None
 
-        return {"state": service_state, "payload": {}}
+        return {"state": service_state, "payload": payload}
 
     def _create_account(self, state: GraphState) -> GraphState:
         service_state = state["state"]
@@ -100,27 +111,38 @@ class BankAccountWorkflow(BaseWorkflow):
         service_state = state["state"]
         payload = state["payload"]
 
-        # Limpa ações antigas para permitir que o usuário faça outra operação
-        if "ask_action" in payload:
+        # Processar ação se veio no payload
+        action = payload.get("ask_action")
+        if action == "balance":
+            # Limpar ação para evitar loop e mostrar saldo
             service_state.data.pop("ask_action", None)
-            service_state.data.pop("deposit_amount", None)
-
-        try:
-            validated_data = ActionChoicePayload.model_validate(payload)
-            service_state.data.update(validated_data.model_dump())
-        except ValidationError:
-            pass
-
-        if "ask_action" not in service_state.data:
             service_state.agent_response = AgentResponse(
                 service_name=self.service_name,
+                description=f"💰 Saldo atual da conta {service_state.data['account_number']}: R$ {service_state.data.get('balance', 0.0):.2f}. O que você gostaria de fazer agora? 'deposit' (depositar) ou 'balance' (ver saldo novamente)?",
+                payload_schema=ActionChoicePayload.model_json_schema(),
+                data=service_state.data,
+            )
+            return {"state": service_state, "payload": payload}
+
+        # Lógica original para coletar ação
+        if "ask_action" not in service_state.data:
+            error_message = None
+            try:
+                validated_data = ActionChoicePayload.model_validate(payload)
+                service_state.data.update(validated_data.model_dump())
+            except ValidationError as e:
+                error_message = str(e)
+            service_state.agent_response = AgentResponse(
+                service_name=self.service_name,
+                error_message=error_message,
                 description=f"Conta {service_state.data['account_number']} pronta. Saldo atual: R$ {service_state.data.get('balance', 0.0):.2f}. O que você gostaria de fazer? 'deposit' (depositar) ou 'balance' (ver saldo)?",
                 payload_schema=ActionChoicePayload.model_json_schema(),
+                data=service_state.data,
             )
         else:
             service_state.agent_response = None
 
-        return {"state": service_state, "payload": {}}
+        return {"state": service_state, "payload": payload}
 
     def _collect_deposit_amount(self, state: GraphState) -> GraphState:
         service_state = state["state"]
@@ -135,19 +157,21 @@ class BankAccountWorkflow(BaseWorkflow):
                 status="progress",
                 description=f"Valor de depósito inválido. Por favor, forneça um número positivo. Erro: {e.errors()[0]['msg']}",
                 payload_schema=DepositAmountPayload.model_json_schema(),
+                data=service_state.data,
             )
-            return {"state": service_state, "payload": {}}
+            return {"state": service_state, "payload": payload}
 
         if "deposit_amount" not in service_state.data:
             service_state.agent_response = AgentResponse(
                 service_name=self.service_name,
                 description="Qual valor você gostaria de depositar?",
                 payload_schema=DepositAmountPayload.model_json_schema(),
+                data=service_state.data,
             )
         else:
             service_state.agent_response = None
 
-        return {"state": service_state, "payload": {}}
+        return {"state": service_state, "payload": payload}
 
     def _make_deposit(self, state: GraphState) -> GraphState:
         service_state = state["state"]
@@ -175,13 +199,12 @@ class BankAccountWorkflow(BaseWorkflow):
         return "ask_action" if exists else "account_type"
 
     def _route_after_action_choice(self, state: GraphState) -> str:
-        # <-- MUDANÇA: Lógica de pausa movida para o roteador genérico.
-        # Este roteador agora só se preocupa com a lógica de negócio.
+        # Roteador que decide próximo nó baseado na ação escolhida
         action = state["state"].data.get("ask_action")
         if action == "deposit":
             return "collect_deposit_amount"
-        elif action == "balance":
-            return "ask_action"  # Volta para ask_action para mostrar o saldo atualizado e perguntar de novo
+        # Para "balance" ou qualquer outra ação, volta para ask_action
+        # mas a lógica de balance já foi processada no nó ask_action
         return "ask_action"
 
     # --- Construção do Grafo ---

@@ -14,11 +14,11 @@ def main():
     user_id = "asd"
     service_name = "bank_account"
     partial_payload = {
-        "name": "Jane New User",
-        "email": "jane@newuser.com",
-        # "account_type": "savings",
-        # "ask_action": "deposit",
-        # "deposit_amount": 500.00,
+        # "name": "Jane New User",
+        # "email": "jane@newuser.com",
+        # "account_type": "checking",
+        "ask_action": "balance",
+        # "deposit_amount": 500,
     }
 
     print(multi_step_service.description)

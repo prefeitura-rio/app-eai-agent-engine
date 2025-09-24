@@ -1,7 +1,12 @@
 from typing import Dict, Type
+import logging
 from src.services_v5.core.models import ServiceRequest, ServiceState, AgentResponse
 from src.services_v5.core.state import StateManager
 from src.services_v5.workflows import workflows
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class Orchestrator:
@@ -56,6 +61,9 @@ class Orchestrator:
         Raises:
             ValueError: Se workflow não for encontrado
         """
+        logger.info(f"🚀 ORCHESTRATOR: Executando workflow '{request.service_name}' para user '{request.user_id}'")
+        logger.info(f"📦 ORCHESTRATOR: Payload recebido: {request.payload}")
+        
         # Verifica se workflow existe
         if request.service_name not in self.workflows:
             available = ", ".join(self.list_workflows())
@@ -75,6 +83,7 @@ class Orchestrator:
         state = state_manager.load_service_state(request.service_name)
 
         if state is None:
+            logger.info("📝 ORCHESTRATOR: Criando novo estado (primeiro uso)")
             # Cria novo state se não existir
             state = ServiceState(
                 user_id=request.user_id,
@@ -82,21 +91,30 @@ class Orchestrator:
                 status="progress",
                 data={},
             )
+        else:
+            logger.info(f"📖 ORCHESTRATOR: Estado carregado: {state.data}")
+            logger.info(f"📊 ORCHESTRATOR: Status atual: {state.status}")
 
         # Instancia e executa workflow
         workflow_class = self.workflows[request.service_name]
         workflow = workflow_class()
 
         try:
+            logger.info(f"⚡ ORCHESTRATOR: Iniciando execução do workflow")
             # Executa workflow passando state e payload separadamente
             # O workflow é responsável por validar e aplicar o payload
-            response = workflow.execute(state, request.payload)
+            execution_result = workflow.execute(state, request.payload)
 
+            logger.info(f"✅ ORCHESTRATOR: Workflow executado")
+            logger.info(f"💾 ORCHESTRATOR: Estado final: {execution_result.state.data}")
+            logger.info(f"📤 ORCHESTRATOR: Resposta: {execution_result.response.description}")
+            
             # Salva state atualizado APÓS execução do workflow
             # O state foi modificado durante a execução
-            state_manager.save_service_state(state)
+            state_manager.save_service_state(execution_result.state)
+            logger.info(f"💾 ORCHESTRATOR: Estado salvo no arquivo")
 
-            return response
+            return execution_result.response
 
         except Exception as e:
             # Em caso de erro, retorna resposta de erro
