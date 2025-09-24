@@ -63,3 +63,28 @@ def _get_workflow_descriptions():
 multi_step_service.description = multi_step_service.description.replace(
     "__replace__available_services__", _get_workflow_descriptions()
 )
+
+
+def save_workflow_graphs():
+    """
+    Função de conveniência para salvar imagens dos grafos de todos os workflows.
+    
+    Returns:
+        Dicionário com os resultados da operação
+    """
+    orchestrator = Orchestrator()
+    return orchestrator.save_all_workflow_graphs()
+
+
+def save_single_workflow_graph(service_name: str):
+    """
+    Função de conveniência para salvar imagem do grafo de um workflow específico.
+    
+    Args:
+        service_name: Nome do serviço/workflow
+        
+    Returns:
+        Caminho para o arquivo de imagem salvo
+    """
+    orchestrator = Orchestrator()
+    return orchestrator.save_workflow_graph_image(service_name)

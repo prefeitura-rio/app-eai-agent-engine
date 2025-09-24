@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 import logging
+import os
 
 from langgraph.graph import StateGraph
 
@@ -88,3 +89,41 @@ class BaseWorkflow(ABC):
         final_state.agent_response = temp_agent_response
 
         return final_state
+
+    def save_graph_image(self) -> str:
+        """
+        Salva a imagem do grafo compilado na mesma pasta do workflow.
+        
+        Returns:
+            Caminho para o arquivo de imagem salvo
+        """
+        try:
+            # Constrói e compila o grafo
+            graph = self.build_graph()
+            compiled_graph = graph.compile()
+            
+            # Determina o diretório do arquivo do workflow
+            workflow_file = self.__class__.__module__.replace('.', '/') + '.py'
+            workflow_dir = os.path.dirname(workflow_file)
+            
+            # Se não conseguir determinar o diretório, usa o diretório atual
+            if not workflow_dir or not os.path.exists(workflow_dir):
+                workflow_dir = os.path.dirname(os.path.abspath(__file__))
+                workflow_dir = os.path.join(workflow_dir, '..', 'workflows')
+            
+            # Cria o caminho completo para a imagem
+            image_filename = f"{self.service_name}.png"
+            image_path = os.path.join(workflow_dir, image_filename)
+            
+            logger.info(f"🖼️  BASE_WORKFLOW: Salvando imagem do grafo em: {image_path}")
+            
+            # Gera e salva a imagem do grafo
+            with open(image_path, 'wb') as f:
+                f.write(compiled_graph.get_graph().draw_mermaid_png())
+            
+            logger.info(f"✅ BASE_WORKFLOW: Imagem do grafo salva com sucesso")
+            return image_path
+            
+        except Exception as e:
+            logger.error(f"❌ BASE_WORKFLOW: Erro ao salvar imagem do grafo: {str(e)}")
+            raise

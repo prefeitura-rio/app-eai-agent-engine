@@ -40,8 +40,6 @@ class BankAccountWorkflow(BaseWorkflow):
 
     # --- Nós do Grafo ---
     def _collect_user_info(self, state: ServiceState) -> ServiceState:
-        # state.data = dados persistidos
-        # state.payload = input atual
 
         if "name" not in state.data or "email" not in state.data:
             error_message = None

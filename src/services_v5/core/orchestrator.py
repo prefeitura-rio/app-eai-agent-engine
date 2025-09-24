@@ -48,6 +48,53 @@ class Orchestrator:
 
         return result
 
+    def save_workflow_graph_image(self, service_name: str) -> str:
+        """
+        Salva a imagem do grafo para um workflow específico.
+        
+        Args:
+            service_name: Nome do serviço/workflow
+            
+        Returns:
+            Caminho para o arquivo de imagem salvo
+            
+        Raises:
+            ValueError: Se workflow não for encontrado
+        """
+        logger.info(f"🖼️  ORCHESTRATOR: Salvando imagem do grafo para '{service_name}'")
+        
+        # Verifica se workflow existe
+        if service_name not in self.workflows:
+            available = ", ".join(self.list_workflows())
+            raise ValueError(f"Serviço '{service_name}' não encontrado. Disponíveis: {available}")
+        
+        # Instancia o workflow e salva a imagem
+        workflow_class = self.workflows[service_name]
+        workflow = workflow_class()
+        
+        return workflow.save_graph_image()
+
+    def save_all_workflow_graphs(self) -> Dict[str, str]:
+        """
+        Salva as imagens dos grafos para todos os workflows registrados.
+        
+        Returns:
+            Dicionário com {service_name: image_path} dos arquivos salvos
+        """
+        logger.info(f"🖼️  ORCHESTRATOR: Salvando imagens de todos os workflows")
+        
+        results = {}
+        for service_name in self.workflows.keys():
+            try:
+                image_path = self.save_workflow_graph_image(service_name)
+                results[service_name] = image_path
+                logger.info(f"✅ ORCHESTRATOR: Imagem salva para '{service_name}': {image_path}")
+            except Exception as e:
+                logger.error(f"❌ ORCHESTRATOR: Erro ao salvar imagem para '{service_name}': {str(e)}")
+                results[service_name] = f"Erro: {str(e)}"
+        
+        return results
+
     def execute_workflow(self, request: ServiceRequest) -> AgentResponse:
         """
         Executa um workflow com base na requisição do agente.
