@@ -1,5 +1,4 @@
 import random
-import logging
 from typing import Literal, Optional
 from pydantic import BaseModel, Field, ValidationError
 
@@ -7,12 +6,6 @@ from langgraph.graph import StateGraph, END
 
 from src.services.core.base_workflow import BaseWorkflow
 from src.services.core.models import ServiceState, AgentResponse
-
-# Configure logging
-logger = logging.getLogger(__name__)
-
-
-# Modelos Pydantic para validação de payload
 
 
 class UserInfoData(BaseModel):
@@ -62,7 +55,7 @@ class BankAccountWorkflow(BaseWorkflow):
                     state.agent_response = AgentResponse(
                         service_name=self.service_name,
                         error_message=error_message,
-                        description="Por favor, forneça user_info no formato {user_info: {name: '...', email: '...'}}",
+                        description="Colete as informacoes do usuario.",
                         payload_schema=UserInfoPayload.model_json_schema(),
                         data=state.data,
                     )
@@ -71,7 +64,7 @@ class BankAccountWorkflow(BaseWorkflow):
                 state.agent_response = AgentResponse(
                     service_name=self.service_name,
                     error_message=error_message,
-                    description="Por favor, forneça user_info no formato {user_info: {name: '...', email: '...'}}",
+                    description="Colete as informacoes do usuario.",
                     payload_schema=UserInfoPayload.model_json_schema(),
                     data=state.data,
                 )
@@ -114,7 +107,7 @@ class BankAccountWorkflow(BaseWorkflow):
             state.data.pop("ask_action", None)
             state.agent_response = AgentResponse(
                 service_name=self.service_name,
-                description=f"💰 Saldo atual da conta {state.data['account_number']}: R$ {state.data.get('balance', 0.0):.2f}. O que você gostaria de fazer agora? 'deposit' (depositar) ou 'balance' (ver saldo novamente)?",
+                description=f"💰 Saldo atual da conta R$ {state.data.get('balance', 0.0):.2f}.",
                 payload_schema=ActionChoicePayload.model_json_schema(),
                 data=state.data,
             )
@@ -131,7 +124,7 @@ class BankAccountWorkflow(BaseWorkflow):
             state.agent_response = AgentResponse(
                 service_name=self.service_name,
                 error_message=error_message,
-                description=f"Conta {state.data['account_number']} pronta. Saldo atual: R$ {state.data.get('balance', 0.0):.2f}. O que você gostaria de fazer? 'deposit' (depositar) ou 'balance' (ver saldo)?",
+                description=f"O que você gostaria de fazer? 'deposit' (depositar) ou 'balance' (ver saldo)?",
                 payload_schema=ActionChoicePayload.model_json_schema(),
                 data=state.data,
             )

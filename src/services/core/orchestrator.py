@@ -1,12 +1,7 @@
 from typing import Dict, Type
-import logging
 from src.services.core.models import ServiceRequest, ServiceState, AgentResponse
 from src.services.core.state import StateManager
 from src.services.workflows import workflows
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 class Orchestrator:
@@ -61,7 +56,6 @@ class Orchestrator:
         Raises:
             ValueError: Se workflow não for encontrado
         """
-        logger.info(f"🖼️  ORCHESTRATOR: Salvando imagem do grafo para '{service_name}'")
 
         # Verifica se workflow existe
         if service_name not in self.workflows:
@@ -83,20 +77,14 @@ class Orchestrator:
         Returns:
             Dicionário com {service_name: image_path} dos arquivos salvos
         """
-        logger.info(f"🖼️  ORCHESTRATOR: Salvando imagens de todos os workflows")
 
         results = {}
         for service_name in self.workflows.keys():
             try:
                 image_path = self.save_workflow_graph_image(service_name)
                 results[service_name] = image_path
-                logger.info(
-                    f"✅ ORCHESTRATOR: Imagem salva para '{service_name}': {image_path}"
-                )
+
             except Exception as e:
-                logger.error(
-                    f"❌ ORCHESTRATOR: Erro ao salvar imagem para '{service_name}': {str(e)}"
-                )
                 results[service_name] = f"Erro: {str(e)}"
 
         return results
@@ -114,10 +102,6 @@ class Orchestrator:
         Raises:
             ValueError: Se workflow não for encontrado
         """
-        logger.info(
-            f"🚀 ORCHESTRATOR: Executando workflow '{request.service_name}' para user '{request.user_id}'"
-        )
-        logger.info(f"📦 ORCHESTRATOR: Payload recebido: {request.payload}")
 
         # Verifica se workflow existe
         if request.service_name not in self.workflows:
@@ -137,7 +121,6 @@ class Orchestrator:
         state = state_manager.load_service_state(request.service_name)
 
         if state is None:
-            logger.info("📝 ORCHESTRATOR: Criando novo estado (primeiro uso)")
             # Cria novo state se não existir
             state = ServiceState(
                 user_id=request.user_id,
@@ -145,31 +128,19 @@ class Orchestrator:
                 status="progress",
                 data={},
             )
-        else:
-            logger.info(f"📖 ORCHESTRATOR: Estado carregado: {state.data}")
-            logger.info(f"📊 ORCHESTRATOR: Status atual: {state.status}")
 
         # Instancia e executa workflow
         workflow_class = self.workflows[request.service_name]
         workflow = workflow_class()
 
         try:
-            logger.info(f"⚡ ORCHESTRATOR: Iniciando execução do workflow")
             # Executa workflow passando state e payload
             # O workflow retorna ServiceState com agent_response integrado
             final_state = workflow.execute(state, request.payload)
 
-            logger.info(f"✅ ORCHESTRATOR: Workflow executado")
-            logger.info(f"💾 ORCHESTRATOR: Estado final: {final_state.data}")
-            logger.info(f"📊 ORCHESTRATOR: Status final: {final_state.status}")
-            logger.info(
-                f"📤 ORCHESTRATOR: Resposta: {final_state.agent_response.description if final_state.agent_response else 'Nenhuma resposta'}"
-            )
-
             # Salva state atualizado APÓS execução do workflow
             # O state foi modificado durante a execução
             state_manager.save_service_state(final_state)
-            logger.info(f"💾 ORCHESTRATOR: Estado salvo no arquivo")
 
             # Retorna a resposta do agente que está integrada no ServiceState
             return final_state.agent_response
