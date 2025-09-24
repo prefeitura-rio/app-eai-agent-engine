@@ -5,7 +5,7 @@ import os
 
 from langgraph.graph import StateGraph
 
-from src.services_v5.core.models import ServiceState, AgentResponse
+from src.services.core.models import ServiceState, AgentResponse
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class BaseWorkflow(ABC):
         4. Retorna o ServiceState atualizado.
         """
         logger.info(f"🔧 BASE_WORKFLOW: Compilando grafo para '{self.service_name}'")
-        
+
         # 1. Injeta payload no state - fonte única da verdade
         state.payload = payload or {}
         logger.info(f"🎯 BASE_WORKFLOW: State data: {state.data}")
@@ -67,11 +67,15 @@ class BaseWorkflow(ABC):
             final_state = ServiceState(**final_state_result)
 
         logger.info(f"📊 BASE_WORKFLOW: Estado final: {final_state.data}")
-        logger.info(f"📝 BASE_WORKFLOW: Agent response: {final_state.agent_response is not None}")
+        logger.info(
+            f"📝 BASE_WORKFLOW: Agent response: {final_state.agent_response is not None}"
+        )
 
         # Se o grafo terminou sem uma resposta explícita, significa que o serviço foi concluído.
         if final_state.agent_response is None:
-            logger.info(f"✅ BASE_WORKFLOW: Serviço concluído - criando resposta de conclusão")
+            logger.info(
+                f"✅ BASE_WORKFLOW: Serviço concluído - criando resposta de conclusão"
+            )
             final_state.status = "completed"
             final_state.agent_response = AgentResponse(
                 service_name=self.service_name,
@@ -79,12 +83,14 @@ class BaseWorkflow(ABC):
                 data=final_state.data,
             )
         else:
-            logger.info(f"⏸️  BASE_WORKFLOW: Serviço pausado - aguardando input: {final_state.agent_response.description}")
+            logger.info(
+                f"⏸️  BASE_WORKFLOW: Serviço pausado - aguardando input: {final_state.agent_response.description}"
+            )
 
         # Limpa o payload para não persistir (dados temporários)
         temp_agent_response = final_state.agent_response
         final_state.payload = {}
-        
+
         # Mantém a resposta para o orchestrator
         final_state.agent_response = temp_agent_response
 
@@ -93,7 +99,7 @@ class BaseWorkflow(ABC):
     def save_graph_image(self) -> str:
         """
         Salva a imagem do grafo compilado na mesma pasta do workflow.
-        
+
         Returns:
             Caminho para o arquivo de imagem salvo
         """
@@ -101,29 +107,30 @@ class BaseWorkflow(ABC):
             # Constrói e compila o grafo
             graph = self.build_graph()
             compiled_graph = graph.compile()
-            
+
             # Determina o diretório do arquivo do workflow
-            workflow_file = self.__class__.__module__.replace('.', '/') + '.py'
+            workflow_file = self.__class__.__module__.replace(".", "/") + ".py"
             workflow_dir = os.path.dirname(workflow_file)
-            
+
             # Se não conseguir determinar o diretório, usa o diretório atual
             if not workflow_dir or not os.path.exists(workflow_dir):
                 workflow_dir = os.path.dirname(os.path.abspath(__file__))
-                workflow_dir = os.path.join(workflow_dir, '..', 'workflows')
-            
+                workflow_dir = os.path.join(workflow_dir, "..", "workflows")
+
             # Cria o caminho completo para a imagem
             image_filename = f"{self.service_name}.png"
             image_path = os.path.join(workflow_dir, image_filename)
-            
+
             logger.info(f"🖼️  BASE_WORKFLOW: Salvando imagem do grafo em: {image_path}")
-            
+            # diagram = compiled_graph.get_graph().draw_mermaid()
+
             # Gera e salva a imagem do grafo
-            with open(image_path, 'wb') as f:
-                f.write(compiled_graph.get_graph().draw_mermaid_png())
-            
+            with open(image_path, "wb") as f:
+                f.write(compiled_graph.get_graph().draw_mermaid_png(max_retries=10))
+
             logger.info(f"✅ BASE_WORKFLOW: Imagem do grafo salva com sucesso")
             return image_path
-            
+
         except Exception as e:
             logger.error(f"❌ BASE_WORKFLOW: Erro ao salvar imagem do grafo: {str(e)}")
             raise

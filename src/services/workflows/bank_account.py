@@ -1,12 +1,12 @@
 import random
 import logging
-from typing import Literal
+from typing import Literal, Optional
 from pydantic import BaseModel, Field, ValidationError
 
 from langgraph.graph import StateGraph, END
 
-from src.services_v5.core.base_workflow import BaseWorkflow
-from src.services_v5.core.models import ServiceState, AgentResponse
+from src.services.core.base_workflow import BaseWorkflow
+from src.services.core.models import ServiceState, AgentResponse
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -15,9 +15,14 @@ logger = logging.getLogger(__name__)
 # Modelos Pydantic para validação de payload
 
 
-class UserInfoPayload(BaseModel):
+class UserInfoData(BaseModel):
     name: str = Field(..., min_length=2)
     email: str = Field(..., pattern=r"^[^@]+@[^@]+\.[^@]+$")
+
+
+class UserInfoPayload(BaseModel):
+    # Suporte para dados nested
+    user_info: Optional[UserInfoData] = None
 
 
 class AccountTypePayload(BaseModel):
@@ -40,20 +45,24 @@ class BankAccountWorkflow(BaseWorkflow):
 
     # --- Nós do Grafo ---
     def _collect_user_info(self, state: ServiceState) -> ServiceState:
-
-        if "name" not in state.data or "email" not in state.data:
+        if "user_info" not in state.data:
             error_message = None
             try:
                 validated_data = UserInfoPayload.model_validate(state.payload)
-                state.data.update(validated_data.model_dump())
-                # Se validação foi bem-sucedida e dados foram adicionados, não precisa de agent_response
-                if "name" in state.data and "email" in state.data:
+
+                # Salva dados nested se fornecidos
+                if validated_data.user_info:
+                    # Dados nested: salva como {user_info: {name: "...", email: "..."}}
+                    state.data["user_info"] = validated_data.user_info.model_dump()
+
+                # Verifica se dados foram coletados com sucesso
+                if "user_info" in state.data:
                     state.agent_response = None
                 else:
                     state.agent_response = AgentResponse(
                         service_name=self.service_name,
                         error_message=error_message,
-                        description="Por favor, forneça seu nome completo e email.",
+                        description="Por favor, forneça user_info no formato {user_info: {name: '...', email: '...'}}",
                         payload_schema=UserInfoPayload.model_json_schema(),
                         data=state.data,
                     )
@@ -62,20 +71,13 @@ class BankAccountWorkflow(BaseWorkflow):
                 state.agent_response = AgentResponse(
                     service_name=self.service_name,
                     error_message=error_message,
-                    description="Por favor, forneça seu nome completo e email.",
+                    description="Por favor, forneça user_info no formato {user_info: {name: '...', email: '...'}}",
                     payload_schema=UserInfoPayload.model_json_schema(),
                     data=state.data,
                 )
         else:
             state.agent_response = None
 
-        return state
-
-    def _check_account_exists(self, state: ServiceState) -> ServiceState:
-        if state.data.get("account_number"):
-            state.data["_internal_account_exists"] = True
-        else:
-            state.data["_internal_account_exists"] = False
         return state
 
     def _collect_account_type(self, state: ServiceState) -> ServiceState:
@@ -181,9 +183,12 @@ class BankAccountWorkflow(BaseWorkflow):
             return END
         return "continue"
 
-    def _route_after_check_account(self, state: ServiceState) -> str:
-        exists = state.data.get("_internal_account_exists", False)
-        return "ask_action" if exists else "account_type"
+    def _route_after_user_info(self, state: ServiceState) -> str:
+        # Verifica se já existe account_number (conta já existe)
+        if state.data.get("account_number"):
+            return "ask_action"
+        else:
+            return "account_type"
 
     def _route_after_action_choice(self, state: ServiceState) -> str:
         # Roteador que decide próximo nó baseado na ação escolhida
@@ -200,7 +205,6 @@ class BankAccountWorkflow(BaseWorkflow):
         graph = StateGraph(ServiceState)
 
         graph.add_node("collect_user_info", self._collect_user_info)
-        graph.add_node("check_account", self._check_account_exists)
         graph.add_node("account_type", self._collect_account_type)
         graph.add_node("create_account", self._create_account)
         graph.add_node("ask_action", self._ask_action)
@@ -209,16 +213,18 @@ class BankAccountWorkflow(BaseWorkflow):
 
         graph.set_entry_point("collect_user_info")
 
-        # <-- MUDANÇA: Arestas após nós de coleta de dados agora são condicionais
+        # Arestas após collect_user_info: se coletou dados, decide próximo step
         graph.add_conditional_edges(
             "collect_user_info",
             self._decide_after_data_collection,
-            {"continue": "check_account", END: END},
+            {"continue": "route_user_info", END: END},
         )
 
+        # Roteamento após user_info: verifica se conta já existe
+        graph.add_node("route_user_info", lambda state: state)
         graph.add_conditional_edges(
-            "check_account",
-            self._route_after_check_account,
+            "route_user_info",
+            self._route_after_user_info,
             {"account_type": "account_type", "ask_action": "ask_action"},
         )
 

@@ -1,9 +1,0 @@
-{
-  "bank_account": {
-    "status": "progress",
-    "data": {
-      "name": "João Silva",
-      "email": "joao@test.com"
-    }
-  }
-}

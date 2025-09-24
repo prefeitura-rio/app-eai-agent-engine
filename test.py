@@ -1,27 +1,29 @@
 import json
 import time
-from src.services_v5.tool import multi_step_service
+from src.services.tool import multi_step_service, save_single_workflow_graph
 
 
 def main():
     """
     Main function to run the test flow.
     """
-    print("Sistema de serviços multi-step com schema dinâmico e estado transparente.\n")
 
     # user_id = f"test_user_{int(time.time())}"
     # user_id = f"agent_{int(time.time())}"
     user_id = "asd"
     service_name = "bank_account"
     partial_payload = {
-        # "name": "Jane New User",
-        # "email": "jane@newuser.com",
+        # "user_info": {
+        #     "name": "Jane New User",
+        #     "email": "jane@newuser.com",
+        # },
         # "account_type": "checking",
         # "ask_action": "deposit",
         # "deposit_amount": 500,
     }
 
-    print(multi_step_service.description)
+    # print(multi_step_service.description)
+    # save_single_workflow_graph(service_name=service_name)
 
     response = multi_step_service.invoke(
         {

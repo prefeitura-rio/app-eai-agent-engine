@@ -9,7 +9,7 @@ Para adicionar um novo workflow:
 """
 
 # Import workflows aqui
-from src.services_v5.workflows.bank_account import BankAccountWorkflow
+from src.services.workflows.bank_account import BankAccountWorkflow
 
 # Lista central de workflows (classes)
 workflows = [

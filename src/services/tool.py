@@ -1,27 +1,8 @@
 from typing import Any, Dict, Optional
 from langchain_core.tools import tool
 
-from src.services.core.base_service import BaseService
-from src.services.core.orchestrator import ServiceOrchestrator
-from src.services.repository.bank_account_service_v2 import BankAccountServiceV2
-from src.services.repository.order_service import OrderService
-from src.services.schema.models import AgentResponse, ServiceDefinition
-
-# --- Service Registry ---
-# Register all service classes.
-_service_classes = [BankAccountServiceV2, OrderService]
-_services: Dict[str, type[BaseService]] = {
-    service.service_name: service for service in _service_classes
-}
-
-
-def get_service_definition(service_name: str) -> Optional[ServiceDefinition]:
-    """Retrieves a service definition from the registry."""
-    service_class = _services.get(service_name)
-    if service_class:
-        service_instance = service_class()
-        return service_instance.get_definition()
-    return None
+from src.services.core.orchestrator import Orchestrator
+from src.services.core.models import ServiceRequest
 
 
 @tool
@@ -50,33 +31,60 @@ def multi_step_service(
 
         __replace__available_services__
     """
-    service_def = get_service_definition(service_name)
-    if not service_def:
-        response = AgentResponse(
-            service_name=service_name,
-            status="FAILED",
-            error_message=f"Service '{service_name}' not found. Available services: {list(_services.keys())}",
-            current_data={},
-            next_step_info=None,
-            execution_summary=None,
-        )
-        return response.model_dump()
+    # Cria request agnóstico
+    request = ServiceRequest(
+        service_name=service_name, user_id=user_id, payload=payload or {}
+    )
 
-    orchestrator = ServiceOrchestrator(service_def)
-    response = orchestrator.execute_turn(user_id, payload)
+    # Executa via orquestrador agnóstico
+    orchestrator = Orchestrator()
+    response = orchestrator.execute_workflow(request)
 
+    # Retorna resposta já formatada
     return response.model_dump()
 
 
-def _get_service_descriptions():
-    """Generate service descriptions for the tool docstring"""
+def _get_workflow_descriptions():
+    """Generate workflow descriptions for the tool docstring"""
+    orchestrator = Orchestrator()
+    workflow_dict = orchestrator.list_workflows()
+
+    if not workflow_dict:
+        return "- Nenhum workflow disponível"
+
     descriptions = []
-    for name, cls in _services.items():
-        desc = f"- {name}: {cls.description or 'No description'}"
-        descriptions.append(desc)
+    for service_name, description in workflow_dict.items():
+        descriptions.append(f"- {service_name}: {description}")
+
     return "\n".join(descriptions)
 
 
+# Update tool description with available workflows
 multi_step_service.description = multi_step_service.description.replace(
-    "__replace__available_services__", _get_service_descriptions()
+    "__replace__available_services__", _get_workflow_descriptions()
 )
+
+
+def save_workflow_graphs():
+    """
+    Função de conveniência para salvar imagens dos grafos de todos os workflows.
+
+    Returns:
+        Dicionário com os resultados da operação
+    """
+    orchestrator = Orchestrator()
+    return orchestrator.save_all_workflow_graphs()
+
+
+def save_single_workflow_graph(service_name: str):
+    """
+    Função de conveniência para salvar imagem do grafo de um workflow específico.
+
+    Args:
+        service_name: Nome do serviço/workflow
+
+    Returns:
+        Caminho para o arquivo de imagem salvo
+    """
+    orchestrator = Orchestrator()
+    return orchestrator.save_workflow_graph_image(service_name)

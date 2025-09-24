@@ -1,132 +1,94 @@
-import json
 import os
-import uuid
-from datetime import datetime
-from typing import Any, Dict
+import json
+from pathlib import Path
+from src.services.core.models import ServiceState
+
+from typing import Any, Dict, Optional
 
 
-class ServiceState:
+class StateManager:
     """
-    Manages the state of a service execution for a specific user.
-
-    Handles loading, saving, and accessing nested data using dot notation.
-    The state is persisted as a JSON file in the `data` directory.
+    Gerenciador de estado responsável por salvar, carregar, atualizar e remover dados.
+    Dados são armazenados na pasta data com estrutura user_id.json {service_name: {...}}
     """
 
-    def __init__(self, user_id: str, data_dir: str = "src/services/data"):
+    def __init__(self, data_dir: str = "src/services/data", user_id: str = "agent"):
+        """
+        Inicializa o StateManager.
+
+        Args:
+            data_dir: Diretório base para arquivos de estado
+            user_id: ID do usuário
+        """
+        self.data_dir = Path(data_dir)
+        self.data_dir.mkdir(exist_ok=True)
         self.user_id = user_id
-        self.data_dir = data_dir
-        self.file_path = os.path.join(self.data_dir, f"{self.user_id}.json")
-        self._state: Dict[str, Any] = self._load()
+        self.file_path = self.data_dir / f"{user_id}.json"
 
-    def _load(self) -> Dict[str, Any]:
-        """Loads the state from a JSON file if it exists."""
-        if os.path.exists(self.file_path):
-            with open(self.file_path, "r") as f:
+    def _get_user_file_path(self) -> Path:
+        """Retorna o caminho do arquivo JSON do usuário."""
+        return self.file_path
+
+    def _load_user_data(self) -> Dict[str, Any]:
+        """Carrega todos os dados do usuário."""
+        if self.file_path.exists():
+            with open(self.file_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         return {}
 
-    def save(self):
-        """Saves the current state to its JSON file."""
-        # Update all service states' updated_at timestamp
-        now = datetime.now().isoformat()
-        for service_state in self._state.values():
-            if isinstance(service_state, dict) and "_metadata" in service_state:
-                service_state["_metadata"]["updated_at"] = now
-        
-        os.makedirs(self.data_dir, exist_ok=True)
-        with open(self.file_path, "w") as f:
-            json.dump(self._state, f, indent=4, ensure_ascii=False)
+    def _save_user_data(self, data: Dict[str, Any]) -> None:
+        """Salva todos os dados do usuário."""
+        with open(self.file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
-    def get_service_state(self, service_name: str) -> Dict[str, Any]:
-        """Returns the state for a specific service, initializing if not present."""
-        service_state = self._state.setdefault(service_name, {})
-        
-        # Initialize metadata if this is a new service state
-        if not service_state:
-            now = datetime.now().isoformat()
-            service_id = f"{self.user_id}_{str(uuid.uuid4())[:6].replace('-', '_')}"
-            
-            service_state["_metadata"] = {
-                "id": service_id,
-                "created_at": now,
-                "updated_at": now
-            }
-        
-        return service_state
+    def load_service_state(self, service_name: str) -> Optional[ServiceState]:
+        """Carrega o estado de um serviço específico."""
+        user_data = self._load_user_data()
+        service_data = user_data.get(service_name)
 
-    def get(self, key: str, service_state: Dict[str, Any]) -> Any:
-        """
-        Retrieves a value from the service state using dot notation.
+        if service_data:
+            return ServiceState(
+                user_id=self.user_id, service_name=service_name, **service_data
+            )
+        return None
 
-        Args:
-            key: The dot-separated key (e.g., 'user.address.zip_code').
-            service_state: The specific service state dictionary to query.
+    def save_service_state(self, state: ServiceState) -> None:
+        """Salva o estado de um serviço."""
+        user_data = self._load_user_data()
 
-        Returns:
-            The value if found, otherwise None.
-        """
-        keys = key.split(".")
-        value = service_state
-        for k in keys:
-            if isinstance(value, dict):
-                value = value.get(k)
-            else:
-                return None
-        return value
+        # Atualiza apenas os dados do serviço específico
+        user_data[state.service_name] = {"status": state.status, "data": state.data}
 
-    def set(self, key: str, value: Any, service_state: Dict[str, Any]):
-        """
-        Sets a value in the service state using dot notation, creating nested dicts as needed.
-        """
-        keys = key.split('.')
-        current_level = service_state
-        for k in keys[:-1]:
-            # If the current level is not a dict, we need to replace it with a dict
-            if not isinstance(current_level, dict):
-                # This should not happen in normal usage, but let's handle it gracefully
-                raise ValueError(f"Cannot navigate through non-dict value at key '{k}'")
-            
-            # If the key exists and is not a dict, replace it with a dict
-            if k in current_level and not isinstance(current_level[k], dict):
-                current_level[k] = {}
-            
-            current_level = current_level.setdefault(k, {})
-        
-        # Handle the case where the final key might represent a merge
-        final_key = keys[-1]
-        if (isinstance(current_level, dict) and 
-            isinstance(current_level.get(final_key), dict) and 
-            isinstance(value, dict)):
-            current_level[final_key].update(value)
-        else:
-            if isinstance(current_level, dict):
-                current_level[final_key] = value
-            else:
-                raise ValueError(f"Cannot set key '{final_key}' on non-dict value")
+        self._save_user_data(user_data)
 
-    def merge_data(self, data: Dict[str, Any], service_state: Dict[str, Any]):
-        """
-        Deeply merges a dictionary into the service state.
-        """
-        for key, value in data.items():
-            if (
-                key in service_state
-                and isinstance(service_state[key], dict)
-                and isinstance(value, dict)
-            ):
-                self._deep_merge(service_state[key], value)
-            else:
-                service_state[key] = value
+    def update_service_state(self, service_name: str, updates: Dict[str, Any]) -> None:
+        """Atualiza campos específicos do estado de um serviço."""
+        state = self.load_service_state(service_name)
 
-    def _deep_merge(self, target: Dict, source: Dict):
-        """Helper for recursively merging dictionaries."""
-        for key, value in source.items():
-            if (
-                key in target
-                and isinstance(target[key], dict)
-                and isinstance(value, dict)
-            ):
-                self._deep_merge(target[key], value)
-            else:
-                target[key] = value
+        if state is None:
+            # Criar novo estado se não existir
+            state = ServiceState(user_id=self.user_id, service_name=service_name)
+
+        # Aplicar atualizações
+        for key, value in updates.items():
+            if hasattr(state, key):
+                setattr(state, key, value)
+
+        self.save_service_state(state)
+
+    def remove_service_state(self, service_name: str) -> bool:
+        """Remove o estado de um serviço específico."""
+        user_data = self._load_user_data()
+
+        if service_name in user_data:
+            del user_data[service_name]
+            self._save_user_data(user_data)
+            return True
+        return False
+
+    def remove_user_data(self) -> bool:
+        """Remove todos os dados do usuário."""
+        if self.file_path.exists():
+            os.remove(self.file_path)
+            return True
+        return False
