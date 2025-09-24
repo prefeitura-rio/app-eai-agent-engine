@@ -48,16 +48,26 @@ class BankAccountWorkflow(BaseWorkflow):
             try:
                 validated_data = UserInfoPayload.model_validate(state.payload)
                 state.data.update(validated_data.model_dump())
+                # Se validação foi bem-sucedida e dados foram adicionados, não precisa de agent_response
+                if "name" in state.data and "email" in state.data:
+                    state.agent_response = None
+                else:
+                    state.agent_response = AgentResponse(
+                        service_name=self.service_name,
+                        error_message=error_message,
+                        description="Por favor, forneça seu nome completo e email.",
+                        payload_schema=UserInfoPayload.model_json_schema(),
+                        data=state.data,
+                    )
             except ValidationError as e:
                 error_message = str(e)
-
-            state.agent_response = AgentResponse(
-                service_name=self.service_name,
-                error_message=error_message,
-                description="Por favor, forneça seu nome completo e email.",
-                payload_schema=UserInfoPayload.model_json_schema(),
-                data=state.data,
-            )
+                state.agent_response = AgentResponse(
+                    service_name=self.service_name,
+                    error_message=error_message,
+                    description="Por favor, forneça seu nome completo e email.",
+                    payload_schema=UserInfoPayload.model_json_schema(),
+                    data=state.data,
+                )
         else:
             state.agent_response = None
 

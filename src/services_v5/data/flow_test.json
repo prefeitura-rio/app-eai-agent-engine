@@ -1,0 +1,10 @@
+{
+  "bank_account": {
+    "status": "progress",
+    "data": {
+      "name": "Maria Silva",
+      "email": "maria@test.com",
+      "_internal_account_exists": false
+    }
+  }
+}
