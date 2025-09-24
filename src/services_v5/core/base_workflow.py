@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any
-
+from langgraph.graph import StateGraph
 from src.services_v5.core.models import ServiceState
 
 
@@ -17,7 +17,7 @@ class BaseWorkflow(ABC):
     description: str = ""
 
     @abstractmethod
-    def build_graph(self):
+    def build_graph(self) -> StateGraph:
         """
         Constrói e retorna o grafo compilado LangGraph para este workflow.
 

@@ -8,17 +8,12 @@ from src.services_v5.core.models import ServiceState
 
 
 # Pydantic models for payload validation
-class UserNamePayload(BaseModel):
+class UserInfoPayload(BaseModel):
     """User name input payload"""
 
     name: str = Field(
         ..., description="Full name of the user", min_length=2, max_length=100
     )
-
-
-class UserEmailPayload(BaseModel):
-    """User email input payload"""
-
     email: str = Field(
         ..., description="Valid email address", pattern=r"^[^@]+@[^@]+\.[^@]+$"
     )
