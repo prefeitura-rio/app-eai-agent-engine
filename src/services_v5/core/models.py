@@ -12,22 +12,6 @@ class ServiceRequest(BaseModel):
     payload: Dict[str, Any] = {}
 
 
-class ServiceState(BaseModel):
-    """
-    Estado completo de um serviço - onde ficam guardadas todas as informações.
-    """
-
-    user_id: str
-    service_name: str
-    status: Literal["progress", "completed", "error"] = "progress"
-    data: Dict[str, Any] = {}
-    pending_steps: List[str] = []
-    completed_steps: Dict[str, bool] = {}
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
 class AgentResponse(BaseModel):
     """
     Resposta enviada para o agente a cada step.
@@ -39,6 +23,23 @@ class AgentResponse(BaseModel):
     description: str = ""
     payload_schema: Optional[Dict[str, Any]] = None
     data: Dict[str, Any] = {}
+
+
+class ServiceState(BaseModel):
+    """
+    Estado completo de um serviço - onde ficam guardadas todas as informações.
+    """
+
+    user_id: str
+    service_name: str
+    status: Literal["progress", "completed", "error"] = "progress"
+    data: Dict[str, Any] = {}
+
+    # CAMPO ADICIONADO AQUI
+    agent_response: Optional[AgentResponse] = None
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class ExecutionResult(BaseModel):

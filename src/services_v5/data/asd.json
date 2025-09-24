@@ -1,0 +1,14 @@
+{
+  "bank_account": {
+    "status": "progress",
+    "data": {
+      "user_info": {
+        "name": "Jane New User",
+        "email": "jane@newuser.com"
+      },
+      "name": "Jane New User",
+      "email": "jane@newuser.com",
+      "_internal_account_exists": false
+    }
+  }
+}

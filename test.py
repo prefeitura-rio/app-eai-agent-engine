@@ -14,8 +14,8 @@ def main():
     user_id = "asd"
     service_name = "bank_account"
     partial_payload = {
-        # "user_info.name": "Jane New User",
-        # "user_info.email": "jane@newuser.com",
+        "name": "Jane New User",
+        "email": "jane@newuser.com",
         # "account_type": "savings",
         # "ask_action": "deposit",
         # "deposit_amount": 500.00,

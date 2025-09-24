@@ -90,12 +90,13 @@ class Orchestrator:
         try:
             # Executa workflow passando state e payload separadamente
             # O workflow é responsável por validar e aplicar o payload
-            result = workflow.execute(state, request.payload)
+            response = workflow.execute(state, request.payload)
 
-            # Salva state atualizado APÓS validação do workflow
-            state_manager.save_service_state(result.state)
+            # Salva state atualizado APÓS execução do workflow
+            # O state foi modificado durante a execução
+            state_manager.save_service_state(state)
 
-            return result.response
+            return response
 
         except Exception as e:
             # Em caso de erro, retorna resposta de erro
