@@ -1,6 +1,6 @@
 import random
 import logging
-from typing import Literal, Dict, Any
+from typing import Literal
 from pydantic import BaseModel, Field, ValidationError
 
 from langgraph.graph import StateGraph, END
@@ -181,9 +181,7 @@ class BankAccountWorkflow(BaseWorkflow):
 
     # --- Roteadores Condicionais (Lógica de roteamento e pausa) ---
 
-    def _decide_after_data_collection(
-        self, state: GraphState
-    ) -> Literal["continue", END]:
+    def _decide_after_data_collection(self, state: GraphState):
         # Roteador genérico para nós de coleta de dados.
         # Se o nó pediu input, a execução para. Senão, continua.
         if state["state"].agent_response is not None:
