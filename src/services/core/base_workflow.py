@@ -47,6 +47,7 @@ class BaseWorkflow(ABC):
         compiled_graph = graph.compile()
 
         # 3. Invoca o grafo diretamente com ServiceState
+
         final_state_result = compiled_graph.invoke(state)
 
         # O LangGraph pode retornar o ServiceState diretamente ou como dict
@@ -72,7 +73,13 @@ class BaseWorkflow(ABC):
         final_state.payload = {}
 
         # Mantém a resposta para o orchestrator
-        final_state.agent_response = temp_agent_response
+        final_state.agent_response = AgentResponse(
+            service_name=self.service_name,
+            error_message=temp_agent_response.error_message,
+            description=temp_agent_response.description,
+            payload_schema=temp_agent_response.payload_schema,
+            data=final_state.data,
+        )
 
         return final_state
 

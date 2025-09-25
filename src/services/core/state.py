@@ -1,7 +1,7 @@
 import os
 import json
 from pathlib import Path
-from src.services.core.models import ServiceState
+from src.services.core.models import ServiceState, ServiceMetadata
 
 from typing import Any, Dict, Optional
 
@@ -47,6 +47,10 @@ class StateManager:
         service_data = user_data.get(service_name)
 
         if service_data:
+            # Compatibilidade: Se não tem metadata, cria um novo
+            if 'metadata' not in service_data:
+                service_data['metadata'] = ServiceMetadata().model_dump()
+                
             return ServiceState(
                 user_id=self.user_id, service_name=service_name, **service_data
             )
@@ -54,10 +58,18 @@ class StateManager:
 
     def save_service_state(self, state: ServiceState) -> None:
         """Salva o estado de um serviço."""
+        # Auto-atualiza o timestamp de updated_at antes de salvar
+        state.metadata.update_timestamp()
+        
         user_data = self._load_user_data()
 
         # Atualiza apenas os dados do serviço específico
-        user_data[state.service_name] = {"status": state.status, "data": state.data}
+        user_data[state.service_name] = {
+            "status": state.status, 
+            "data": state.data,
+            "internal": state.internal,
+            "metadata": state.metadata.model_dump(mode='json')
+        }
 
         self._save_user_data(user_data)
 

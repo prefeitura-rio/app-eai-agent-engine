@@ -38,39 +38,25 @@ class BankAccountWorkflow(BaseWorkflow):
 
     # --- Nós do Grafo ---
     def _collect_user_info(self, state: ServiceState) -> ServiceState:
-        if "user_info" not in state.data:
-            error_message = None
-            try:
-                validated_data = UserInfoPayload.model_validate(state.payload)
+        field = "user_info"
+        response = AgentResponse()
 
-                # Salva dados nested se fornecidos
-                if validated_data.user_info:
-                    # Dados nested: salva como {user_info: {name: "...", email: "..."}}
-                    state.data["user_info"] = validated_data.user_info.model_dump()
-
-                # Verifica se dados foram coletados com sucesso
-                if "user_info" in state.data:
-                    state.agent_response = None
-                else:
-                    state.agent_response = AgentResponse(
-                        service_name=self.service_name,
-                        error_message=error_message,
-                        description="Colete as informacoes do usuario.",
-                        payload_schema=UserInfoPayload.model_json_schema(),
-                        data=state.data,
-                    )
-            except ValidationError as e:
-                error_message = str(e)
-                state.agent_response = AgentResponse(
-                    service_name=self.service_name,
-                    error_message=error_message,
-                    description="Colete as informacoes do usuario.",
-                    payload_schema=UserInfoPayload.model_json_schema(),
-                    data=state.data,
-                )
+        if field not in state.data:
+            response.description = "Colete as informações do usuário."
+            response.payload_schema = UserInfoPayload.model_json_schema()
         else:
             state.agent_response = None
+            return state
 
+        if field in state.payload:
+            try:
+                validated_data = UserInfoPayload.model_validate(state.payload)
+                if validated_data.user_info:
+                    state.data["user_info"] = validated_data.user_info.model_dump()
+            except ValidationError as e:
+                response.error_message = str(e)
+
+        state.agent_response = response
         return state
 
     def _collect_account_type(self, state: ServiceState) -> ServiceState:
@@ -83,11 +69,9 @@ class BankAccountWorkflow(BaseWorkflow):
                 error_message = str(e)
 
             state.agent_response = AgentResponse(
-                service_name=self.service_name,
                 error_message=error_message,
                 description="Qual tipo de conta você gostaria de abrir: 'checking' (corrente) ou 'savings' (poupança)?",
                 payload_schema=AccountTypePayload.model_json_schema(),
-                data=state.data,
             )
         else:
             state.agent_response = None
@@ -106,10 +90,8 @@ class BankAccountWorkflow(BaseWorkflow):
             # Limpar ação para evitar loop e mostrar saldo
             state.data.pop("ask_action", None)
             state.agent_response = AgentResponse(
-                service_name=self.service_name,
                 description=f"💰 Saldo atual da conta R$ {state.data.get('balance', 0.0):.2f}.",
                 payload_schema=ActionChoicePayload.model_json_schema(),
-                data=state.data,
             )
             return state
 
@@ -122,11 +104,9 @@ class BankAccountWorkflow(BaseWorkflow):
             except ValidationError as e:
                 error_message = str(e)
             state.agent_response = AgentResponse(
-                service_name=self.service_name,
                 error_message=error_message,
                 description=f"O que você gostaria de fazer? 'deposit' (depositar) ou 'balance' (ver saldo)?",
                 payload_schema=ActionChoicePayload.model_json_schema(),
-                data=state.data,
             )
         else:
             state.agent_response = None
@@ -139,19 +119,15 @@ class BankAccountWorkflow(BaseWorkflow):
             state.data.update(validated_data.model_dump())
         except ValidationError as e:
             state.agent_response = AgentResponse(
-                service_name=self.service_name,
                 description=f"Valor de depósito inválido. Por favor, forneça um número positivo. Erro: {e.errors()[0]['msg']}",
                 payload_schema=DepositAmountPayload.model_json_schema(),
-                data=state.data,
             )
             return state
 
         if "deposit_amount" not in state.data:
             state.agent_response = AgentResponse(
-                service_name=self.service_name,
                 description="Qual valor você gostaria de depositar?",
                 payload_schema=DepositAmountPayload.model_json_schema(),
-                data=state.data,
             )
         else:
             state.agent_response = None
