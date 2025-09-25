@@ -95,6 +95,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cloudpickle" },
     { name = "google-cloud-aiplatform", extra = ["agent-engines"] },
+    { name = "jmespath" },
     { name = "langchain" },
     { name = "langchain-core" },
     { name = "langchain-google-cloud-sql-pg" },
@@ -114,6 +115,7 @@ dependencies = [
 requires-dist = [
     { name = "cloudpickle", specifier = ">=3.1.1" },
     { name = "google-cloud-aiplatform", extras = ["agent-engines"], specifier = ">=1.106.0" },
+    { name = "jmespath", specifier = ">=1.0.1" },
     { name = "langchain", specifier = ">=0.3.27" },
     { name = "langchain-core", specifier = ">=0.3.72" },
     { name = "langchain-google-cloud-sql-pg", specifier = ">=0.14.1" },
@@ -810,6 +812,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/76/66/650a33bd90f786193e4de4b3ad86ea60b53c89b669a5c7be931fac31cdb0/importlib_metadata-8.7.0.tar.gz", hash = "sha256:d13b81ad223b890aa16c5471f2ac3056cf76c5f10f82d6f9292f0b415f389000", size = 56641 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/20/b0/36bd937216ec521246249be3bf9855081de4c5e06a0c9b4219dbeda50373/importlib_metadata-8.7.0-py3-none-any.whl", hash = "sha256:e5dd1551894c77868a30651cef00984d50e1002d06942a7101d34870c5f02afd", size = 27656 },
+]
+
+[[package]]
+name = "jmespath"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/2a/e867e8531cf3e36b41201936b7fa7ba7b5702dbef42922193f05c8976cd6/jmespath-1.0.1.tar.gz", hash = "sha256:90261b206d6defd58fdd5e85f478bf633a2901798906be2ad389150c5c60edbe", size = 25843 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/31/b4/b9b800c45527aadd64d5b442f9b932b00648617eb5d63d2c7a6587b7cafc/jmespath-1.0.1-py3-none-any.whl", hash = "sha256:02e2e4cc71b5bcab88332eebf907519190dd9e6e82107fa7f83b1003a6252980", size = 20256 },
 ]
 
 [[package]]

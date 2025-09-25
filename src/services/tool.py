@@ -14,7 +14,7 @@ def multi_step_service(
 
     Args:
         service_name: Nome do serviço (ex: "bank_account")
-        payload: Dicionário com campos (ex: {"document_type":"CPF","account_type":"corrente"})
+        payload: Dicionário com campos solicitados no payload_schema. Envie apenas o que for solicidado na etapa atual.
         user_id: ID do agente, passar sempre 'agent'
     Exemplos:
         # Início - payload vazio
@@ -22,9 +22,6 @@ def multi_step_service(
 
         # Um campo
         payload = {"document_type":"CPF"}
-
-        # Múltiplos campos
-        payload = {"document_number":"12345678901","account_type":"corrente"}
 
     Serviços disponíveis:
         - service_name: description

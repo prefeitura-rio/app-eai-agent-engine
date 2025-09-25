@@ -1,10 +1,14 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Callable
 import os
+from functools import wraps
+import traceback
 
 from langgraph.graph import StateGraph
 
 from src.services.core.models import ServiceState, AgentResponse
+
+from loguru import logger
 
 
 class BaseWorkflow(ABC):
@@ -47,7 +51,6 @@ class BaseWorkflow(ABC):
         compiled_graph = graph.compile()
 
         # 3. Invoca o grafo diretamente com ServiceState
-
         final_state_result = compiled_graph.invoke(state)
 
         # O LangGraph pode retornar o ServiceState diretamente ou como dict
@@ -118,3 +121,35 @@ class BaseWorkflow(ABC):
 
         except Exception as e:
             raise
+
+
+def handle_errors(node_func: Callable) -> Callable:
+    """
+    Decorator para envolver nós do grafo com tratamento de exceções.
+    Ele preserva a AgentResponse preparada pelo nó mesmo em caso de erro.
+    """
+
+    @wraps(node_func)
+    def wrapper(instance, state: ServiceState) -> ServiceState:
+        try:
+            # Chama a função original do nó
+            return node_func(instance, state)
+        except Exception as e:
+            traceback_str = traceback.format_exc()
+            logger.error(
+                f"\nError in service: {state.service_name}\nuser_id:{state.user_id}\nnode:{node_func.__name__}\n{traceback_str}",
+            )
+            # Pega a AgentResponse que o nó já deve ter colocado no estado.
+            # Se, por algum motivo, não houver uma, cria uma nova.
+            response = state.agent_response or AgentResponse()
+
+            # Adiciona a mensagem de erro da exceção à resposta existente.
+            # A descrição e o schema que já estavam lá são preservados.
+            response.error_message = str(e)
+
+            state.agent_response = response
+            state.status = "error"
+
+            return state
+
+    return wrapper
