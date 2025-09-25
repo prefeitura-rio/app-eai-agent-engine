@@ -1,0 +1,21 @@
+{
+  "bank_account": {
+    "status": "progress",
+    "data": {
+      "user_info": {
+        "name": "João Silva",
+        "email": "joao@test.com"
+      },
+      "account_type": "checking",
+      "account_number": 93662,
+      "balance": 0.0
+    },
+    "internal": {
+      "pending_action": "deposit"
+    },
+    "metadata": {
+      "created_at": "2025-09-25T18:01:01.967606",
+      "updated_at": "2025-09-25T18:01:02.010782"
+    }
+  }
+}

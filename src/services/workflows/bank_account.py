@@ -52,6 +52,7 @@ class BankAccountWorkflow(BaseWorkflow):
             if validated_data.user_info:
                 state.data["user_info"] = validated_data.user_info.model_dump()
                 state.agent_response = None
+        state.payload.pop("user_info", None)  # Consumir user_info
         return state
 
     @handle_errors
@@ -69,6 +70,7 @@ class BankAccountWorkflow(BaseWorkflow):
             state.data.update(validated_data.model_dump())
             state.agent_response = None
 
+        state.payload.pop("account_type", None)
         return state
 
     def _create_account(self, state: ServiceState) -> ServiceState:
@@ -78,13 +80,8 @@ class BankAccountWorkflow(BaseWorkflow):
 
     @handle_errors
     def _ask_action(self, state: ServiceState) -> ServiceState:
-        # Processar ação "balance" imediatamente se veio no payload
-        action = state.payload.get("ask_action")
-        if action == "balance":
-            state.agent_response = AgentResponse(
-                description=f"💰 Saldo atual da conta R$ {state.data.get('balance', 0.0):.2f}.",
-                payload_schema=ActionChoicePayload.model_json_schema(),
-            )
+        # Só ativar ask_action quando pending_action é None
+        if state.internal.get("pending_action") is not None:
             return state
 
         # Sempre pedir ação (não persistir ask_action)
@@ -94,11 +91,25 @@ class BankAccountWorkflow(BaseWorkflow):
         )
         state.agent_response = response
 
-        # Se veio ação no payload, processar mas não salvar
+        # Se veio ação no payload, armazenar no internal para persistir através dos steps
         if "ask_action" in state.payload:
-            ActionChoicePayload.model_validate(state.payload)  # Apenas validar
-            # NÃO consumir ask_action aqui - será usado pelo router
+            ActionChoicePayload.model_validate(state.payload)  # Validar
+            # Armazenar no internal para não perder a informação
+            state.internal["pending_action"] = state.payload["ask_action"]
             state.agent_response = None  # Continuar fluxo
+        return state
+
+    @handle_errors
+    def _get_balance(self, state: ServiceState) -> ServiceState:
+        # Exibir saldo e limpar pending_action
+        balance = state.data.get('balance', 0.0)
+        state.agent_response = AgentResponse(
+            description=f"💰 Saldo atual da conta R$ {balance:.2f}.",
+            payload_schema=ActionChoicePayload.model_json_schema(),
+        )
+        
+        # Limpar pending_action após mostrar o saldo
+        state.internal.pop("pending_action", None)
         return state
 
     @handle_errors
@@ -117,12 +128,22 @@ class BankAccountWorkflow(BaseWorkflow):
             state.agent_response = None
         return state
 
+    @handle_errors
     def _make_deposit(self, state: ServiceState) -> ServiceState:
         amount = state.data.get("deposit_amount", 0)
         current_balance = state.data.get("balance", 0)
-        state.data["balance"] = current_balance + amount
+        new_balance = current_balance + amount
+        state.data["balance"] = new_balance
 
+        # Limpar deposit_amount e pending_action após usar
         state.data.pop("deposit_amount", None)
+        state.internal.pop("pending_action", None)
+
+        # Confirma o depósito realizado
+        state.agent_response = AgentResponse(
+            description=f"✅ Depósito de R$ {amount:.2f} realizado com sucesso! Novo saldo: R$ {new_balance:.2f}",
+            payload_schema=ActionChoicePayload.model_json_schema(),
+        )
         return state
 
     # --- Roteadores Condicionais (Lógica de roteamento e pausa) ---
@@ -142,11 +163,12 @@ class BankAccountWorkflow(BaseWorkflow):
             return "account_type"
 
     def _route_after_action_choice(self, state: ServiceState) -> str:
-        # Roteador que decide próximo nó baseado na ação no payload (temporário)
-        action = state.payload.get("ask_action")
+        # Roteador que decide próximo nó baseado na ação armazenada no internal
+        action = state.internal.get("pending_action")
         if action == "deposit":
-            state.payload.pop("ask_action", None)  # Consumir ask_action
             return "collect_deposit_amount"
+        elif action == "balance":
+            return "get_balance"
         # Para qualquer outra ação ou sem ação, volta para ask_action
         return "ask_action"
 
@@ -159,6 +181,7 @@ class BankAccountWorkflow(BaseWorkflow):
         graph.add_node("account_type", self._collect_account_type)
         graph.add_node("create_account", self._create_account)
         graph.add_node("ask_action", self._ask_action)
+        graph.add_node("get_balance", self._get_balance)
         graph.add_node("collect_deposit_amount", self._collect_deposit_amount)
         graph.add_node("make_deposit", self._make_deposit)
 
@@ -207,6 +230,7 @@ class BankAccountWorkflow(BaseWorkflow):
             self._route_after_action_choice,
             {
                 "collect_deposit_amount": "collect_deposit_amount",
+                "get_balance": "get_balance",
                 "ask_action": "ask_action",
             },
         )
@@ -218,6 +242,16 @@ class BankAccountWorkflow(BaseWorkflow):
             {"continue": "make_deposit", END: END},
         )
 
-        graph.add_edge("make_deposit", "ask_action")
+        graph.add_conditional_edges(
+            "make_deposit",
+            self._decide_after_data_collection,
+            {"continue": "ask_action", END: END},
+        )
+
+        graph.add_conditional_edges(
+            "get_balance",
+            self._decide_after_data_collection,
+            {"continue": "ask_action", END: END},
+        )
 
         return graph
