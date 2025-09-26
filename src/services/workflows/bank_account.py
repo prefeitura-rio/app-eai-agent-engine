@@ -102,12 +102,12 @@ class BankAccountWorkflow(BaseWorkflow):
     @handle_errors
     def _get_balance(self, state: ServiceState) -> ServiceState:
         # Exibir saldo e limpar pending_action
-        balance = state.data.get('balance', 0.0)
+        balance = state.data.get("balance", 0.0)
         state.agent_response = AgentResponse(
             description=f"💰 Saldo atual da conta R$ {balance:.2f}.",
             payload_schema=ActionChoicePayload.model_json_schema(),
         )
-        
+
         # Limpar pending_action após mostrar o saldo
         state.internal.pop("pending_action", None)
         return state

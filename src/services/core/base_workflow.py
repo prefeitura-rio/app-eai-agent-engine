@@ -112,10 +112,11 @@ class BaseWorkflow(ABC):
             image_path = os.path.join(workflow_dir, image_filename)
 
             # diagram = compiled_graph.get_graph().draw_mermaid()
-
+            g = compiled_graph.get_graph()
+            logger.info(f"\n{g.draw_mermaid()}")
             # Gera e salva a imagem do grafo
-            with open(image_path, "wb") as f:
-                f.write(compiled_graph.get_graph().draw_mermaid_png(max_retries=10))
+            # with open(image_path, "wb") as f:
+            #     f.write(g.draw_mermaid_png())
 
             return image_path
 

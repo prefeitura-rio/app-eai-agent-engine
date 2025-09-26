@@ -1,0 +1,16 @@
+{
+  "bank_account": {
+    "status": "error",
+    "data": {
+      "user_info": {
+        "name": "João Silva",
+        "email": "joao@test.com"
+      }
+    },
+    "internal": {},
+    "metadata": {
+      "created_at": "2025-09-25T22:40:43.162023",
+      "updated_at": "2025-09-25T22:41:23.226950"
+    }
+  }
+}
