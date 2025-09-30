@@ -27,6 +27,9 @@ class MemoryLimitedPostgresSaver:
     - Time limits: Only retrieve messages newer than SHORT_MEMORY_TIME_LIMIT days
     
     Messages are never truncated - complete messages are preserved.
+    
+    CRITICAL: This class maintains a cache of original checkpoints to prevent
+    filtered data from being written back to the database.
     """
     
     def __init__(
@@ -53,6 +56,10 @@ class MemoryLimitedPostgresSaver:
         self.time_limit_days = time_limit_days if time_limit_days is not None else SHORT_MEMORY_TIME_LIMIT
         self.model_name = model_name
         self.enable_stats_logging = enable_stats_logging
+        
+        # Cache to store original (unfiltered) checkpoints
+        # This prevents filtered data from being written back to database
+        self._original_checkpoints_cache: Dict[str, CheckpointTuple] = {}
         
         logger.info(f"MemoryLimitedPostgresSaver initialized with token_limit={self.token_limit}, "
                    f"time_limit_days={self.time_limit_days}, model={self.model_name}")
@@ -257,28 +264,94 @@ class MemoryLimitedPostgresSaver:
             # Apply memory limits to each checkpoint
             yield self._apply_memory_limits_to_checkpoint(checkpoint)
     
-    def put(self, config: Dict[str, Any], checkpoint: CheckpointTuple, metadata: Dict[str, Any], new_versions: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def put(self, config: Dict[str, Any], checkpoint: Dict[str, Any], metadata: Dict[str, Any], new_versions: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Delegate put operations to the base checkpointer.
         """
+        logger.critical(f"🚨🚨 PUT CALLED! This modifies the database!")
+        logger.critical(f"   Config: {config}")
+        logger.critical(f"   Checkpoint messages: {len(checkpoint.checkpoint.get('channel_values', {}).get('messages', []))}")
+        logger.critical(f"   This might be writing filtered messages back to PostgreSQL!")
         return self._base.put(config, checkpoint, metadata, new_versions)
     
-    async def aput(self, config: Dict[str, Any], checkpoint: CheckpointTuple, metadata: Dict[str, Any], new_versions: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def aput(self, config: Dict[str, Any], checkpoint: Dict[str, Any], metadata: Dict[str, Any], new_versions: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Delegate async put operations to the base checkpointer.
+        CRITICAL: This method prevents filtered checkpoints from being written to database.
         """
+        logger.critical(f"🚨🚨 APUT CALLED! This modifies the database!")
+        logger.critical(f"   Config: {config}")
+        logger.critical(f"   Checkpoint type: {type(checkpoint)}")
+        logger.critical(f"   Checkpoint messages: {len(checkpoint.get('channel_values', {}).get('messages', []))}")
+        logger.critical(f"   Checkpoint keys: {list(checkpoint.keys())}")
+        
+        # Check if this is a filtered checkpoint that shouldn't be saved as-is
+        if checkpoint.get('_memory_filtered'):
+            logger.critical(f"🛡️ FILTERED CHECKPOINT DETECTED! Reconstructing original data...")
+            
+            cache_key = checkpoint.get('_original_cache_key')
+            if cache_key and cache_key in self._original_checkpoints_cache:
+                # Get the original checkpoint from cache
+                original_checkpoint = self._original_checkpoints_cache[cache_key]
+                logger.critical(f"🗄️ Retrieved original checkpoint with {len(original_checkpoint.checkpoint.get('channel_values', {}).get('messages', []))} messages")
+                
+                # Reconstruct: take the original messages + any new messages from the filtered checkpoint
+                original_messages = original_checkpoint.checkpoint.get('channel_values', {}).get('messages', [])
+                filtered_messages = checkpoint.get('channel_values', {}).get('messages', [])
+                
+                # Find new messages that were added (they should be at the end)
+                new_messages = []
+                if len(filtered_messages) > len(original_messages):
+                    # There are new messages - figure out which ones are new
+                    # Simple heuristic: messages at the end that don't match original ones
+                    potential_new_messages = filtered_messages[len(original_messages):]
+                    new_messages = potential_new_messages
+                    logger.critical(f"🆕 Found {len(new_messages)} new messages to add")
+                
+                # Create a new checkpoint with original messages + new messages
+                reconstructed_checkpoint = checkpoint.copy()
+                reconstructed_messages = original_messages + new_messages
+                reconstructed_checkpoint['channel_values'] = checkpoint.get('channel_values', {}).copy()
+                reconstructed_checkpoint['channel_values']['messages'] = reconstructed_messages
+                
+                # Remove filtering markers
+                reconstructed_checkpoint.pop('_memory_filtered', None)
+                reconstructed_checkpoint.pop('_original_cache_key', None)
+                
+                # Save the reconstructed checkpoint directly
+                result = await self._base.aput(config, reconstructed_checkpoint, metadata, new_versions)
+                
+                # Update cache with the new version - we need to create a new CheckpointTuple for caching
+                reconstructed_checkpoint_tuple = CheckpointTuple(
+                    config=original_checkpoint.config,
+                    checkpoint=reconstructed_checkpoint,
+                    metadata=original_checkpoint.metadata,
+                    parent_config=original_checkpoint.parent_config,
+                    pending_writes=[]  # Empty for cached version
+                )
+                self._original_checkpoints_cache[cache_key] = reconstructed_checkpoint_tuple
+                
+                return result
+            else:
+                logger.error(f"❌ Could not find original checkpoint in cache! Key: {cache_key}")
+                logger.error(f"   Available keys: {list(self._original_checkpoints_cache.keys())}")
+                # Fallback: save as-is but log the issue
+                
+        logger.critical(f"💾 Saving checkpoint to PostgreSQL...")
         return await self._base.aput(config, checkpoint, metadata, new_versions)
     
     def put_writes(self, config: Dict[str, Any], writes: List[Any], task_id: str) -> None:
         """
         Delegate put_writes operations to the base checkpointer.
         """
+        logger.critical(f"🚨 PUT_WRITES CALLED! This modifies the database! Config: {config}, writes: {len(writes)}")
         return self._base.put_writes(config, writes, task_id)
     
     async def aput_writes(self, config: Dict[str, Any], writes: List[Any], task_id: str) -> None:
         """
         Store writes to checkpoint asynchronously (delegates to base).
         """
+        logger.critical(f"🚨 APUT_WRITES CALLED! This modifies the database! Config: {config}, writes: {len(writes)}")
         await self._base.aput_writes(config, writes, task_id)
     
     async def aget_tuple(self, config: Dict[str, Any]) -> Optional[CheckpointTuple]:
@@ -286,19 +359,31 @@ class MemoryLimitedPostgresSaver:
         Get checkpoint tuple asynchronously with memory limits applied.
         This is the method that LangGraph actually calls for message retrieval.
         """
-        logger.info(f"MemoryLimitedPostgresSaver.aget_tuple called with config: {config}")
+        logger.critical(f"🔍 AGET_TUPLE CALLED (READ): {config}")
         
         # Get the raw checkpoint tuple from base checkpointer
-        checkpoint_tuple = await self._base.aget_tuple(config)
+        original_checkpoint_tuple = await self._base.aget_tuple(config)
         
-        if checkpoint_tuple is None:
+        if original_checkpoint_tuple is None:
             logger.debug("No checkpoint tuple found")
             return None
         
-        # Apply memory limits to the checkpoint
-        filtered_tuple = self._apply_memory_limits_to_checkpoint(checkpoint_tuple)
+        # Generate a cache key for this checkpoint
+        cache_key = f"{config.get('configurable', {}).get('thread_id', 'unknown')}_{id(original_checkpoint_tuple)}"
         
-        logger.info(f"aget_tuple: Applied memory limits to checkpoint")
+        # Cache the original checkpoint to prevent filtered data from being saved
+        self._original_checkpoints_cache[cache_key] = original_checkpoint_tuple
+        logger.critical(f"�️ Cached original checkpoint with {len(original_checkpoint_tuple.checkpoint.get('channel_values', {}).get('messages', []))} messages")
+        
+        # Apply memory limits to create a filtered view
+        filtered_tuple = self._apply_memory_limits_to_checkpoint(original_checkpoint_tuple)
+        
+        # Mark the filtered tuple so we can identify it later
+        filtered_tuple.checkpoint['_memory_filtered'] = True
+        filtered_tuple.checkpoint['_original_cache_key'] = cache_key
+        
+        logger.critical(f"🔍 Filtered checkpoint has {len(filtered_tuple.checkpoint.get('channel_values', {}).get('messages', []))} messages")
+        logger.critical(f"🔍 aget_tuple: Returning filtered checkpoint with cache key: {cache_key}")
         return filtered_tuple
     
     def get_tuple(self, config: Dict[str, Any]) -> Optional[CheckpointTuple]:
@@ -331,14 +416,23 @@ class MemoryLimitedPostgresSaver:
         Delegate any other attribute access to the base checkpointer.
         This ensures all methods and properties are properly forwarded.
         """
-        logger.debug(f"MemoryLimitedPostgresSaver: Delegating method/attribute '{name}' to base checkpointer")
+        logger.warning(f"🚨 DELEGATING METHOD: '{name}' - This method bypasses memory filtering!")
         attr = getattr(self._base, name)
         
-        # If it's a callable method, wrap it with logging
+        # If it's a callable method, wrap it with extensive logging
         if callable(attr):
             def wrapper(*args, **kwargs):
-                logger.warning(f"MemoryLimitedPostgresSaver: Method '{name}' called via delegation - memory limits NOT applied! Args: {len(args)}, Kwargs: {list(kwargs.keys())}")
-                return attr(*args, **kwargs)
+                logger.error(f"🚨 CRITICAL: Method '{name}' called via delegation!")
+                logger.error(f"   Args: {[type(arg).__name__ for arg in args]}")
+                logger.error(f"   Kwargs: {list(kwargs.keys())}")
+                
+                # Log if this might be a write operation
+                if name in ['put', 'aput', 'put_writes', 'aput_writes', 'save', 'asave', 'write', 'awrite', 'update', 'aupdate']:
+                    logger.error(f"🚨🚨 POTENTIAL DATABASE WRITE via '{name}' - THIS MIGHT MODIFY POSTGRES!")
+                
+                result = attr(*args, **kwargs)
+                logger.warning(f"   Result type: {type(result).__name__}")
+                return result
             return wrapper
         
         return attr
