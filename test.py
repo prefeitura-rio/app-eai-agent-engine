@@ -15,7 +15,7 @@ def main():
     steps = [
         # Passo 1: Criar conta
         {
-            "user_info": {"name": "João Silva", "email": "joao@test.com"},
+            "user_info": {"name": "A", "email": "joao@test.com"},
         },
         # {
         #     "account_type": "checking",

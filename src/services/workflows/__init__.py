@@ -10,10 +10,12 @@ Para adicionar um novo workflow:
 
 # Import workflows aqui
 from src.services.workflows.bank_account import BankAccountWorkflow
+from src.services.workflows.iptu_ano_vigente import IPTUAnoVigenteWorkflow
 
 # Lista central de workflows (classes)
 workflows = [
     BankAccountWorkflow,
+    IPTUAnoVigenteWorkflow,
 ]
 
 # Lista de workflows disponíveis para import fácil
