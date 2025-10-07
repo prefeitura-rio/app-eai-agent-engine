@@ -8,22 +8,23 @@ def main():
     Main function to run the test flow.
     """
 
-    user_id = f"asdasd"  # Novo usuário para cada teste
-    service_name = "bank_account"
-    # save_single_workflow_graph(service_name=service_name)
+    user_id = f"asdasdasdsad"  # Novo usuário para cada teste
+    service_name = "iptu_ano_vigente"
+    save_single_workflow_graph(service_name=service_name)
     # Teste com payload separado para verificar se funciona agora
     steps = [
         # Passo 1: Criar conta
+        # {},
         {
-            "user_info": {"name": "A", "email": "joao@test.com"},
+            "inscricao_imobiliaria": "01234567890123",
         },
         # {
-        #     "account_type": "checking",
+        #     "tipo_cobranca": "cota_unica",
         # },
-        # {"ask_action": "deposit"},
+        # {"formato_pagamento": "codigo_barras"},
         # # Passo 2: Escolher ação e valor ao mesmo tempo
-        # {"deposit_amount": 500},
-        # Passo 3: Verificar saldo
+        # {"mesma_guia": True},
+        # # Passo 3: Verificar saldo
         # {"ask_action": "balance"},
     ]
 

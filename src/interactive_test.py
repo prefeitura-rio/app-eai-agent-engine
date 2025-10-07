@@ -25,7 +25,7 @@ def get_agent():
     )
 
 
-user_id = "hahahah1234"
+user_id = "hahahah1099asd93"
 
 
 # Initialize agents
@@ -259,7 +259,7 @@ async def interactive_chat(use_local=False):
                     result = await local_agent.async_query(input=data, config=config)
                 else:
                     result = await remote_agent.async_query(input=data, config=config)
-                print(result)
+                # print(result)
                 # Parse and display the result
                 parse_agent_response(result, is_local=use_local, start_time=start_time)
 

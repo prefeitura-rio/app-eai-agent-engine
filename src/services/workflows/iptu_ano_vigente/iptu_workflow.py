@@ -13,9 +13,10 @@ from src.services.core.models import ServiceState, AgentResponse
 
 from src.services.workflows.iptu_ano_vigente.models import (
     InscricaoImobiliariaPayload,
-    ColetarGuiasPayload,
+    EscolhaGuiaPayload,
     EscolhaCobrancaPayload,
     EscolhaFormatoPagamentoPayload,
+    EscolhaCotasParceladasPayload,
     ConfirmacaoDadosPayload,
     EscolhaGuiaMesmoImovelPayload,
     EscolhaOutroImovelPayload,
@@ -27,14 +28,16 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
     """
     Workflow para consulta de IPTU do ano vigente da Prefeitura do Rio.
     
-    Fluxo principal:
-    1. Coleta inscrição imobiliária
-    2. Consulta guias disponíveis
-    3. Usuário informa qual cota quer pagar
-    4. Verifica se é cota única
-    5. Escolhe cotas a pagar
-    6. Confirma dados para pagamento
-    7. Pergunta se quer guia do mesmo imóvel ou outro
+    Fluxo principal corrigido conforme imagem oficial:
+    1. Informar inscrição imobiliária
+    2. Consultar guias disponíveis para pagamento
+    3. Usuário informa qual guia quer pagar
+    4. Verifica se é cota única (informa forma de pagamento)
+    5. Se parcelado: escolher cotas a pagar
+    6. Deseja pagar as cotas em DARF separado?
+    7. Confirmação dos dados coletados para pagamento
+    8. Existe mais guia a pagar nesse imóvel?
+    9. Deseja emitir guias para outro imóvel?
     """
     
     service_name = "iptu_ano_vigente"
@@ -49,22 +52,54 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
     @handle_errors
     def _informar_inscricao_imobiliaria(self, state: ServiceState) -> ServiceState:
         """Coleta a inscrição imobiliária do usuário."""
+        # Verifica se há uma nova inscrição no payload (diferente da atual)
+        if "inscricao_imobiliaria" in state.payload:
+            try:
+                validated_data = InscricaoImobiliariaPayload.model_validate(state.payload)
+                nova_inscricao = validated_data.inscricao_imobiliaria
+                inscricao_atual = state.data.get("inscricao_imobiliaria")
+                
+                # Se é uma nova inscrição diferente da atual, faz reset automático
+                if inscricao_atual and nova_inscricao != inscricao_atual:
+                    # Reset automático para nova inscrição
+                    campos_limpar = [
+                        "inscricao_imobiliaria", "dados_iptu", "guia_escolhida", "tipo_cobranca", 
+                        "cotas_escolhidas", "formato_pagamento", "guias_geradas"
+                    ]
+                    for campo in campos_limpar:
+                        state.data.pop(campo, None)
+                    
+                    flags_limpar = [
+                        "consulta_realizada", "dados_confirmados", "fluxo_cota_unica",
+                        "quer_mesma_guia", "quer_outro_imovel", "inscricao_invalida"
+                    ]
+                    for flag in flags_limpar:
+                        state.internal.pop(flag, None)
+                
+                # Salva a nova inscrição
+                state.data["inscricao_imobiliaria"] = nova_inscricao
+                state.agent_response = None
+                return state
+                
+            except Exception as e:
+                response = AgentResponse(
+                    description="📋 Para consultar o IPTU, informe a inscrição imobiliária do seu imóvel (14 a 16 dígitos).",
+                    payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
+                    error_message=f"Inscrição imobiliária inválida: {str(e)}"
+                )
+                state.agent_response = response
+                return state
+        
+        # Se já tem inscrição e não foi fornecida nova, continua
         if "inscricao_imobiliaria" in state.data:
             return state
         
+        # Solicita inscrição se não tem nenhuma
         response = AgentResponse(
             description="📋 Para consultar o IPTU, informe a inscrição imobiliária do seu imóvel (14 a 16 dígitos).",
             payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
         )
         state.agent_response = response
-        
-        if "inscricao_imobiliaria" in state.payload:
-            try:
-                validated_data = InscricaoImobiliariaPayload.model_validate(state.payload)
-                state.data["inscricao_imobiliaria"] = validated_data.inscricao_imobiliaria
-                state.agent_response = None
-            except Exception as e:
-                response.error_message = f"Inscrição imobiliária inválida: {str(e)}"
         
         return state
     
@@ -84,8 +119,7 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
         dados_consulta = self.api_service.consultar_iptu(inscricao)
         
         if not dados_consulta:
-            # Inscrição não encontrada - volta para informar inscrição
-            state.internal["inscricao_invalida"] = True
+            # Inscrição não encontrada - para o fluxo e pede nova inscrição
             state.agent_response = AgentResponse(
                 description="❌ Inscrição imobiliária não encontrada. Verifique o número e tente novamente.",
                 payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
@@ -98,19 +132,18 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
         state.data["dados_iptu"] = dados_consulta.dados_iptu.model_dump()
         state.internal["consulta_realizada"] = True
         
-        # Não para o fluxo aqui - apenas salva os dados e continua automaticamente
-        # O próximo nó (_usuario_informa_cota_pagar) vai mostrar as opções
+        # Não para o fluxo aqui - continua para mostrar as guias
         state.agent_response = None
         
         return state
     
     @handle_errors
-    def _usuario_informa_cota_pagar(self, state: ServiceState) -> ServiceState:
-        """Usuário informa qual cota quer pagar."""
-        if "tipo_cobranca" in state.data:
+    def _usuario_informa_qual_guia_pagar(self, state: ServiceState) -> ServiceState:
+        """Usuário informa qual guia quer pagar após consulta."""
+        if "guia_escolhida" in state.data:
             return state
         
-        # Mostra informações do imóvel se acabou de ser consultado
+        # Mostra informações do imóvel e guias disponíveis
         dados_iptu = state.data.get("dados_iptu", {})
         if dados_iptu:
             response_text = f"""🏠 **Dados do Imóvel Encontrado:**
@@ -120,15 +153,45 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
 💰 **Valor IPTU {dados_iptu['ano_vigente']}:** R$ {dados_iptu['valor_iptu']:.2f}
 🗑️ **Taxa de Lixo:** R$ {dados_iptu['valor_taxa_lixo']:.2f}
 
-💳 **Qual forma de pagamento você prefere?**
+📋 **Guias Disponíveis para Pagamento:**
 
-• **Cota Única** - Pagamento à vista com 7% de desconto
-• **Cota Parcelada** - Parcelamento em até 10x sem juros"""
+• **IPTU** - Imposto Predial e Territorial Urbano
+• **Taxa de Lixo** - Taxa de coleta de resíduos sólidos
+
+💳 **Qual guia você deseja pagar?**"""
         else:
-            response_text = """💳 Qual forma de pagamento você prefere?
+            response_text = """📋 **Guias Disponíveis para Pagamento:**
+
+• **IPTU** - Imposto Predial e Territorial Urbano
+• **Taxa de Lixo** - Taxa de coleta de resíduos sólidos
+
+💳 **Qual guia você deseja pagar?**"""
+        
+        response = AgentResponse(
+            description=response_text,
+            payload_schema=EscolhaGuiaPayload.model_json_schema(),
+        )
+        state.agent_response = response
+        
+        if "guia_escolhida" in state.payload:
+            validated_data = EscolhaGuiaPayload.model_validate(state.payload)
+            state.data["guia_escolhida"] = validated_data.guia_escolhida
+            state.agent_response = None
+        
+        return state
+    
+    @handle_errors
+    def _verificar_cota_unica(self, state: ServiceState) -> ServiceState:
+        """Verifica se é cota única (informa forma de pagamento)."""
+        if "tipo_cobranca" in state.data:
+            return state
+        
+        response_text = """📋 **Qual forma de pagamento você deseja realizar?**
 
 • **Cota Única** - Pagamento à vista com 7% de desconto
-• **Cota Parcelada** - Parcelamento em até 10x sem juros"""
+• **Em Cotas Mensais** - Parcelamento em até 10x sem juros
+
+💳 **Escolha sua preferência:**"""
         
         response = AgentResponse(
             description=response_text,
@@ -139,22 +202,15 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
         if "tipo_cobranca" in state.payload:
             validated_data = EscolhaCobrancaPayload.model_validate(state.payload)
             state.data["tipo_cobranca"] = validated_data.tipo_cobranca
+            
+            # Define flag para roteamento
+            if validated_data.tipo_cobranca == "cota_unica":
+                state.internal["fluxo_cota_unica"] = True
+            else:
+                state.internal["fluxo_cota_unica"] = False
+            
             state.agent_response = None
         
-        return state
-    
-    @handle_errors
-    def _verificar_cota_unica(self, state: ServiceState) -> ServiceState:
-        """Verifica se é cota única e processa adequadamente."""
-        tipo_cobranca = state.data.get("tipo_cobranca")
-        
-        if tipo_cobranca == "cota_unica":
-            state.internal["fluxo_cota_unica"] = True
-        else:
-            state.internal["fluxo_cota_unica"] = False
-        
-        # Não para o fluxo aqui - vai direto para o próximo step
-        state.agent_response = None
         return state
     
     @handle_errors
@@ -183,19 +239,52 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
     
     @handle_errors
     def _escolher_cotas_pagar(self, state: ServiceState) -> ServiceState:
-        """Para fluxo parcelado, permite escolher formato de pagamento."""
+        """Para fluxo parcelado, permite escolher quais cotas pagar."""
         # Este nó só é executado para parcelamento
         if state.internal.get("fluxo_cota_unica", False):
             return state
         
+        if "cotas_escolhidas" in state.data:
+            return state
+        
+        response_text = """📋 **Escolher Cotas a Pagar**
+
+Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
+
+• **1ª Cota** - Vencimento: Janeiro/2024
+• **2ª Cota** - Vencimento: Fevereiro/2024
+• **3ª Cota** - Vencimento: Março/2024
+• **4ª Cota** - Vencimento: Abril/2024
+• **5ª Cota** - Vencimento: Maio/2024
+• **Todas as cotas** - Todas as parcelas em aberto
+
+**Quais cotas você deseja pagar?**"""
+        
+        response = AgentResponse(
+            description=response_text,
+            payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
+        )
+        state.agent_response = response
+        
+        if "cotas_escolhidas" in state.payload:
+            validated_data = EscolhaCotasParceladasPayload.model_validate(state.payload)
+            state.data["cotas_escolhidas"] = validated_data.cotas_escolhidas
+            state.agent_response = None
+        
+        return state
+    
+    @handle_errors
+    def _deseja_pagar_darf_separado(self, state: ServiceState) -> ServiceState:
+        """Pergunta se deseja pagar as cotas em DARF separado."""
         if "formato_pagamento" in state.data:
             return state
         
-        response_text = """📋 **Parcelamento Selecionado**
+        response_text = """📋 **Deseja pagar as cotas em DARF separado?**
 
-Você optou pelo parcelamento em até 10x. As parcelas estarão disponíveis com vencimentos mensais.
+• **Sim** - Cada cota será gerada em um DARF separado
+• **Não** - Guias serão geradas em código de barras
 
-Escolha como deseja receber as guias de pagamento:"""
+**Qual sua preferência?**"""
         
         response = AgentResponse(
             description=response_text,
@@ -230,11 +319,13 @@ Escolha como deseja receber as guias de pagamento:"""
         
         # Gera as guias de pagamento
         inscricao = state.data["inscricao_imobiliaria"]
+        guia_escolhida = state.data.get("guia_escolhida", "IPTU")
         tipo_cobranca = state.data["tipo_cobranca"]
         formato_pagamento = state.data["formato_pagamento"]
+        cotas_escolhidas = state.data.get("cotas_escolhidas", [])
         
         guias = self.api_service.obter_guias_pagamento(
-            inscricao, tipo_cobranca, formato_pagamento
+            inscricao, tipo_cobranca, formato_pagamento, guia_escolhida, cotas_escolhidas
         )
         
         # Salva as guias geradas
@@ -246,6 +337,7 @@ Escolha como deseja receber as guias de pagamento:"""
 ✅ **Guias de Pagamento Geradas!**
 
 🏠 **Imóvel:** {dados_iptu['endereco']}
+📋 **Guia:** {guia_escolhida}
 💳 **Tipo:** {'Cota Única (7% desconto)' if tipo_cobranca == 'cota_unica' else 'Parcelamento'}
 📄 **Formato:** {'DARF Separado' if formato_pagamento == 'darf' else 'Código de Barras'}
 
@@ -273,6 +365,10 @@ Escolha como deseja receber as guias de pagamento:"""
     @handle_errors
     def _pergunta_mesma_guia(self, state: ServiceState) -> ServiceState:
         """Pergunta se quer gerar guia para o mesmo imóvel novamente."""
+        # Se já foi respondido, não pergunta novamente
+        if "quer_mesma_guia" in state.internal:
+            return state
+        
         response = AgentResponse(
             description="🔄 Deseja emitir mais guias para o mesmo imóvel?",
             payload_schema=EscolhaGuiaMesmoImovelPayload.model_json_schema(),
@@ -289,6 +385,10 @@ Escolha como deseja receber as guias de pagamento:"""
     @handle_errors
     def _pergunta_outro_imovel(self, state: ServiceState) -> ServiceState:
         """Pergunta se quer gerar guia para outro imóvel."""
+        # Se já foi respondido, não pergunta novamente
+        if "quer_outro_imovel" in state.internal:
+            return state
+        
         response = AgentResponse(
             description="🏠 Deseja emitir guia para outro imóvel?",
             payload_schema=EscolhaOutroImovelPayload.model_json_schema(),
@@ -306,7 +406,7 @@ Escolha como deseja receber as guias de pagamento:"""
     def _reset_para_mesma_guia(self, state: ServiceState) -> ServiceState:
         """Reset dados para gerar nova guia do mesmo imóvel."""
         # Limpa apenas os dados de escolha, mantém a inscrição e dados do imóvel
-        campos_limpar = ["tipo_cobranca", "formato_pagamento", "guias_geradas"]
+        campos_limpar = ["guia_escolhida", "tipo_cobranca", "cotas_escolhidas", "formato_pagamento", "guias_geradas"]
         for campo in campos_limpar:
             state.data.pop(campo, None)
         
@@ -322,8 +422,8 @@ Escolha como deseja receber as guias de pagamento:"""
         """Reset completo para outro imóvel."""
         # Limpa todos os dados do imóvel anterior
         campos_limpar = [
-            "inscricao_imobiliaria", "dados_iptu", "tipo_cobranca", 
-            "formato_pagamento", "guias_geradas"
+            "inscricao_imobiliaria", "dados_iptu", "guia_escolhida", "tipo_cobranca", 
+            "cotas_escolhidas", "formato_pagamento", "guias_geradas"
         ]
         for campo in campos_limpar:
             state.data.pop(campo, None)
@@ -338,6 +438,39 @@ Escolha como deseja receber as guias de pagamento:"""
         
         return state
     
+    @handle_errors
+    def _finalizar_interacao(self, state: ServiceState) -> ServiceState:
+        """Finaliza a interação e faz reset automático dos dados."""
+        # Mensagem de finalização
+        response = AgentResponse(
+            description="✅ **Serviço finalizado com sucesso!**\n\n"
+                       "Obrigado por utilizar o serviço de consulta do IPTU da Prefeitura do Rio de Janeiro.\n\n"
+                       "Para uma nova consulta, informe uma nova inscrição imobiliária.",
+        )
+        state.agent_response = response
+        
+        # Reset automático no final da interação
+        # Limpa todos os dados da interação atual
+        campos_limpar = [
+            "inscricao_imobiliaria", "dados_iptu", "guia_escolhida", "tipo_cobranca", 
+            "cotas_escolhidas", "formato_pagamento", "guias_geradas"
+        ]
+        for campo in campos_limpar:
+            state.data.pop(campo, None)
+        
+        # Limpa todas as flags internas
+        flags_limpar = [
+            "consulta_realizada", "dados_confirmados", "fluxo_cota_unica",
+            "quer_mesma_guia", "quer_outro_imovel", "inscricao_invalida"
+        ]
+        for flag in flags_limpar:
+            state.internal.pop(flag, None)
+        
+        # Marca como finalizado para futuras interações
+        state.internal["interacao_finalizada"] = True
+        
+        return state
+    
     # --- Roteadores Condicionais ---
     
     def _decide_after_data_collection(self, state: ServiceState):
@@ -348,16 +481,18 @@ Escolha como deseja receber as guias de pagamento:"""
     
     def _route_after_inscricao(self, state: ServiceState) -> str:
         """Roteamento após coleta da inscrição."""
-        if state.internal.get("inscricao_invalida", False):
-            # Se inscrição inválida, volta para coleta
-            return "informar_inscricao"
-        return "consultar_guias"
+        # Se tem inscrição, pode prosseguir para consulta
+        if "inscricao_imobiliaria" in state.data:
+            return "consultar_guias"
+        # Se não tem inscrição, fica aguardando input
+        return "informar_inscricao"
     
     def _route_consulta_guias(self, state: ServiceState) -> str:
         """Roteamento após consulta de guias."""
-        if state.internal.get("inscricao_invalida", False):
+        # Se não tem dados IPTU, significa que a consulta falhou
+        if "dados_iptu" not in state.data:
             return "informar_inscricao"
-        return "usuario_informa_cota"
+        return "usuario_informa_guia"
     
     def _route_after_verificacao_cota(self, state: ServiceState) -> str:
         """Roteamento após verificação do tipo de cota."""
@@ -375,7 +510,7 @@ Escolha como deseja receber as guias de pagamento:"""
         """Roteamento após pergunta sobre outro imóvel."""
         if state.internal.get("quer_outro_imovel", False):
             return "reset_outro_imovel"
-        return END  # Finaliza o workflow
+        return "finalizar_interacao"  # Finaliza com reset automático
     
     # --- Construção do Grafo ---
     
@@ -386,15 +521,17 @@ Escolha como deseja receber as guias de pagamento:"""
         # Adiciona todos os nós
         graph.add_node("informar_inscricao", self._informar_inscricao_imobiliaria)
         graph.add_node("consultar_guias", self._consultar_guias_disponiveis)
-        graph.add_node("usuario_informa_cota", self._usuario_informa_cota_pagar)
+        graph.add_node("usuario_informa_guia", self._usuario_informa_qual_guia_pagar)
         graph.add_node("verificar_cota_unica", self._verificar_cota_unica)
         graph.add_node("escolher_formato_cota_unica", self._escolher_formato_cota_unica)
         graph.add_node("escolher_cotas", self._escolher_cotas_pagar)
+        graph.add_node("darf_separado", self._deseja_pagar_darf_separado)
         graph.add_node("confirmacao_dados", self._confirmacao_dados_pagamento)
         graph.add_node("pergunta_mesma_guia", self._pergunta_mesma_guia)
         graph.add_node("pergunta_outro_imovel", self._pergunta_outro_imovel)
         graph.add_node("reset_mesma_guia", self._reset_para_mesma_guia)
         graph.add_node("reset_outro_imovel", self._reset_para_outro_imovel)
+        graph.add_node("finalizar_interacao", self._finalizar_interacao)
         
         # Nós de roteamento
         graph.add_node("route_inscricao", lambda state: state)
@@ -423,15 +560,12 @@ Escolha como deseja receber as guias de pagamento:"""
         
         graph.add_conditional_edges(
             "consultar_guias",
-            self._route_consulta_guias,
-            {
-                "informar_inscricao": "informar_inscricao",
-                "usuario_informa_cota": "usuario_informa_cota"
-            }
+            self._decide_after_data_collection,
+            {"continue": "usuario_informa_guia", END: END}
         )
         
         graph.add_conditional_edges(
-            "usuario_informa_cota",
+            "usuario_informa_guia",
             self._decide_after_data_collection,
             {"continue": "verificar_cota_unica", END: END}
         )
@@ -460,6 +594,12 @@ Escolha como deseja receber as guias de pagamento:"""
         graph.add_conditional_edges(
             "escolher_cotas",
             self._decide_after_data_collection,
+            {"continue": "darf_separado", END: END}
+        )
+        
+        graph.add_conditional_edges(
+            "darf_separado",
+            self._decide_after_data_collection,
             {"continue": "confirmacao_dados", END: END}
         )
         
@@ -480,7 +620,7 @@ Escolha como deseja receber as guias de pagamento:"""
             }
         )
         
-        graph.add_edge("reset_mesma_guia", "usuario_informa_cota")
+        graph.add_edge("reset_mesma_guia", "usuario_informa_guia")
         
         graph.add_conditional_edges(
             "pergunta_outro_imovel",
@@ -493,10 +633,11 @@ Escolha como deseja receber as guias de pagamento:"""
             self._route_after_outro_imovel,
             {
                 "reset_outro_imovel": "reset_outro_imovel",
-                END: END
+                "finalizar_interacao": "finalizar_interacao"
             }
         )
         
         graph.add_edge("reset_outro_imovel", "informar_inscricao")
+        graph.add_edge("finalizar_interacao", END)
         
         return graph

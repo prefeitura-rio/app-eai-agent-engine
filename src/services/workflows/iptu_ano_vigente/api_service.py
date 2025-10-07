@@ -63,7 +63,9 @@ class IPTUAPIService:
         self, 
         inscricao: str, 
         tipo_cobranca: str,
-        formato_pagamento: str
+        formato_pagamento: str,
+        guia_escolhida: str = "IPTU",
+        cotas_escolhidas: List[str] = None
     ) -> List[GuiaIPTU]:
         """
         Obtém guias de pagamento formatadas conforme solicitado.
@@ -72,16 +74,27 @@ class IPTUAPIService:
             inscricao: Inscrição imobiliária
             tipo_cobranca: "cota_unica" ou "cota_parcelada"
             formato_pagamento: "darf" ou "codigo_barras"
+            guia_escolhida: Tipo de guia ("IPTU" ou "Taxa de Lixo")
+            cotas_escolhidas: Lista de cotas para parcelamento
             
         Returns:
             Lista de guias formatadas
         """
+        if cotas_escolhidas is None:
+            cotas_escolhidas = []
         dados_consulta = self.consultar_iptu(inscricao)
         if not dados_consulta:
             return []
         
         guias = []
-        valor_base = dados_consulta.dados_iptu.valor_iptu
+        
+        # Determina valor base conforme guia escolhida
+        if guia_escolhida == "Taxa de Lixo":
+            valor_base = dados_consulta.dados_iptu.valor_taxa_lixo or 0
+            descricao_base = "Taxa de Lixo"
+        else:
+            valor_base = dados_consulta.dados_iptu.valor_iptu
+            descricao_base = "IPTU"
         
         if tipo_cobranca == "cota_unica":
             # Desconto de 7% para cota única
@@ -90,19 +103,33 @@ class IPTUAPIService:
                 "001", 
                 valor_com_desconto, 
                 formato_pagamento,
-                descricao="Cota Única IPTU 2024"
+                descricao=f"Cota Única {descricao_base} 2024"
             )
             guias.append(guia)
         else:
-            # Parcelamento em 10x
-            valor_parcela = valor_base / 10
-            for i in range(10):
-                vencimento = datetime.now() + timedelta(days=30 * i)
+            # Parcelamento - considera cotas escolhidas ou todas se vazio
+            num_parcelas = 10
+            valor_parcela = valor_base / num_parcelas
+            
+            if not cotas_escolhidas or "Todas as cotas" in cotas_escolhidas:
+                # Gera todas as parcelas
+                cotas_gerar = range(1, num_parcelas + 1)
+            else:
+                # Gera apenas as cotas escolhidas
+                cotas_gerar = []
+                for cota in cotas_escolhidas:
+                    if "Cota" in cota:
+                        # Extrai número da cota (ex: "1ª Cota" -> 1)
+                        num_cota = int(cota.split("ª")[0])
+                        cotas_gerar.append(num_cota)
+            
+            for i in cotas_gerar:
+                vencimento = datetime.now() + timedelta(days=30 * (i-1))
                 guia = self._criar_guia(
-                    f"{i+1:03d}",
+                    f"{i:03d}",
                     valor_parcela,
                     formato_pagamento,
-                    descricao=f"Parcela {i+1}/10 IPTU 2024",
+                    descricao=f"Parcela {i}/{num_parcelas} {descricao_base} 2024",
                     vencimento=vencimento.strftime("%d/%m/%Y")
                 )
                 guias.append(guia)

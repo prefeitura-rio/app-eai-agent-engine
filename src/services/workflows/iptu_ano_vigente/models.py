@@ -28,11 +28,11 @@ class InscricaoImobiliariaPayload(BaseModel):
         return clean_inscricao
 
 
-class ColetarGuiasPayload(BaseModel):
-    """Payload para escolher quais guias coletar."""
-    guias_disponiveis: List[str] = Field(
+class EscolhaGuiaPayload(BaseModel):
+    """Payload para escolher qual guia o usuário quer pagar."""
+    guia_escolhida: str = Field(
         ...,
-        description="Lista das guias disponíveis para pagamento"
+        description="Guia escolhida pelo usuário para pagamento"
     )
 
 
@@ -52,27 +52,31 @@ class EscolhaFormatoPagamentoPayload(BaseModel):
     )
 
 
+class EscolhaCotasParceladasPayload(BaseModel):
+    """Payload para escolher quais cotas parceladas pagar."""
+    inscricao_imobiliaria: str = Field(
+        None,
+        min_length=14,
+        max_length=16,
+        description="Inscrição imobiliária (14-16 dígitos) - opcional se já informada"
+    )
+    cotas_escolhidas: List[str] = Field(
+        ...,
+        description="Lista das cotas escolhidas para pagamento"
+    )
+
+
 class ConfirmacaoDadosPayload(BaseModel):
     """Payload para confirmação dos dados coletados."""
+    inscricao_imobiliaria: str = Field(
+        ...,
+        min_length=14,
+        max_length=16,
+        description="Inscrição imobiliária (14-16 dígitos)"
+    )
     confirmacao: bool = Field(
         ...,
         description="Confirmação se os dados estão corretos"
-    )
-
-
-class EscolhaGuiaMesmoImovelPayload(BaseModel):
-    """Payload para escolha de guia do mesmo imóvel."""
-    mesma_guia: bool = Field(
-        ...,
-        description="Se deseja emitir guia para o mesmo imóvel"
-    )
-
-
-class EscolhaOutroImovelPayload(BaseModel):
-    """Payload para escolha de outro imóvel."""
-    outro_imovel: bool = Field(
-        ...,
-        description="Se deseja emitir guia para outro imóvel"
     )
 
 
@@ -96,6 +100,22 @@ class GuiaIPTU(BaseModel):
     codigo_barras: Optional[str] = None
     linha_digitavel: Optional[str] = None
     darf_data: Optional[dict] = None
+
+
+class EscolhaGuiaMesmoImovelPayload(BaseModel):
+    """Payload para pergunta sobre gerar mais guias para o mesmo imóvel."""
+    mesma_guia: bool = Field(
+        ...,
+        description="Se deseja emitir mais guias para o mesmo imóvel"
+    )
+
+
+class EscolhaOutroImovelPayload(BaseModel):
+    """Payload para pergunta sobre gerar guias para outro imóvel."""
+    outro_imovel: bool = Field(
+        ...,
+        description="Se deseja emitir guias para outro imóvel"
+    )
 
 
 class DadosConsulta(BaseModel):
