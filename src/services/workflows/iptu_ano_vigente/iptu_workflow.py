@@ -5,6 +5,7 @@ Implementa o fluxo completo de consulta e emissão de guias de IPTU
 seguindo o fluxograma oficial da Prefeitura do Rio.
 """
 
+import asyncio
 from typing import Optional
 from langgraph.graph import StateGraph, END
 
@@ -115,8 +116,11 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
             )
             return state
         
-        # Consulta dados via API (placeholder)
-        dados_consulta = self.api_service.consultar_iptu(inscricao)
+        # Obtém exercício (ano) do state ou usa ano atual
+        exercicio = state.data.get("exercicio", self.api_service.ano_vigente)
+        
+        # Consulta dados via API (usa asyncio.run para executar código async)
+        dados_consulta = asyncio.run(self.api_service.consultar_iptu(inscricao, exercicio))
         
         if not dados_consulta:
             # Inscrição não encontrada - para o fluxo e pede nova inscrição
@@ -317,16 +321,18 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
                 )
                 return state
         
-        # Gera as guias de pagamento
+        # Gera as guias de pagamento via API (usa asyncio.run)
         inscricao = state.data["inscricao_imobiliaria"]
         guia_escolhida = state.data.get("guia_escolhida", "IPTU")
         tipo_cobranca = state.data["tipo_cobranca"]
         formato_pagamento = state.data["formato_pagamento"]
         cotas_escolhidas = state.data.get("cotas_escolhidas", [])
+        exercicio = state.data.get("exercicio", self.api_service.ano_vigente)
         
-        guias = self.api_service.obter_guias_pagamento(
-            inscricao, tipo_cobranca, formato_pagamento, guia_escolhida, cotas_escolhidas
-        )
+        guias = asyncio.run(self.api_service.obter_guias_pagamento(
+            inscricao, tipo_cobranca, formato_pagamento, 
+            guia_escolhida, cotas_escolhidas, exercicio
+        ))
         
         # Salva as guias geradas
         state.data["guias_geradas"] = [guia.model_dump() for guia in guias]
