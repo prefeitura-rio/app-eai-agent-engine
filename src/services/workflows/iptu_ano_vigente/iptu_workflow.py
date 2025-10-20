@@ -79,13 +79,16 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
                         state.data.pop(campo, None)
 
                     flags_limpar = [
-                        "consulta_realizada",
+                        "consulta_guias_realizada",
                         "dados_confirmados",
                         "fluxo_cota_unica",
                         "quer_mesma_guia",
                         "quer_outro_imovel",
                         "inscricao_invalida",
                     ]
+                    # Limpa também todas as flags de consulta de cotas específicas
+                    flags_cotas_para_limpar = [key for key in state.internal.keys() if key.startswith("consulta_cotas_realizada_")]
+                    flags_limpar.extend(flags_cotas_para_limpar)
                     for flag in flags_limpar:
                         state.internal.pop(flag, None)
 
@@ -148,6 +151,11 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
     @handle_errors
     def _consultar_guias_disponiveis(self, state: ServiceState) -> ServiceState:
         """Consulta as guias disponíveis para pagamento."""
+        # Verifica se a consulta de guias já foi realizada para evitar chamadas duplicadas à API
+        if state.internal.get("consulta_guias_realizada", False) and "dados_guias" in state.data:
+            state.agent_response = None
+            return state
+            
         inscricao = state.data.get("inscricao_imobiliaria")
 
         if not inscricao:
@@ -187,7 +195,7 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
                 
                 # Salva dados das guias
                 state.data["dados_guias"] = dados_guias_simulados.model_dump()
-                state.internal["consulta_realizada"] = True
+                state.internal["consulta_guias_realizada"] = True
                 state.internal["dados_simulados"] = True  # Flag para indicar dados de teste
                 
                 # Continua o fluxo
@@ -205,7 +213,7 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
 
         # Salva dados das guias real
         state.data["dados_guias"] = dados_guias.model_dump()
-        state.internal["consulta_realizada"] = True
+        state.internal["consulta_guias_realizada"] = True
 
         # Não para o fluxo aqui - continua para mostrar as guias
         state.agent_response = None
@@ -313,6 +321,120 @@ Informe o número da guia ({exemplos_reais})"""
 
 🎯 **Para continuar, selecione a guia desejada:**
 Informe o número da guia ("00", "01")"""
+
+    @handle_errors
+    def _verificar_tipo_cotas(self, state: ServiceState) -> ServiceState:
+        """
+        Verifica se a guia escolhida é cota única ou múltiplas cotas,
+        e se já foi paga, conforme especificado no fluxo.
+        """
+        inscricao = state.data.get("inscricao_imobiliaria")
+        exercicio = state.data.get("ano_exercicio")
+        guia_escolhida = state.data.get("guia_escolhida")
+
+        if not all([inscricao, exercicio, guia_escolhida]):
+            state.agent_response = AgentResponse(
+                description="❌ Erro interno: dados necessários para verificação não encontrados.",
+                error_message="Inscrição, exercício ou guia escolhida não disponíveis",
+            )
+            return state
+
+        # Verifica se a consulta de cotas para esta guia específica já foi realizada
+        consulta_cotas_key = f"consulta_cotas_realizada_{guia_escolhida}"
+        if state.internal.get(consulta_cotas_key, False) and "dados_cotas" in state.data:
+            # Reutiliza dados já consultados, apenas redefine as flags de controle
+            dados_cotas_dict = state.data.get("dados_cotas", {})
+            if dados_cotas_dict.get("numero_guia") == guia_escolhida:
+                # Os dados são da guia correta, continua o processamento sem nova consulta
+                state.agent_response = None
+                return state
+
+        # Obtém tipo da guia dos dados já carregados (evita nova chamada API)
+        dados_guias = state.data.get("dados_guias", {})
+        guias_disponiveis = dados_guias.get("guias", [])
+        
+        tipo_guia = None
+        for guia in guias_disponiveis:
+            if guia.get("numero_guia") == guia_escolhida:
+                tipo_guia = guia.get("tipo", "ORDINÁRIA")
+                break
+        
+        if not tipo_guia:
+            tipo_guia = "ORDINÁRIA"  # Fallback
+
+        # Chama API para verificar cotas usando o método otimizado
+        # Converte exercicio para int com fallback para ano atual se None
+        exercicio_int = int(exercicio) if exercicio is not None else 2025
+        dados_cotas = asyncio.run(
+            self.api_service.obter_cotas(str(inscricao), exercicio_int, str(guia_escolhida), tipo_guia)
+        )
+
+        # Se não conseguiu obter dados de cotas (API indisponível), usa simulação
+        if not dados_cotas:
+            # Para desenvolvimento: simula uma cota única em aberto
+            state.internal["fluxo_cota_unica"] = True
+            state.internal["guia_paga"] = False
+            # Marca que a consulta de cotas para esta guia específica foi realizada (mesmo simulada)
+            consulta_cotas_key = f"consulta_cotas_realizada_{guia_escolhida}"
+            state.internal[consulta_cotas_key] = True
+            state.agent_response = None
+            return state
+
+        # Analisa os dados das cotas obtidos
+        cotas = dados_cotas.cotas if hasattr(dados_cotas, 'cotas') else []
+        total_cotas = len(cotas)
+        
+        # Verifica se alguma cota está paga
+        cotas_pagas = [c for c in cotas if c.esta_paga] if cotas else []
+        todas_pagas = len(cotas_pagas) == total_cotas if cotas else False
+        
+        # Salva dados das cotas no state
+        state.data["dados_cotas"] = dados_cotas.model_dump() if dados_cotas else {}
+        
+        # Marca que a consulta de cotas para esta guia específica foi realizada
+        consulta_cotas_key = f"consulta_cotas_realizada_{guia_escolhida}"
+        state.internal[consulta_cotas_key] = True
+
+        # Determina o tipo de fluxo baseado no número de cotas
+        if total_cotas <= 1:
+            # É cota única
+            state.internal["fluxo_cota_unica"] = True
+            
+            if todas_pagas:
+                # Cota única já paga - retorna para escolha de guias
+                state.internal["guia_paga"] = True
+                state.agent_response = AgentResponse(
+                    description=f"ℹ️ A guia {guia_escolhida} já foi quitada.\n\n"
+                    "Por favor, selecione outra guia para pagamento.",
+                    payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
+                )
+                # Limpa guia escolhida para permitir nova seleção
+                state.data.pop("guia_escolhida", None)
+                return state
+            else:
+                # Cota única em aberto - continua para opções de pagamento
+                state.internal["guia_paga"] = False
+        else:
+            # São múltiplas cotas - vai para seleção de cotas
+            state.internal["fluxo_cota_unica"] = False
+            state.internal["guia_paga"] = False
+            
+            if todas_pagas:
+                # Todas as cotas já pagas - retorna para escolha de guias
+                state.internal["guia_paga"] = True
+                state.agent_response = AgentResponse(
+                    description=f"ℹ️ Todas as cotas da guia {guia_escolhida} já foram quitadas.\n\n"
+                    "Por favor, selecione outra guia para pagamento.",
+                    payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
+                )
+                # Limpa guia escolhida para permitir nova seleção
+                state.data.pop("guia_escolhida", None)
+                return state
+
+        # Marca como verificado
+        state.internal["cotas_verificadas"] = True
+        state.agent_response = None
+        return state
 
     @handle_errors
     def _verificar_cota_unica(self, state: ServiceState) -> ServiceState:
@@ -624,13 +746,16 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
 
         # Limpa flags internas
         flags_limpar = [
-            "consulta_realizada",
+            "consulta_guias_realizada",
             "dados_confirmados",
             "fluxo_cota_unica",
             "quer_mesma_guia",
             "quer_outro_imovel",
             "inscricao_invalida",
         ]
+        # Limpa também todas as flags de consulta de cotas específicas
+        flags_cotas_para_limpar = [key for key in state.internal.keys() if key.startswith("consulta_cotas_realizada_")]
+        flags_limpar.extend(flags_cotas_para_limpar)
         for flag in flags_limpar:
             state.internal.pop(flag, None)
 
@@ -701,6 +826,19 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
             return "informar_inscricao"
         return "usuario_escolhe_guias"
 
+    def _route_after_verificacao_tipo_cotas(self, state: ServiceState) -> str:
+        """Roteamento após verificação do tipo de cotas."""
+        # Se a guia já foi paga, retorna para escolha de guias
+        if state.internal.get("guia_paga", False):
+            return "usuario_escolhe_guias"
+        
+        # Se é cota única em aberto, vai para opções de pagamento
+        if state.internal.get("fluxo_cota_unica", False):
+            return "verificar_cota_unica"
+        
+        # Se são múltiplas cotas, vai direto para seleção de cotas
+        return "escolher_cotas"
+
     def _route_after_verificacao_cota(self, state: ServiceState) -> str:
         """Roteamento após verificação do tipo de cota."""
         if state.internal.get("fluxo_cota_unica", False):
@@ -730,6 +868,7 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
         graph.add_node("escolher_ano", self._escolher_ano_exercicio)
         graph.add_node("consultar_guias", self._consultar_guias_disponiveis)
         graph.add_node("usuario_escolhe_guias", self._usuario_escolhe_guias_iptu)
+        graph.add_node("verificar_tipo_cotas", self._verificar_tipo_cotas)
         graph.add_node("verificar_cota_unica", self._verificar_cota_unica)
         graph.add_node("escolher_formato_cota_unica", self._escolher_formato_cota_unica)
         graph.add_node("escolher_cotas", self._escolher_cotas_pagar)
@@ -781,7 +920,17 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
         graph.add_conditional_edges(
             "usuario_escolhe_guias",
             self._decide_after_data_collection,
-            {"continue": "verificar_cota_unica", END: END},
+            {"continue": "verificar_tipo_cotas", END: END},
+        )
+        
+        graph.add_conditional_edges(
+            "verificar_tipo_cotas",
+            self._route_after_verificacao_tipo_cotas,
+            {
+                "usuario_escolhe_guias": "usuario_escolhe_guias",
+                "verificar_cota_unica": "verificar_cota_unica", 
+                "escolher_cotas": "escolher_cotas",
+            },
         )
 
         graph.add_conditional_edges(

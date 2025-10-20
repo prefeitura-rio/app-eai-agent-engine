@@ -44,14 +44,14 @@ class IPTUAPIService:
     def _limpar_inscricao(inscricao: str) -> str:
         """
         Remove caracteres não numéricos da inscrição imobiliária.
-        
+
         Args:
-            inscricao: Inscrição imobiliária 
-            
+            inscricao: Inscrição imobiliária
+
         Returns:
             Inscrição apenas com números
         """
-        return re.sub(r'[^0-9]', '', inscricao)
+        return re.sub(r"[^0-9]", "", inscricao)
 
     async def _make_api_request(
         self, endpoint: str, params: Dict[str, Any], expect_json: bool = True
@@ -171,14 +171,20 @@ class IPTUAPIService:
         for guia_data in guias_response:
             try:
                 guia = Guia(**guia_data)
-                
+
                 # Processa campos calculados
-                guia.valor_numerico = self._parse_brazilian_currency(guia.valor_iptu_original_guia)
-                guia.valor_desconto_numerico = self._parse_brazilian_currency(guia.valor_iptu_desconto_avista)
-                guia.valor_parcelas_numerico = self._parse_brazilian_currency(guia.valor_parcelas)
+                guia.valor_numerico = self._parse_brazilian_currency(
+                    guia.valor_iptu_original_guia
+                )
+                guia.valor_desconto_numerico = self._parse_brazilian_currency(
+                    guia.valor_iptu_desconto_avista
+                )
+                guia.valor_parcelas_numerico = self._parse_brazilian_currency(
+                    guia.valor_parcelas
+                )
                 guia.esta_quitada = guia.situacao.get("codigo") == "02"
                 guia.esta_em_aberto = guia.situacao.get("codigo") == "01"
-                
+
                 guias.append(guia)
             except Exception as e:
                 logger.warning(f"Failed to parse guia data: {guia_data}, error: {e}")
@@ -202,11 +208,13 @@ class IPTUAPIService:
             guias_quitadas=guias_quitadas,
         )
 
-        logger.info(f"IPTU data retrieved for inscricao with {len(guias)} guides available")
+        logger.info(
+            f"IPTU data retrieved for inscricao with {len(guias)} guides available"
+        )
         return dados_guias
 
     async def obter_cotas(
-        self, inscricao_imobiliaria: str, exercicio: int, numero_guia: str
+        self, inscricao_imobiliaria: str, exercicio: int, numero_guia: str, tipo_guia: Optional[str] = None
     ) -> Optional[DadosCotas]:
         """
         Consulta cotas disponíveis para uma guia específica.
@@ -215,6 +223,10 @@ class IPTUAPIService:
             inscricao_imobiliaria: Número da inscrição imobiliária
             exercicio: Ano do exercício fiscal
             numero_guia: Número da guia (ex: "00")
+            tipo_guia: Tipo da guia (opcional, para evitar consulta redundante)
+                      No workflow, pode ser obtido dos dados das guias já carregadas:
+                      guia_selecionada = next((g for g in state.data["dados_guias"].guias if g.numero_guia == numero_guia), None)
+                      tipo_guia = guia_selecionada.tipo if guia_selecionada else None
 
         Returns:
             DadosCotas com informações das cotas disponíveis ou None se não encontrado
@@ -232,7 +244,7 @@ class IPTUAPIService:
             },
         )
         logger.debug(f"Cotas response: {cotas_response}")
-        
+
         if not cotas_response or "Cotas" not in cotas_response:
             logger.warning(f"No cotas found for guia {numero_guia}")
             return None
@@ -242,14 +254,20 @@ class IPTUAPIService:
         for cota_data in cotas_response["Cotas"]:
             try:
                 cota = Cota(**cota_data)
-                
+
                 # Processa campos calculados
                 cota.valor_numerico = self._parse_brazilian_currency(cota.valor_cota)
-                cota.valor_pago_numerico = self._parse_brazilian_currency(cota.valor_pago)
-                cota.dias_atraso_numerico = int(cota.quantidade_dias_atraso) if cota.quantidade_dias_atraso.isdigit() else 0
+                cota.valor_pago_numerico = self._parse_brazilian_currency(
+                    cota.valor_pago
+                )
+                cota.dias_atraso_numerico = (
+                    int(cota.quantidade_dias_atraso)
+                    if cota.quantidade_dias_atraso.isdigit()
+                    else 0
+                )
                 cota.esta_paga = cota.situacao.get("codigo") == "01"
                 cota.esta_vencida = cota.situacao.get("codigo") == "03"
-                
+
                 cotas.append(cota)
             except Exception as e:
                 logger.warning(f"Failed to parse cota data: {cota_data}, error: {e}")
@@ -259,18 +277,13 @@ class IPTUAPIService:
         cotas_pagas = [c for c in cotas if c.esta_paga]
         cotas_em_aberto = [c for c in cotas if not c.esta_paga and not c.esta_vencida]
         cotas_vencidas = [c for c in cotas if c.esta_vencida]
-        
+
         # Calcula valor total
         valor_total = sum(c.valor_numerico for c in cotas)
 
-        # Obtém tipo da guia consultando as guias novamente
-        guias_data = await self.consultar_guias(inscricao_imobiliaria, exercicio)
-        tipo_guia = "ORDINÁRIA"
-        if guias_data and guias_data.guias:
-            for guia in guias_data.guias:
-                if guia.numero_guia == numero_guia:
-                    tipo_guia = guia.tipo
-                    break
+        # Usa tipo da guia fornecido ou valor padrão se não informado
+        if not tipo_guia:
+            tipo_guia = "ORDINÁRIA"
 
         # Cria objeto de dados das cotas
         dados_cotas = DadosCotas(
@@ -286,7 +299,9 @@ class IPTUAPIService:
             valor_total=valor_total,
         )
 
-        logger.info(f"Cotas data retrieved for guia {numero_guia} with {len(cotas)} cotas")
+        logger.info(
+            f"Cotas data retrieved for guia {numero_guia} with {len(cotas)} cotas"
+        )
         return dados_cotas
 
     async def consultar_darm(
@@ -310,10 +325,10 @@ class IPTUAPIService:
         """
         # Limpa inscrição removendo caracteres não numéricos
         inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
-        
+
         # Converte lista de cotas para string separada por vírgula
         cotas_str = ",".join(cotas_selecionadas)
-        
+
         # Faz requisição para ConsultarDARM
         darm_response = await self._make_api_request(
             endpoint="ConsultarDARM",
@@ -324,23 +339,25 @@ class IPTUAPIService:
                 "cotas": cotas_str,
             },
         )
-        
+
         if not darm_response:
             logger.warning(f"No DARM found for guia {numero_guia} cotas {cotas_str}")
             return None
-        
+
         try:
             # Cria objeto Darm usando Pydantic
             darm = Darm(**darm_response)
-            
+
             # Processa valores numéricos
             darm.valor_numerico = self._parse_brazilian_currency(darm.valor_a_pagar)
-            
+
             # Gera código de barras a partir da sequencia_numerica (linha digitável)
             if darm.sequencia_numerica:
                 # Remove pontos e espaços para criar código de barras
-                darm.codigo_barras = darm.sequencia_numerica.replace(".", "").replace(" ", "")
-            
+                darm.codigo_barras = darm.sequencia_numerica.replace(".", "").replace(
+                    " ", ""
+                )
+
             # Cria DadosDarm
             dados_darm = DadosDarm(
                 inscricao_imobiliaria=inscricao_clean,
@@ -349,20 +366,22 @@ class IPTUAPIService:
                 cotas_selecionadas=cotas_selecionadas,
                 darm=darm,
             )
-            
+
             logger.info(f"DARM data retrieved for guia {numero_guia} cotas {cotas_str}")
             return dados_darm
-            
+
         except Exception as e:
-            logger.error(f"Error processing DARM data: {str(e)} - Data: {darm_response}")
+            logger.error(
+                f"Error processing DARM data: {str(e)} - Data: {darm_response}"
+            )
             return None
 
     async def download_pdf_darm(
-        self, 
-        inscricao_imobiliaria: str, 
-        exercicio: int, 
-        numero_guia: str, 
-        cotas_selecionadas: List[str]
+        self,
+        inscricao_imobiliaria: str,
+        exercicio: int,
+        numero_guia: str,
+        cotas_selecionadas: List[str],
     ) -> Optional[str]:
         """
         Faz download do PDF da DARM em formato base64.
@@ -378,7 +397,7 @@ class IPTUAPIService:
         """
         # Limpa inscrição removendo caracteres não numéricos
         inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
-        
+
         # Converte lista de cotas para string separada por vírgula
         cotas_str = ",".join(cotas_selecionadas)
 

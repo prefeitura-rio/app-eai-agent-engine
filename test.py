@@ -32,9 +32,9 @@ def main():
             "ano_exercicio": 2025,
         },
         # # Step 2: Choose which guia to pay (IPTU or Taxa de Lixo)
-        # {
-        #     "guia_escolhida": "IPTU",
-        # },
+        {
+            "guia_escolhida": "00",
+        },
         # # Step 3: Choose payment type (cota_unica or cota_parcelada)
         # {
         #     "tipo_cobranca": "cota_parcelada",
