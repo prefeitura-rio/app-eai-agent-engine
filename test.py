@@ -1,3 +1,19 @@
+"""
+
+
+o fluxo esta meio confuso com etapas desnecessarias
+
+nao é necessario uma verificar_tipo_cotas,
+
+queremos o seguinte fluxo
+
+informa inscricao --> escolhe ano --> consulta guias (exibe pro usuario escolher) ---> apartir da guia escolhida consulta cotas (exibe para o usuario escolher) -> pergunta se o usuario quer um boleto para cada cota ou boleto unico para N cotas selecionadas (caso selecionou so uma nao é necessario perguntar) --> confirma dados ---> gerar darm (usar informacao de darm_separado para fazer um for em cada cota, se for unico passar tudo junto para gerar um unico pdf/boleto) -> no node do pertuntar mesma_guia exibe as informacoes geradas pelo darm
+
+
+nao remova as logicas de reset pois elas sao importantes para o fluxo funcionar corretamente
+
+"""
+
 import json
 import time
 from src.services.tool import multi_step_service, save_single_workflow_graph
@@ -40,13 +56,13 @@ def main():
             "cotas_escolhidas": ["01", "02", "03"],
         },
         # # Step 5: Choose payment format (darf or codigo_barras)
-        {
-            "pagar_darm_separado": False,
-        },
-        # # Step 6: Do you want to generate more guides for the same property?
-        {
-            "confirmacao": True,
-        },
+        # {
+        #     "pagar_darm_separado": False,
+        # },
+        # # # Step 6: Do you want to generate more guides for the same property?
+        # {
+        #     "confirmacao": True,
+        # },
         # # Step 7: Do you want to generate guides for another property?
         # {
         #     "outro_imovel": False,
