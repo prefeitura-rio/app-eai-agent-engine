@@ -35,22 +35,18 @@ def main():
         {
             "guia_escolhida": "00",
         },
-        # # Step 3: Choose payment type (cota_unica or cota_parcelada)
-        # {
-        #     "tipo_cobranca": "cota_parcelada",
-        # },
         # # Step 4: Choose cotas to pay (for parcelamento)
-        # {
-        #     "cotas_escolhidas": ["1ª Cota", "2ª Cota"],
-        # },
+        {
+            "cotas_escolhidas": ["01", "02", "03"],
+        },
         # # Step 5: Choose payment format (darf or codigo_barras)
-        # {
-        #     "formato_pagamento": "codigo_barras",
-        # },
+        {
+            "pagar_darf_separado": False,
+        },
         # # Step 6: Do you want to generate more guides for the same property?
-        # {
-        #     "mesma_guia": False,
-        # },
+        {
+            "confirmacao": True,
+        },
         # # Step 7: Do you want to generate guides for another property?
         # {
         #     "outro_imovel": False,

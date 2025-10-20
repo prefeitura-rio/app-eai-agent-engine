@@ -15,11 +15,10 @@ from src.services.workflows.iptu_ano_vigente.models import (
     InscricaoImobiliariaPayload,
     EscolhaAnoPayload,
     EscolhaGuiasIPTUPayload,
-    EscolhaCobrancaPayload,
-    EscolhaFormatoPagamentoPayload,
     EscolhaCotasParceladasPayload,
     EscolhaGuiaMesmoImovelPayload,
     EscolhaOutroImovelPayload,
+    ConfirmacaoDadosPayload,
     DadosGuias,
 )
 from src.services.workflows.iptu_ano_vigente.api_service import IPTUAPIService
@@ -70,7 +69,6 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
                         "inscricao_imobiliaria",
                         "dados_guias",
                         "guia_escolhida",
-                        "tipo_cobranca",
                         "cotas_escolhidas",
                         "formato_pagamento",
                         "guias_geradas",
@@ -87,7 +85,11 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
                         "inscricao_invalida",
                     ]
                     # Limpa também todas as flags de consulta de cotas específicas
-                    flags_cotas_para_limpar = [key for key in state.internal.keys() if key.startswith("consulta_cotas_realizada_")]
+                    flags_cotas_para_limpar = [
+                        key
+                        for key in state.internal.keys()
+                        if key.startswith("consulta_cotas_realizada_")
+                    ]
                     flags_limpar.extend(flags_cotas_para_limpar)
                     for flag in flags_limpar:
                         state.internal.pop(flag, None)
@@ -152,10 +154,13 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
     def _consultar_guias_disponiveis(self, state: ServiceState) -> ServiceState:
         """Consulta as guias disponíveis para pagamento."""
         # Verifica se a consulta de guias já foi realizada para evitar chamadas duplicadas à API
-        if state.internal.get("consulta_guias_realizada", False) and "dados_guias" in state.data:
+        if (
+            state.internal.get("consulta_guias_realizada", False)
+            and "dados_guias" in state.data
+        ):
             state.agent_response = None
             return state
-            
+
         inscricao = state.data.get("inscricao_imobiliaria")
 
         if not inscricao:
@@ -192,12 +197,14 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
                     guias_em_aberto=[],
                     guias_quitadas=[],
                 )
-                
+
                 # Salva dados das guias
                 state.data["dados_guias"] = dados_guias_simulados.model_dump()
                 state.internal["consulta_guias_realizada"] = True
-                state.internal["dados_simulados"] = True  # Flag para indicar dados de teste
-                
+                state.internal["dados_simulados"] = (
+                    True  # Flag para indicar dados de teste
+                )
+
                 # Continua o fluxo
                 state.agent_response = None
                 return state
@@ -244,39 +251,39 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
 
         # Busca e apresenta informações detalhadas das guias
         guias_info = self._buscar_guias_detalhadas(state)
-        
+
         response = AgentResponse(
             description=guias_info,
             payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
         )
         state.agent_response = response
         return state
-    
+
     def _buscar_guias_detalhadas(self, state: ServiceState) -> str:
         """Formata informações detalhadas das guias disponíveis usando dados já consultados."""
         dados_guias = state.data.get("dados_guias", {})
-        
+
         # Se temos dados simulados, usa fallback simples
         if state.internal.get("dados_simulados", False):
             return self._guias_info_fallback(dados_guias)
-        
+
         # Se não temos dados de guias, usa fallback
         if not dados_guias or "guias" not in dados_guias:
             return self._guias_info_fallback(dados_guias)
-            
+
         # Exibe lista das guias disponíveis para seleção
         try:
             guias_disponiveis = dados_guias.get("guias", [])
-            
+
             if not guias_disponiveis or len(guias_disponiveis) == 0:
                 return self._guias_info_fallback(dados_guias)
-            
+
             return self._formatar_lista_guias(dados_guias, guias_disponiveis)
-            
+
         except Exception as e:
             # Fallback em caso de erro
             return self._guias_info_fallback(dados_guias)
-    
+
     def _formatar_lista_guias(self, dados_guias: dict, guias_disponiveis: list) -> str:
         """Exibe lista das guias disponíveis para seleção do usuário."""
         response_text = f"""🏠 **Dados do Imóvel Encontrado:**
@@ -285,7 +292,7 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
 📋 **Guias Disponíveis para IPTU {dados_guias.get('exercicio', '')}:**
 
 """
-        
+
         # Lista todas as guias disponíveis
         for i, guia in enumerate(guias_disponiveis, 1):
             numero_guia = guia.get("numero_guia", "N/A")
@@ -294,22 +301,24 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
                 guia.get("valor_iptu_original_guia", "0,00")
             )
             situacao = guia.get("situacao", {}).get("descricao", "EM ABERTO")
-            
+
             response_text += f"""💳 **Guia {numero_guia}** - {tipo_guia}
 • Valor: R$ {valor_original:.2f}
 • Situação: {situacao}
 
 """
-        
+
         # Coleta os números das guias disponíveis para mostrar no prompt
-        numeros_disponiveis = [guia.get("numero_guia", "N/A") for guia in guias_disponiveis]
+        numeros_disponiveis = [
+            guia.get("numero_guia", "N/A") for guia in guias_disponiveis
+        ]
         exemplos_reais = ", ".join([f'"{num}"' for num in numeros_disponiveis])
-        
+
         response_text += f"""🎯 **Para continuar, selecione a guia desejada:**
 Informe o número da guia ({exemplos_reais})"""
-        
+
         return response_text
-    
+
     def _guias_info_fallback(self, dados_guias: dict) -> str:
         """Informações básicas quando API não está disponível."""
         return f"""🏠 **Dados do Imóvel Encontrado:**
@@ -341,7 +350,10 @@ Informe o número da guia ("00", "01")"""
 
         # Verifica se a consulta de cotas para esta guia específica já foi realizada
         consulta_cotas_key = f"consulta_cotas_realizada_{guia_escolhida}"
-        if state.internal.get(consulta_cotas_key, False) and "dados_cotas" in state.data:
+        if (
+            state.internal.get(consulta_cotas_key, False)
+            and "dados_cotas" in state.data
+        ):
             # Reutiliza dados já consultados, apenas redefine as flags de controle
             dados_cotas_dict = state.data.get("dados_cotas", {})
             if dados_cotas_dict.get("numero_guia") == guia_escolhida:
@@ -352,13 +364,13 @@ Informe o número da guia ("00", "01")"""
         # Obtém tipo da guia dos dados já carregados (evita nova chamada API)
         dados_guias = state.data.get("dados_guias", {})
         guias_disponiveis = dados_guias.get("guias", [])
-        
+
         tipo_guia = None
         for guia in guias_disponiveis:
             if guia.get("numero_guia") == guia_escolhida:
                 tipo_guia = guia.get("tipo", "ORDINÁRIA")
                 break
-        
+
         if not tipo_guia:
             tipo_guia = "ORDINÁRIA"  # Fallback
 
@@ -366,7 +378,9 @@ Informe o número da guia ("00", "01")"""
         # Converte exercicio para int com fallback para ano atual se None
         exercicio_int = int(exercicio) if exercicio is not None else 2025
         dados_cotas = asyncio.run(
-            self.api_service.obter_cotas(str(inscricao), exercicio_int, str(guia_escolhida), tipo_guia)
+            self.api_service.obter_cotas(
+                str(inscricao), exercicio_int, str(guia_escolhida), tipo_guia
+            )
         )
 
         # Se não conseguiu obter dados de cotas (API indisponível), usa simulação
@@ -381,16 +395,16 @@ Informe o número da guia ("00", "01")"""
             return state
 
         # Analisa os dados das cotas obtidos
-        cotas = dados_cotas.cotas if hasattr(dados_cotas, 'cotas') else []
+        cotas = dados_cotas.cotas if hasattr(dados_cotas, "cotas") else []
         total_cotas = len(cotas)
-        
+
         # Verifica se alguma cota está paga
         cotas_pagas = [c for c in cotas if c.esta_paga] if cotas else []
         todas_pagas = len(cotas_pagas) == total_cotas if cotas else False
-        
+
         # Salva dados das cotas no state
         state.data["dados_cotas"] = dados_cotas.model_dump() if dados_cotas else {}
-        
+
         # Marca que a consulta de cotas para esta guia específica foi realizada
         consulta_cotas_key = f"consulta_cotas_realizada_{guia_escolhida}"
         state.internal[consulta_cotas_key] = True
@@ -399,7 +413,7 @@ Informe o número da guia ("00", "01")"""
         if total_cotas <= 1:
             # É cota única
             state.internal["fluxo_cota_unica"] = True
-            
+
             if todas_pagas:
                 # Cota única já paga - retorna para escolha de guias
                 state.internal["guia_paga"] = True
@@ -418,7 +432,7 @@ Informe o número da guia ("00", "01")"""
             # São múltiplas cotas - vai para seleção de cotas
             state.internal["fluxo_cota_unica"] = False
             state.internal["guia_paga"] = False
-            
+
             if todas_pagas:
                 # Todas as cotas já pagas - retorna para escolha de guias
                 state.internal["guia_paga"] = True
@@ -437,65 +451,6 @@ Informe o número da guia ("00", "01")"""
         return state
 
     @handle_errors
-    def _verificar_cota_unica(self, state: ServiceState) -> ServiceState:
-        """Verifica se é cota única (informa forma de pagamento)."""
-        if "tipo_cobranca" in state.data:
-            return state
-
-        response_text = """📋 **Qual forma de pagamento você deseja realizar?**
-
-• **Cota Única** - Pagamento à vista com 7% de desconto
-• **Em Cotas Mensais** - Parcelamento em até 10x sem juros
-
-💳 **Escolha sua preferência:**"""
-
-        response = AgentResponse(
-            description=response_text,
-            payload_schema=EscolhaCobrancaPayload.model_json_schema(),
-        )
-        state.agent_response = response
-
-        if "tipo_cobranca" in state.payload:
-            validated_data = EscolhaCobrancaPayload.model_validate(state.payload)
-            state.data["tipo_cobranca"] = validated_data.tipo_cobranca
-
-            # Define flag para roteamento
-            if validated_data.tipo_cobranca == "cota_unica":
-                state.internal["fluxo_cota_unica"] = True
-            else:
-                state.internal["fluxo_cota_unica"] = False
-
-            state.agent_response = None
-
-        return state
-
-    @handle_errors
-    def _escolher_formato_cota_unica(self, state: ServiceState) -> ServiceState:
-        """Para cota única, coleta o formato de pagamento."""
-        # Este nó só é executado para cota única
-        if not state.internal.get("fluxo_cota_unica", False):
-            return state
-
-        if "formato_pagamento" in state.data:
-            return state
-
-        response = AgentResponse(
-            description="✅ Cota única selecionada! Você terá 7% de desconto.\n\n"
-            "Escolha como deseja receber a guia de pagamento:",
-            payload_schema=EscolhaFormatoPagamentoPayload.model_json_schema(),
-        )
-        state.agent_response = response
-
-        if "formato_pagamento" in state.payload:
-            validated_data = EscolhaFormatoPagamentoPayload.model_validate(
-                state.payload
-            )
-            state.data["formato_pagamento"] = validated_data.formato_pagamento
-            state.agent_response = None
-
-        return state
-
-    @handle_errors
     def _escolher_cotas_pagar(self, state: ServiceState) -> ServiceState:
         """Para fluxo parcelado, permite escolher quais cotas pagar."""
         # Este nó só é executado para parcelamento
@@ -505,58 +460,128 @@ Informe o número da guia ("00", "01")"""
         if "cotas_escolhidas" in state.data:
             return state
 
-        response_text = """📋 **Escolher Cotas a Pagar**
-
-Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
-
-• **1ª Cota** - Vencimento: Janeiro/2024
-• **2ª Cota** - Vencimento: Fevereiro/2024
-• **3ª Cota** - Vencimento: Março/2024
-• **4ª Cota** - Vencimento: Abril/2024
-• **5ª Cota** - Vencimento: Maio/2024
-• **Todas as cotas** - Todas as parcelas em aberto
-
-**Quais cotas você deseja pagar?**"""
-
-        response = AgentResponse(
-            description=response_text,
-            payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
-        )
-        state.agent_response = response
-
+        # Processa payload se presente
         if "cotas_escolhidas" in state.payload:
             validated_data = EscolhaCotasParceladasPayload.model_validate(state.payload)
             state.data["cotas_escolhidas"] = validated_data.cotas_escolhidas
             state.agent_response = None
+            return state
+
+        # Obtém dados reais das cotas do state
+        dados_cotas_dict = state.data.get("dados_cotas", {})
+        cotas = dados_cotas_dict.get("cotas", [])
+
+        if not cotas:
+            # Fallback para caso não haja cotas carregadas
+            response_text = """⚠️ **Erro ao carregar cotas**
+            
+Não foi possível carregar as informações das cotas para esta guia.
+Por favor, tente novamente ou entre em contato com o suporte."""
+
+            state.agent_response = AgentResponse(
+                description=response_text,
+                error_message="Dados de cotas não encontrados no state",
+            )
+            return state
+
+        # Monta lista de cotas disponíveis usando dados reais
+        cotas_texto = (
+            "📋 **Escolher Cotas a Pagar**\n\nSelecione quais cotas deseja pagar:\n\n"
+        )
+
+        cotas_em_aberto = []
+        valor_total = 0.0
+
+        for cota in cotas:
+            numero_cota = cota.get("numero_cota", "")
+            valor_cota = cota.get("valor_cota", "0,00")
+            data_vencimento = cota.get("data_vencimento", "")
+            situacao = cota.get("situacao", {})
+            esta_paga = cota.get("esta_paga", False)
+            valor_numerico = cota.get("valor_numerico", 0.0)
+
+            if not esta_paga:
+                cotas_em_aberto.append(numero_cota)
+                valor_total += valor_numerico
+
+                # Formata status da cota
+                status_icon = "🟡" if situacao.get("codigo") == "03" else "🟢"
+                status_text = (
+                    "VENCIDA" if situacao.get("codigo") == "03" else "EM ABERTO"
+                )
+
+                cotas_texto += f"• **{numero_cota}ª Cota** - Vencimento: {data_vencimento} - R$ {valor_cota} - {status_icon} {status_text}\n"
+
+        if not cotas_em_aberto:
+            # Todas as cotas já foram pagas
+            response_text = """✅ **Todas as cotas já foram quitadas**
+            
+Todas as cotas desta guia já foram pagas. 
+Por favor, selecione outra guia para pagamento."""
+
+            state.agent_response = AgentResponse(
+                description=response_text,
+                payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
+            )
+            # Limpa guia escolhida para permitir nova seleção
+            state.data.pop("guia_escolhida", None)
+            return state
+
+        # Adiciona opção "Todas as cotas"
+        cotas_texto += f"\n• **Todas as cotas** - Total: R$ {valor_total:.2f}\n"
+        cotas_texto += "\n**Quais cotas você deseja pagar?**"
+
+        response = AgentResponse(
+            description=cotas_texto,
+            payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
+        )
+        state.agent_response = response
 
         return state
 
     @handle_errors
-    def _deseja_pagar_darf_separado(self, state: ServiceState) -> ServiceState:
-        """Pergunta se deseja pagar as cotas em DARF separado."""
-        if "formato_pagamento" in state.data:
+    def _pagar_darm_separado(self, state: ServiceState) -> ServiceState:
+        """Pergunta se deseja pagar as cotas em DARF separado (apenas informação interna)."""
+        # Este nó só é executado para fluxo parcelado
+        if state.internal.get("fluxo_cota_unica", False):
             return state
 
-        response_text = """📋 **Deseja pagar as cotas em DARF separado?**
+        # Se já foi respondido, pula
+        if "pagar_darf_separado" in state.internal:
+            return state
 
-• **Sim** - Cada cota será gerada em um DARF separado
-• **Não** - Guias serão geradas em código de barras
+        # Processa payload se presente
+        if "pagar_darf_separado" in state.payload:
+            state.internal["pagar_darf_separado"] = bool(
+                state.payload["pagar_darf_separado"]
+            )
+            state.agent_response = None
+            return state
+
+        # Pergunta sobre DARF separado (apenas SIM/NÃO - informação interna)
+        description = """📋 **Deseja pagar as cotas em DARF separado?**
+
+• **SIM** - Cada cota será gerada em um DARF separado
+• **NÃO** - Guias serão geradas em código de barras
 
 **Qual sua preferência?**"""
 
-        response = AgentResponse(
-            description=response_text,
-            payload_schema=EscolhaFormatoPagamentoPayload.model_json_schema(),
+        # Schema simples para resposta SIM/NÃO
+        schema = {
+            "type": "object",
+            "properties": {
+                "pagar_darf_separado": {
+                    "type": "boolean",
+                    "description": "Se deseja pagar as cotas em DARF separado",
+                }
+            },
+            "required": ["pagar_darf_separado"],
+        }
+
+        state.agent_response = AgentResponse(
+            description=description,
+            payload_schema=schema,
         )
-        state.agent_response = response
-
-        if "formato_pagamento" in state.payload:
-            validated_data = EscolhaFormatoPagamentoPayload.model_validate(
-                state.payload
-            )
-            state.data["formato_pagamento"] = validated_data.formato_pagamento
-            state.agent_response = None
-
         return state
 
     @handle_errors
@@ -565,106 +590,196 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
         if state.internal.get("dados_confirmados", False):
             return state
 
-        # Coleta formato de pagamento se ainda não foi coletado
-        if "formato_pagamento" not in state.data:
-            if "formato_pagamento" in state.payload:
-                validated_data = EscolhaFormatoPagamentoPayload.model_validate(
-                    state.payload
-                )
-                state.data["formato_pagamento"] = validated_data.formato_pagamento
-            else:
-                state.agent_response = AgentResponse(
-                    description="📋 Escolha como deseja receber as guias de pagamento:",
-                    payload_schema=EscolhaFormatoPagamentoPayload.model_json_schema(),
-                )
-                return state
-
-        # Gera as guias de pagamento via API (usa asyncio.run)
+        # Mostra resumo dos dados para confirmação
         inscricao = state.data["inscricao_imobiliaria"]
         guia_escolhida = state.data.get("guia_escolhida", "IPTU")
-        tipo_cobranca = state.data["tipo_cobranca"]
-        formato_pagamento = state.data["formato_pagamento"]
+        cotas_escolhidas = state.data.get("cotas_escolhidas", [])
+        fluxo_cota_unica = state.internal.get("fluxo_cota_unica", False)
+
+        # Monta resumo dos dados para confirmação
+        resumo_texto = f"""📋 **Confirmação dos Dados**
+
+**Imóvel:** {inscricao}
+**Guia:** {guia_escolhida}
+**Tipo:** {"Cota única" if fluxo_cota_unica else "Cotas parceladas"}"""
+
+        if not fluxo_cota_unica and cotas_escolhidas:
+            cotas_str = (
+                ", ".join(cotas_escolhidas)
+                if len(cotas_escolhidas) > 1
+                else cotas_escolhidas[0]
+            )
+            resumo_texto += f"\n**Cotas:** {cotas_str}"
+
+        # Para parcelado, mostra informação sobre DARF separado se foi respondido
+        if (
+            not fluxo_cota_unica
+            and "pagar_darf_separado" in state.internal
+        ):
+            formato_texto = (
+                "DARF separado"
+                if state.internal["pagar_darf_separado"]
+                else "Código de barras"
+            )
+            resumo_texto += f"\n**Formato:** {formato_texto}"
+
+        resumo_texto += "\n\n✅ **Os dados estão corretos?**"
+
+        # Pergunta confirmação se ainda não foi confirmado
+        if "confirmacao" not in state.payload:
+            state.agent_response = AgentResponse(
+                description=resumo_texto,
+                payload_schema=ConfirmacaoDadosPayload.model_json_schema(),
+            )
+            return state
+
+        # Processa confirmação
+        validated_data = ConfirmacaoDadosPayload.model_validate(state.payload)
+        if not validated_data.confirmacao:
+            # Se não confirmou, volta ao início do fluxo
+            state.agent_response = AgentResponse(
+                description="❌ **Dados não confirmados**\n\nVoltando ao início do fluxo. Informe novamente a inscrição imobiliária:",
+                payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
+            )
+            # Limpa dados para começar novamente
+            campos_limpar = ["guia_escolhida", "cotas_escolhidas"]
+            for campo in campos_limpar:
+                state.data.pop(campo, None)
+            return state
+
+        # Confirmação aceita - marca dados como confirmados
+        state.internal["dados_confirmados"] = True
+
+        # NÃO definir agent_response aqui para permitir que o fluxo continue automaticamente para gerar_darm
+        state.agent_response = None
+        return state
+
+    @handle_errors
+    def _gerar_darm(self, state: ServiceState) -> ServiceState:
+        """Gera DARM ou código de barras após confirmação dos dados."""
+        # Se já foi gerado, retorna
+        if "guias_geradas" in state.data:
+            return state
+
+        # Obtém dados confirmados
+        inscricao = state.data["inscricao_imobiliaria"]
+        guia_escolhida = state.data.get("guia_escolhida", "IPTU")
         cotas_escolhidas = state.data.get("cotas_escolhidas", [])
         exercicio = state.data.get("ano_exercicio", 2024)
+        fluxo_cota_unica = state.internal.get("fluxo_cota_unica", False)
 
-        # Simulação das guias geradas para compatibilidade com o fluxo
-        # Na implementação real, usaria os métodos consultar_darm ou obter_cotas
-        guias_simuladas = []
-        if formato_pagamento == "codigo_barras":
-            # Simula código de barras
-            guias_simuladas = [{
-                "numero_guia": guia_escolhida,
-                "valor": 1000.00,
-                "vencimento": "31/12/2024",
-                "codigo_barras": "23793.38128 60005.021006 00000.987654 2 99190000100000",
-                "linha_digitavel": "23793.38128 60005.021006 00000.987654 2 99190000100000"
-            }]
-        else:
-            # Simula DARF
-            guias_simuladas = [{
-                "numero_guia": guia_escolhida,
-                "valor": 1000.00,
-                "vencimento": "31/12/2024",
-                "darf_data": {
-                    "codigo_receita": "310-7",
-                    "sequencia_numerica": "23793.38128 60005.021006 00000.987654 2 99190000100000"
-                }
-            }]
-        
-        # Converte para objetos com atributos
-        class GuiaSimulada:
-            def __init__(self, data):
-                self.numero_guia: str = data.get("numero_guia", "")
-                self.valor: float = data.get("valor", 0.0)
-                self.vencimento: str = data.get("vencimento", "")
-                self.codigo_barras: str = data.get("codigo_barras", "")
-                self.linha_digitavel: str = data.get("linha_digitavel", "")
-                self.darf_data: dict = data.get("darf_data", {})
-            
-            def model_dump(self):
-                return {
-                    "numero_guia": self.numero_guia,
-                    "valor": self.valor,
-                    "vencimento": self.vencimento,
-                    "codigo_barras": self.codigo_barras,
-                    "linha_digitavel": self.linha_digitavel,
-                    "darf_data": self.darf_data
-                }
-        
-        guias = [GuiaSimulada(guia) for guia in guias_simuladas]
+        # Para parcelado, verifica se foi escolhido DARF separado
+        pagar_darf_separado = state.internal.get("pagar_darf_separado", False)
 
-        # Salva as guias geradas
-        state.data["guias_geradas"] = [guia.model_dump() for guia in guias]
+        # Usar API real para gerar DARM/Guias baseado no formato escolhido
 
-        # Monta texto de confirmação
-        dados_guias = state.data["dados_guias"]
-        response_text = f"""
-✅ **Guias de Pagamento Geradas!**
+        api_service = IPTUAPIService()
 
-🆔 **Inscrição:** {dados_guias['inscricao_imobiliaria']}
-📋 **Guia IPTU:** {guia_escolhida}
-💳 **Tipo:** {'Cota Única (7% desconto)' if tipo_cobranca == 'cota_unica' else 'Parcelamento'}
-📄 **Formato:** {'DARF Separado' if formato_pagamento == 'darf' else 'Código de Barras'}
+        try:
+            # Para parcelado, usa a informação se deve gerar DARF separado
+            # Para cota única, sempre gera código de barras
+            if not fluxo_cota_unica and pagar_darf_separado:
+                # Gera DARM via API
+                dados_darm = asyncio.run(
+                    api_service.consultar_darm(
+                        inscricao_imobiliaria=inscricao,
+                        exercicio=exercicio,
+                        numero_guia=guia_escolhida,
+                        cotas_selecionadas=(
+                            cotas_escolhidas if cotas_escolhidas else ["00"]
+                        ),
+                    )
+                )
 
-📋 **Guias Geradas:** {len(guias)} guia(s)
-        """
+                if dados_darm and dados_darm.darm:
+                    # Tenta fazer download do PDF
+                    pdf_base64 = asyncio.run(
+                        api_service.download_pdf_darm(
+                            inscricao_imobiliaria=inscricao,
+                            exercicio=exercicio,
+                            numero_guia=guia_escolhida,
+                            cotas_selecionadas=(
+                                cotas_escolhidas if cotas_escolhidas else ["00"]
+                            ),
+                        )
+                    )
 
-        if formato_pagamento == "codigo_barras":
-            for i, guia in enumerate(guias[:3], 1):  # Mostra só as 3 primeiras
-                response_text += f"\n\n**Guia {i}:**\n"
-                response_text += f"💰 Valor: R$ {guia.valor:.2f}\n"
-                response_text += f"📅 Vencimento: {guia.vencimento}\n"
-                response_text += f"📊 Código: {guia.codigo_barras}"
+                    # Salva dados do DARM gerado
+                    state.data["guias_geradas"] = [
+                        {
+                            "tipo": "darm",
+                            "numero_guia": guia_escolhida,
+                            "valor": dados_darm.darm.valor_numerico,
+                            "vencimento": dados_darm.darm.data_vencimento,
+                            "codigo_barras": dados_darm.darm.codigo_barras,
+                            "linha_digitavel": dados_darm.darm.sequencia_numerica,
+                            "pdf_base64": pdf_base64,
+                        }
+                    ]
 
-            if len(guias) > 3:
-                response_text += f"\n\n... e mais {len(guias) - 3} guia(s)"
-        else:
-            total_valor = sum(guia.valor for guia in guias)
-            response_text += f"\n💰 **Valor Total:** R$ {total_valor:.2f}"
+                    response_text = f"""✅ **DARM Gerado com Sucesso!**
 
-        state.internal["dados_confirmados"] = True
-        state.agent_response = AgentResponse(description=response_text.strip())
+🆔 **Inscrição:** {inscricao}
+📋 **Guia:** {guia_escolhida}
+💳 **Cotas:** {', '.join(cotas_escolhidas) if cotas_escolhidas else 'Cota única'}
+💰 **Valor:** R$ {dados_darm.darm.valor_numerico:.2f}
+📅 **Vencimento:** {dados_darm.darm.data_vencimento}
+📊 **Código de Barras:** {dados_darm.darm.codigo_barras}
 
+{"📄 **PDF baixado com sucesso!**" if pdf_base64 else "⚠️ PDF não disponível no momento"}"""
+
+                else:
+                    # Falha na geração do DARM
+                    response_text = """❌ **Erro na Geração do DARM**
+
+Não foi possível gerar o DARM no momento. 
+Por favor, tente novamente ou escolha o formato de código de barras."""
+
+            else:
+                # Formato código de barras - usa dados das cotas já carregadas
+                dados_cotas = state.data.get("dados_cotas", {})
+                cotas = dados_cotas.get("cotas", [])
+
+                guias_geradas = []
+                valor_total = 0.0
+
+                for cota in cotas:
+                    if (
+                        not cotas_escolhidas
+                        or cota.get("numero_cota") in cotas_escolhidas
+                    ):
+                        guias_geradas.append(
+                            {
+                                "tipo": "codigo_barras",
+                                "numero_cota": cota.get("numero_cota"),
+                                "valor": cota.get("valor_numerico", 0.0),
+                                "vencimento": cota.get("data_vencimento"),
+                                "codigo_barras": cota.get("codigo_barras", ""),
+                                "linha_digitavel": cota.get("linha_digitavel", ""),
+                            }
+                        )
+                        valor_total += cota.get("valor_numerico", 0.0)
+
+                state.data["guias_geradas"] = guias_geradas
+
+                response_text = f"""✅ **Guias de Código de Barras Geradas!**
+
+🆔 **Inscrição:** {inscricao}
+📋 **Guia:** {guia_escolhida}
+💳 **Cotas:** {', '.join(cotas_escolhidas) if cotas_escolhidas else 'Todas as cotas'}
+💰 **Valor Total:** R$ {valor_total:.2f}
+📋 **Total de Guias:** {len(guias_geradas)}
+
+As guias estão prontas para pagamento."""
+
+        except Exception as e:
+            # Em caso de erro na API, gera resposta de erro
+            response_text = f"""❌ **Erro na Geração das Guias**
+
+Ocorreu um erro ao gerar as guias de pagamento: {str(e)}
+Por favor, tente novamente."""
+
+        state.agent_response = AgentResponse(description=response_text)
         return state
 
     @handle_errors
@@ -713,7 +828,6 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
         # Limpa apenas os dados de escolha, mantém a inscrição e dados do imóvel
         campos_limpar = [
             "guia_escolhida",
-            "tipo_cobranca",
             "cotas_escolhidas",
             "formato_pagamento",
             "guias_geradas",
@@ -736,7 +850,6 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
             "inscricao_imobiliaria",
             "dados_guias",
             "guia_escolhida",
-            "tipo_cobranca",
             "cotas_escolhidas",
             "formato_pagamento",
             "guias_geradas",
@@ -754,7 +867,11 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
             "inscricao_invalida",
         ]
         # Limpa também todas as flags de consulta de cotas específicas
-        flags_cotas_para_limpar = [key for key in state.internal.keys() if key.startswith("consulta_cotas_realizada_")]
+        flags_cotas_para_limpar = [
+            key
+            for key in state.internal.keys()
+            if key.startswith("consulta_cotas_realizada_")
+        ]
         flags_limpar.extend(flags_cotas_para_limpar)
         for flag in flags_limpar:
             state.internal.pop(flag, None)
@@ -778,7 +895,6 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
             "inscricao_imobiliaria",
             "dados_guias",
             "guia_escolhida",
-            "tipo_cobranca",
             "cotas_escolhidas",
             "formato_pagamento",
             "guias_geradas",
@@ -831,18 +947,12 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
         # Se a guia já foi paga, retorna para escolha de guias
         if state.internal.get("guia_paga", False):
             return "usuario_escolhe_guias"
-        
-        # Se é cota única em aberto, vai para opções de pagamento
-        if state.internal.get("fluxo_cota_unica", False):
-            return "verificar_cota_unica"
-        
-        # Se são múltiplas cotas, vai direto para seleção de cotas
-        return "escolher_cotas"
 
-    def _route_after_verificacao_cota(self, state: ServiceState) -> str:
-        """Roteamento após verificação do tipo de cota."""
+        # Se é cota única em aberto, vai diretamente para confirmação de dados/pagamento
         if state.internal.get("fluxo_cota_unica", False):
-            return "escolher_formato_cota_unica"
+            return "confirmacao_dados"
+
+        # Se são múltiplas cotas, vai direto para seleção de cotas
         return "escolher_cotas"
 
     def _route_after_mesma_guia(self, state: ServiceState) -> str:
@@ -857,6 +967,15 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
             return "reset_outro_imovel"
         return "finalizar_interacao"  # Finaliza com reset automático
 
+    def _route_after_escolher_cotas(self, state: ServiceState) -> str:
+        """Roteamento após escolha de cotas."""
+        # Se é fluxo de cota única, vai direto para confirmação de dados
+        if state.internal.get("fluxo_cota_unica", False):
+            return "confirmacao_dados"
+
+        # Se é fluxo parcelado, precisa perguntar sobre DARF separado primeiro
+        return "pagar_darm_separado"
+
     # --- Construção do Grafo ---
 
     def build_graph(self) -> StateGraph[ServiceState]:
@@ -869,11 +988,10 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
         graph.add_node("consultar_guias", self._consultar_guias_disponiveis)
         graph.add_node("usuario_escolhe_guias", self._usuario_escolhe_guias_iptu)
         graph.add_node("verificar_tipo_cotas", self._verificar_tipo_cotas)
-        graph.add_node("verificar_cota_unica", self._verificar_cota_unica)
-        graph.add_node("escolher_formato_cota_unica", self._escolher_formato_cota_unica)
         graph.add_node("escolher_cotas", self._escolher_cotas_pagar)
-        graph.add_node("darf_separado", self._deseja_pagar_darf_separado)
+        graph.add_node("pagar_darm_separado", self._pagar_darm_separado)
         graph.add_node("confirmacao_dados", self._confirmacao_dados_pagamento)
+        graph.add_node("gerar_darm", self._gerar_darm)
         graph.add_node("pergunta_mesma_guia", self._pergunta_mesma_guia)
         graph.add_node("pergunta_outro_imovel", self._pergunta_outro_imovel)
         graph.add_node("reset_mesma_guia", self._reset_para_mesma_guia)
@@ -882,7 +1000,7 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
 
         # Nós de roteamento
         graph.add_node("route_inscricao", lambda state: state)
-        graph.add_node("route_cota", lambda state: state)
+        graph.add_node("route_escolher_cotas", lambda state: state)
         graph.add_node("route_mesma_guia", lambda state: state)
         graph.add_node("route_outro_imovel", lambda state: state)
 
@@ -922,51 +1040,45 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
             self._decide_after_data_collection,
             {"continue": "verificar_tipo_cotas", END: END},
         )
-        
+
         graph.add_conditional_edges(
             "verificar_tipo_cotas",
             self._route_after_verificacao_tipo_cotas,
             {
                 "usuario_escolhe_guias": "usuario_escolhe_guias",
-                "verificar_cota_unica": "verificar_cota_unica", 
                 "escolher_cotas": "escolher_cotas",
+                "confirmacao_dados": "confirmacao_dados",
             },
-        )
-
-        graph.add_conditional_edges(
-            "verificar_cota_unica",
-            self._decide_after_data_collection,
-            {"continue": "route_cota", END: END},
-        )
-
-        graph.add_conditional_edges(
-            "route_cota",
-            self._route_after_verificacao_cota,
-            {
-                "escolher_formato_cota_unica": "escolher_formato_cota_unica",
-                "escolher_cotas": "escolher_cotas",
-            },
-        )
-
-        graph.add_conditional_edges(
-            "escolher_formato_cota_unica",
-            self._decide_after_data_collection,
-            {"continue": "confirmacao_dados", END: END},
         )
 
         graph.add_conditional_edges(
             "escolher_cotas",
             self._decide_after_data_collection,
-            {"continue": "darf_separado", END: END},
+            {"continue": "route_escolher_cotas", END: END},
         )
 
         graph.add_conditional_edges(
-            "darf_separado",
+            "route_escolher_cotas",
+            self._route_after_escolher_cotas,
+            {
+                "pagar_darm_separado": "pagar_darm_separado",
+                "confirmacao_dados": "confirmacao_dados",
+            },
+        )
+
+        graph.add_conditional_edges(
+            "pagar_darm_separado",
             self._decide_after_data_collection,
             {"continue": "confirmacao_dados", END: END},
         )
 
-        graph.add_edge("confirmacao_dados", "pergunta_mesma_guia")
+        graph.add_conditional_edges(
+            "confirmacao_dados",
+            self._decide_after_data_collection,
+            {"continue": "gerar_darm", END: END},
+        )
+
+        graph.add_edge("gerar_darm", "pergunta_mesma_guia")
 
         graph.add_conditional_edges(
             "pergunta_mesma_guia",
