@@ -190,22 +190,19 @@ class IPTUAPIService:
                 logger.warning(f"Failed to parse guia data: {guia_data}, error: {e}")
                 continue
 
-        # Separa guias em aberto e quitadas
+        # Filtra apenas as guias em aberto para retorno
         guias_em_aberto = [g for g in guias if g.esta_em_aberto]
-        guias_quitadas = [g for g in guias if g.esta_quitada]
 
         if not guias_em_aberto:
             logger.info(f"No open guides found for inscricao {inscricao_clean}")
             return None
 
-        # Cria objeto de dados das guias usando nova estrutura
+        # Cria objeto de dados das guias usando a estrutura simplificada
         dados_guias = DadosGuias(
             inscricao_imobiliaria=inscricao_clean,
             exercicio=str(exercicio),
-            guias=guias,
-            total_guias=len(guias),
-            guias_em_aberto=guias_em_aberto,
-            guias_quitadas=guias_quitadas,
+            guias=guias_em_aberto,
+            total_guias=len(guias_em_aberto),
         )
 
         logger.info(
@@ -273,11 +270,6 @@ class IPTUAPIService:
                 logger.warning(f"Failed to parse cota data: {cota_data}, error: {e}")
                 continue
 
-        # Separa cotas por status
-        cotas_pagas = [c for c in cotas if c.esta_paga]
-        cotas_em_aberto = [c for c in cotas if not c.esta_paga and not c.esta_vencida]
-        cotas_vencidas = [c for c in cotas if c.esta_vencida]
-
         # Calcula valor total
         valor_total = sum(c.valor_numerico for c in cotas)
 
@@ -293,9 +285,6 @@ class IPTUAPIService:
             tipo_guia=tipo_guia,
             cotas=cotas,
             total_cotas=len(cotas),
-            cotas_pagas=cotas_pagas,
-            cotas_em_aberto=cotas_em_aberto,
-            cotas_vencidas=cotas_vencidas,
             valor_total=valor_total,
         )
 

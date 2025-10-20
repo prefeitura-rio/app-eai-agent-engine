@@ -131,8 +131,6 @@ class DadosGuias(BaseModel):
     exercicio: str
     guias: List[Guia] = []
     total_guias: int = 0
-    guias_em_aberto: List[Guia] = []
-    guias_quitadas: List[Guia] = []
 
 
 class Cota(BaseModel):
@@ -172,9 +170,6 @@ class DadosCotas(BaseModel):
     tipo_guia: str
     cotas: List[Cota] = []
     total_cotas: int = 0
-    cotas_pagas: List[Cota] = []
-    cotas_em_aberto: List[Cota] = []
-    cotas_vencidas: List[Cota] = []
     valor_total: float = 0.0
 
 
