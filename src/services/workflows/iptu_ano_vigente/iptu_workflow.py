@@ -3,6 +3,16 @@ Workflow IPTU Ano Vigente - Prefeitura do Rio de Janeiro
 
 Implementa o fluxo completo de consulta e emissão de guias de IPTU
 seguindo o fluxograma oficial da Prefeitura do Rio.
+
+
+
+o fluxo esta meio confuso com etapas desnecessarias
+
+nao é necessario uma verificar_tipo_cotas,
+
+queremos o seguinte fluxo
+
+informa inscricao --> escolhe ano --> consulta guias (exibe pro usuario escolher) ---> apartir da guia escolhida consulta cotas (exibe para o usuario escolher) -> pergunta se o usuario quer um boleto para cada cota ou boleto unico para N cotas selecionadas (caso selecionou so uma nao é necessario perguntar) --> confirma dados ---> gerar darm (usar informacao de darm_separado para fazer um for em cada cota, se for unico passar tudo junto para gerar um unico pdf/boleto) -> no node do pertuntar mesma_guia exibe as informacoes geradas pelo darm
 """
 
 import asyncio
@@ -612,10 +622,7 @@ Por favor, selecione outra guia para pagamento."""
             resumo_texto += f"\n**Cotas:** {cotas_str}"
 
         # Para parcelado, mostra informação sobre DARF separado se foi respondido
-        if (
-            not fluxo_cota_unica
-            and "pagar_darm_separado" in state.internal
-        ):
+        if not fluxo_cota_unica and "pagar_darm_separado" in state.internal:
             formato_texto = (
                 "DARM separado"
                 if state.internal["pagar_darm_separado"]
@@ -697,7 +704,9 @@ Por favor, selecione outra guia para pagamento."""
                 )
 
                 # Salva dados do DARM gerado (converte para dict para serialização JSON)
-                state.data["dados_darm"] = dados_darm.model_dump() if dados_darm else None
+                state.data["dados_darm"] = (
+                    dados_darm.model_dump() if dados_darm else None
+                )
                 state.data["guias_geradas"] = [
                     {
                         "tipo": "darm",
@@ -747,21 +756,21 @@ Por favor, tente novamente."""
 
         # Monta descrição com informações do DARM gerado
         description_text = "✅ **DARM Gerado com Sucesso!**\n\n"
-        
+
         # Verifica se há dados do DARM para mostrar
         if "dados_darm" in state.data and state.data["dados_darm"]:
             dados_darm = state.data["dados_darm"]
             inscricao = dados_darm.get("inscricao_imobiliaria", "N/A")
             numero_guia = dados_darm.get("numero_guia", "N/A")
             cotas = dados_darm.get("cotas_selecionadas", [])
-            
+
             # Informações do DARM se disponível
             if "darm" in dados_darm and dados_darm["darm"]:
                 darm_info = dados_darm["darm"]
                 valor = darm_info.get("valor_numerico", 0)
                 vencimento = darm_info.get("data_vencimento", "N/A")
                 codigo_barras = darm_info.get("codigo_barras", "N/A")
-                
+
                 description_text += f"""🆔 **Inscrição:** {inscricao}
 📋 **Guia:** {numero_guia}
 💳 **Cotas:** {', '.join(cotas) if cotas else 'Cota única'}
@@ -770,7 +779,7 @@ Por favor, tente novamente."""
 📊 **Código de Barras:** {codigo_barras}
 
 """
-        
+
         # Verifica se há guias geradas para mostrar
         if "guias_geradas" in state.data and state.data["guias_geradas"]:
             guias = state.data["guias_geradas"]
@@ -779,7 +788,7 @@ Por favor, tente novamente."""
                 description_text += f"""📄 **PDF:** {'Disponível' if guia.get('pdf_base64') else 'Não disponível'}
 
 """
-        
+
         description_text += "🔄 **Deseja emitir mais guias para o mesmo imóvel?**"
 
         response = AgentResponse(
