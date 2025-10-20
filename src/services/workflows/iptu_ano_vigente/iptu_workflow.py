@@ -6,7 +6,6 @@ seguindo o fluxograma oficial da Prefeitura do Rio.
 """
 
 import asyncio
-from typing import Optional
 from langgraph.graph import StateGraph, END
 
 from src.services.core.base_workflow import BaseWorkflow, handle_errors
@@ -19,7 +18,6 @@ from src.services.workflows.iptu_ano_vigente.models import (
     EscolhaCobrancaPayload,
     EscolhaFormatoPagamentoPayload,
     EscolhaCotasParceladasPayload,
-    ConfirmacaoDadosPayload,
     EscolhaGuiaMesmoImovelPayload,
     EscolhaOutroImovelPayload,
     DadosGuias,
@@ -494,11 +492,22 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
         # Converte para objetos com atributos
         class GuiaSimulada:
             def __init__(self, data):
-                for key, value in data.items():
-                    setattr(self, key, value)
+                self.numero_guia: str = data.get("numero_guia", "")
+                self.valor: float = data.get("valor", 0.0)
+                self.vencimento: str = data.get("vencimento", "")
+                self.codigo_barras: str = data.get("codigo_barras", "")
+                self.linha_digitavel: str = data.get("linha_digitavel", "")
+                self.darf_data: dict = data.get("darf_data", {})
             
             def model_dump(self):
-                return self.__dict__
+                return {
+                    "numero_guia": self.numero_guia,
+                    "valor": self.valor,
+                    "vencimento": self.vencimento,
+                    "codigo_barras": self.codigo_barras,
+                    "linha_digitavel": self.linha_digitavel,
+                    "darf_data": self.darf_data
+                }
         
         guias = [GuiaSimulada(guia) for guia in guias_simuladas]
 
@@ -523,7 +532,7 @@ Você optou pelo parcelamento. Selecione quais cotas deseja pagar:
                 response_text += f"\n\n**Guia {i}:**\n"
                 response_text += f"💰 Valor: R$ {guia.valor:.2f}\n"
                 response_text += f"📅 Vencimento: {guia.vencimento}\n"
-                response_text += f"📊 Código: {guia.linha_digitavel}"
+                response_text += f"📊 Código: {guia.codigo_barras}"
 
             if len(guias) > 3:
                 response_text += f"\n\n... e mais {len(guias) - 3} guia(s)"
