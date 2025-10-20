@@ -6,16 +6,17 @@ para consulta de IPTU e geração de guias de pagamento.
 """
 
 import re
-import string
-from datetime import datetime
 from typing import List, Optional, Dict, Any
 import httpx
 
 from src.config import env
 from src.services.workflows.iptu_ano_vigente.models import (
-    DadosIPTU,
-    GuiaIPTU,
-    DadosConsulta,
+    DadosGuias,
+    Guia,
+    Cota,
+    DadosCotas,
+    Darm,
+    DadosDarm,
 )
 from loguru import logger
 
@@ -28,6 +29,7 @@ class IPTUAPIService:
     - Consultar guias disponíveis (ConsultarGuias)
     - Consultar cotas/parcelas (ConsultarCotas)
     - Gerar DARM para pagamento (ConsultarDARM)
+    - Download PDF do DARM (DownloadPdfDARM)
     """
 
     def __init__(self):
@@ -36,49 +38,20 @@ class IPTUAPIService:
         self.api_token = env.IPTU_API_TOKEN
         self.proxy = "http://proxy.squirrel-regulus.ts.net:3128"
 
-        # Ano vigente padrão - pode ser sobrescrito
-        self.ano_vigente = datetime.now().year
-
         logger.info(f"IPTUAPIService initialized with API URL: {self.api_base_url}")
 
     @staticmethod
-    def _validar_inscricao(inscricao: str) -> Optional[str]:
+    def _limpar_inscricao(inscricao: str) -> str:
         """
-        Valida e limpa a inscrição imobiliária.
-
-        Remove pontuação e valida o formato.
-
+        Remove caracteres não numéricos da inscrição imobiliária.
+        
         Args:
-            inscricao: Inscrição imobiliária a validar
-
+            inscricao: Inscrição imobiliária 
+            
         Returns:
-            Inscrição limpa ou None se inválida
+            Inscrição apenas com números
         """
-        if not inscricao:
-            return None
-
-        # Remove pontuação e espaços
-        inscricao_clean = inscricao.translate(
-            str.maketrans("", "", string.punctuation + " ")
-        )
-
-        # Valida se é numérico
-        if not inscricao_clean.isdigit():
-            logger.warning(f"Inscricao contains non-numeric characters: {inscricao}")
-            return None
-
-        # Valida tamanho ANTES de remover zeros (API aceita inscrições curtas)
-        # Máximo de 15 dígitos para evitar erro 500
-        if len(inscricao_clean) > 15:
-            logger.warning(
-                f"Inscricao too long: {inscricao_clean} ({len(inscricao_clean)} chars)"
-            )
-            return None
-
-        # Remove zeros à esquerda
-        inscricao_clean = str(int(inscricao_clean))
-
-        return inscricao_clean
+        return re.sub(r'[^0-9]', '', inscricao)
 
     async def _make_api_request(
         self, endpoint: str, params: Dict[str, Any], expect_json: bool = True
@@ -161,27 +134,21 @@ class IPTUAPIService:
             logger.warning(f"Failed to parse currency value: {value_str}")
             return 0.0
 
-    async def consultar_iptu(
-        self, inscricao_imobiliaria: str, exercicio: Optional[int] = None
-    ) -> Optional[DadosConsulta]:
+    async def consultar_guias(
+        self, inscricao_imobiliaria: str, exercicio: int
+    ) -> Optional[DadosGuias]:
         """
-        Consulta dados do IPTU por inscrição imobiliária.
+        Consulta dados e guias disponíveis do IPTU por inscrição imobiliária.
 
         Args:
             inscricao_imobiliaria: Número da inscrição imobiliária
-            exercicio: Ano do exercício fiscal (ex: 2025). Se None, usa ano atual.
+            exercicio: Ano do exercício fiscal (ex: 2025)
 
         Returns:
-            DadosConsulta com informações do IPTU ou None se não encontrado
+            DadosGuias com informações do IPTU e guias disponíveis ou None se não encontrado
         """
-        if exercicio is None:
-            exercicio = self.ano_vigente
-
-        # Valida e limpa inscrição
-        inscricao_clean = self._validar_inscricao(inscricao_imobiliaria)
-        if not inscricao_clean:
-            logger.warning(f"Invalid inscricao format: {inscricao_imobiliaria}")
-            return None
+        # Limpa inscrição removendo caracteres não numéricos
+        inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
 
         # Consulta guias disponíveis
         guias_response = await self._make_api_request(
@@ -199,97 +166,61 @@ class IPTUAPIService:
             logger.info(f"Empty guide list for inscricao {inscricao_clean}")
             return None
 
-        # Filtra apenas guias em aberto (Situacao.codigo == "01")
-        guias_em_aberto = [
-            g for g in guias_response if g.get("Situacao", {}).get("codigo") == "01"
-        ]
+        # Converte response para objetos Guia usando Pydantic
+        guias = []
+        for guia_data in guias_response:
+            try:
+                guia = Guia(**guia_data)
+                
+                # Processa campos calculados
+                guia.valor_numerico = self._parse_brazilian_currency(guia.valor_iptu_original_guia)
+                guia.valor_desconto_numerico = self._parse_brazilian_currency(guia.valor_iptu_desconto_avista)
+                guia.valor_parcelas_numerico = self._parse_brazilian_currency(guia.valor_parcelas)
+                guia.esta_quitada = guia.situacao.get("codigo") == "02"
+                guia.esta_em_aberto = guia.situacao.get("codigo") == "01"
+                
+                guias.append(guia)
+            except Exception as e:
+                logger.warning(f"Failed to parse guia data: {guia_data}, error: {e}")
+                continue
+
+        # Separa guias em aberto e quitadas
+        guias_em_aberto = [g for g in guias if g.esta_em_aberto]
+        guias_quitadas = [g for g in guias if g.esta_quitada]
 
         if not guias_em_aberto:
             logger.info(f"No open guides found for inscricao {inscricao_clean}")
             return None
 
-        # Pega primeira guia em aberto para obter dados básicos
-        primeira_guia = guias_em_aberto[0]
-
-        # Extrai informações do imóvel
-        inscricao_formatada = primeira_guia.get("Inscricao", inscricao_clean)
-        valor_iptu = self._parse_brazilian_currency(
-            primeira_guia.get("ValorIPTUOriginalGuia", "0,00")
+        # Cria objeto de dados das guias usando nova estrutura
+        dados_guias = DadosGuias(
+            inscricao_imobiliaria=inscricao_clean,
+            exercicio=str(exercicio),
+            guias=guias,
+            total_guias=len(guias),
+            guias_em_aberto=guias_em_aberto,
+            guias_quitadas=guias_quitadas,
         )
 
-        # Cria objeto de dados IPTU
-        # Nota: API não retorna endereço/proprietário neste endpoint
-        # Esses dados podem vir de outro endpoint ou serem buscados posteriormente
-        dados_iptu = DadosIPTU(
-            inscricao_imobiliaria=inscricao_formatada,
-            endereco=primeira_guia.get("Endereco") or "Endereço não disponível",
-            proprietario=primeira_guia.get("Nome") or "Proprietário não disponível",
-            valor_iptu=valor_iptu,
-            ano_vigente=exercicio,
-        )
-        logger.info(f"IPTU data retrieved for inscricao\n {dados_iptu}")
-        return DadosConsulta(
-            dados_iptu=dados_iptu,
-            guias_disponiveis=[],  # Guias serão geradas sob demanda
-        )
+        logger.info(f"IPTU data retrieved for inscricao with {len(guias)} guides available")
+        return dados_guias
 
-    async def obter_guias_pagamento(
-        self,
-        inscricao: str,
-        tipo_cobranca: str,
-        formato_pagamento: str,
-        guia_escolhida: str = "IPTU",
-        cotas_escolhidas: Optional[List[str]] = None,
-        exercicio: Optional[int] = None,
-    ) -> List[GuiaIPTU]:
+    async def obter_cotas(
+        self, inscricao_imobiliaria: str, exercicio: int, numero_guia: str
+    ) -> Optional[DadosCotas]:
         """
-        Obtém guias de pagamento formatadas conforme solicitado.
+        Consulta cotas disponíveis para uma guia específica.
 
         Args:
-            inscricao: Inscrição imobiliária
-            tipo_cobranca: "cota_unica" ou "cota_parcelada"
-            formato_pagamento: "darf" ou "codigo_barras"
-            guia_escolhida: Tipo de guia ("IPTU" ou "Taxa de Lixo")
-            cotas_escolhidas: Lista de cotas para parcelamento
+            inscricao_imobiliaria: Número da inscrição imobiliária
             exercicio: Ano do exercício fiscal
+            numero_guia: Número da guia (ex: "00")
 
         Returns:
-            Lista de guias formatadas com código de barras ou dados DARF
+            DadosCotas com informações das cotas disponíveis ou None se não encontrado
         """
-        if cotas_escolhidas is None:
-            cotas_escolhidas = []
-
-        if exercicio is None:
-            exercicio = self.ano_vigente
-
-        # Valida e limpa inscrição
-        inscricao_clean = self._validar_inscricao(inscricao)
-        if not inscricao_clean:
-            logger.warning(f"Invalid inscricao format: {inscricao}")
-            return []
-
-        # Primeiro, consulta guias disponíveis
-        guias_response = await self._make_api_request(
-            endpoint="ConsultarGuias",
-            params={"inscricao": inscricao_clean, "exercicio": str(exercicio)},
-        )
-
-        if not guias_response or len(guias_response) == 0:
-            logger.warning(f"No guides found for inscricao {inscricao_clean}")
-            return []
-
-        # Filtra guias em aberto
-        guias_em_aberto = [
-            g for g in guias_response if g.get("Situacao", {}).get("codigo") == "01"
-        ]
-
-        if not guias_em_aberto:
-            logger.warning(f"No open guides found for inscricao {inscricao_clean}")
-            return []
-
-        # Pega primeira guia em aberto (normalmente guia "00")
-        guia_data = guias_em_aberto[0]
-        numero_guia = guia_data.get("NGuia", "00")
+        # Limpa inscrição removendo caracteres não numéricos
+        inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
 
         # Consulta cotas disponíveis para esta guia
         cotas_response = await self._make_api_request(
@@ -300,167 +231,156 @@ class IPTUAPIService:
                 "guia": numero_guia,
             },
         )
-        logger.info(f"Cotas response: {cotas_response}")
+        logger.debug(f"Cotas response: {cotas_response}")
+        
         if not cotas_response or "Cotas" not in cotas_response:
             logger.warning(f"No cotas found for guia {numero_guia}")
-            return []
+            return None
 
-        # Filtra cotas não pagas (Situacao.codigo != "01" significa não está em aberto, já foi paga)
-        # Queremos as que ainda não foram pagas
-        cotas_disponiveis = [
-            c
-            for c in cotas_response["Cotas"]
-            if c.get("Situacao", {}).get("codigo")
-            != "01"  # != "01" = não está em aberto (vencida, a vencer, etc)
-        ]
+        # Converte response para objetos Cota usando Pydantic
+        cotas = []
+        for cota_data in cotas_response["Cotas"]:
+            try:
+                cota = Cota(**cota_data)
+                
+                # Processa campos calculados
+                cota.valor_numerico = self._parse_brazilian_currency(cota.valor_cota)
+                cota.valor_pago_numerico = self._parse_brazilian_currency(cota.valor_pago)
+                cota.dias_atraso_numerico = int(cota.quantidade_dias_atraso) if cota.quantidade_dias_atraso.isdigit() else 0
+                cota.esta_paga = cota.situacao.get("codigo") == "01"
+                cota.esta_vencida = cota.situacao.get("codigo") == "03"
+                
+                cotas.append(cota)
+            except Exception as e:
+                logger.warning(f"Failed to parse cota data: {cota_data}, error: {e}")
+                continue
 
-        if not cotas_disponiveis:
-            logger.warning(f"No unpaid cotas found for guia {numero_guia}")
-            return []
+        # Separa cotas por status
+        cotas_pagas = [c for c in cotas if c.esta_paga]
+        cotas_em_aberto = [c for c in cotas if not c.esta_paga and not c.esta_vencida]
+        cotas_vencidas = [c for c in cotas if c.esta_vencida]
+        
+        # Calcula valor total
+        valor_total = sum(c.valor_numerico for c in cotas)
 
-        guias_result = []
+        # Obtém tipo da guia consultando as guias novamente
+        guias_data = await self.consultar_guias(inscricao_imobiliaria, exercicio)
+        tipo_guia = "ORDINÁRIA"
+        if guias_data and guias_data.guias:
+            for guia in guias_data.guias:
+                if guia.numero_guia == numero_guia:
+                    tipo_guia = guia.tipo
+                    break
 
-        if tipo_cobranca == "cota_unica":
-            # Para cota única, usa "00" conforme implementação original
-            cotas_str = "00"
+        # Cria objeto de dados das cotas
+        dados_cotas = DadosCotas(
+            inscricao_imobiliaria=inscricao_clean,
+            exercicio=str(exercicio),
+            numero_guia=numero_guia,
+            tipo_guia=tipo_guia,
+            cotas=cotas,
+            total_cotas=len(cotas),
+            cotas_pagas=cotas_pagas,
+            cotas_em_aberto=cotas_em_aberto,
+            cotas_vencidas=cotas_vencidas,
+            valor_total=valor_total,
+        )
 
-            darm_response = await self._make_api_request(
-                endpoint="ConsultarDARM",
-                params={
-                    "inscricao": inscricao_clean,
-                    "exercicio": str(exercicio),
-                    "guia": numero_guia,
-                    "cotas": cotas_str,
-                },
-            )
+        logger.info(f"Cotas data retrieved for guia {numero_guia} with {len(cotas)} cotas")
+        return dados_cotas
 
-            if darm_response:
-                # Valida se cota única ainda está válida (não vencida)
-                data_vencimento_str = darm_response.get("DataVencimento", "")
-                if data_vencimento_str:
-                    try:
-                        data_vencimento = datetime.strptime(
-                            data_vencimento_str, "%d/%m/%Y"
-                        ).date()
-                        if data_vencimento < datetime.now().date():
-                            logger.warning(f"Cota única expired: {data_vencimento_str}")
-                            # Ainda retorna a guia mas pode adicionar flag
-                    except ValueError:
-                        logger.warning(f"Invalid date format: {data_vencimento_str}")
-
-                guia = self._criar_guia_from_darm(darm_response, formato_pagamento)
-                if guia:
-                    guias_result.append(guia)
-
-        else:
-            # Parcelamento - determina quais cotas gerar
-            if not cotas_escolhidas or "Todas as cotas" in cotas_escolhidas:
-                # Gera DARM para todas as cotas disponíveis
-                cotas_para_gerar = cotas_disponiveis
-            else:
-                # Filtra apenas cotas escolhidas
-                cotas_nums_escolhidas = []
-                for cota_str in cotas_escolhidas:
-                    # Extrai número da cota (ex: "1ª Cota" -> "01")
-                    if "ª Cota" in cota_str:
-                        num = cota_str.split("ª")[0]
-                        cotas_nums_escolhidas.append(f"{int(num):02d}")
-
-                # Filtra cotas disponíveis
-                cotas_para_gerar = [
-                    c for c in cotas_disponiveis if c["NCota"] in cotas_nums_escolhidas
-                ]
-
-            # Gera DARM para cotas selecionadas (agrupado)
-            if len(cotas_para_gerar) > 0:
-                cotas_nums = [c["NCota"] for c in cotas_para_gerar]
-                cotas_str = ",".join(cotas_nums)
-
-                darm_response = await self._make_api_request(
-                    endpoint="ConsultarDARM",
-                    params={
-                        "inscricao": inscricao_clean,
-                        "exercicio": str(exercicio),
-                        "guia": numero_guia,
-                        "cotas": cotas_str,
-                    },
-                )
-
-                if darm_response:
-                    guia = self._criar_guia_from_darm(darm_response, formato_pagamento)
-                    if guia:
-                        guias_result.append(guia)
-
-        return guias_result
-
-    def _criar_guia_from_darm(
-        self, darm_data: Dict[str, Any], formato: str
-    ) -> Optional[GuiaIPTU]:
+    async def consultar_darm(
+        self,
+        inscricao_imobiliaria: str,
+        exercicio: int,
+        numero_guia: str,
+        cotas_selecionadas: List[str],
+    ) -> Optional[DadosDarm]:
         """
-        Cria uma GuiaIPTU a partir da resposta do ConsultarDARM.
+        Consulta DARM para cotas específicas de uma guia.
 
         Args:
-            darm_data: Dados retornados pela API ConsultarDARM
-            formato: "darf" ou "codigo_barras"
+            inscricao_imobiliaria: Inscrição imobiliária
+            exercicio: Ano do exercício
+            numero_guia: Número da guia
+            cotas_selecionadas: Lista das cotas selecionadas (ex: ["01", "02"])
 
         Returns:
-            GuiaIPTU ou None se dados inválidos
+            DadosDarm com dados do DARM ou None se não encontrar
         """
+        # Limpa inscrição removendo caracteres não numéricos
+        inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
+        
+        # Converte lista de cotas para string separada por vírgula
+        cotas_str = ",".join(cotas_selecionadas)
+        
+        # Faz requisição para ConsultarDARM
+        darm_response = await self._make_api_request(
+            endpoint="ConsultarDARM",
+            params={
+                "inscricao": inscricao_clean,
+                "exercicio": str(exercicio),
+                "guia": numero_guia,
+                "cotas": cotas_str,
+            },
+        )
+        
+        if not darm_response:
+            logger.warning(f"No DARM found for guia {numero_guia} cotas {cotas_str}")
+            return None
+        
         try:
-            valor = self._parse_brazilian_currency(darm_data.get("ValorAPagar", "0,00"))
-            vencimento = darm_data.get("DataVencimento", "")
-            numero_guia = darm_data.get("NGuia", "00")
-
-            guia = GuiaIPTU(numero_guia=numero_guia, valor=valor, vencimento=vencimento)
-
-            if formato == "codigo_barras":
-                # API retorna SequenciaNumerica que é a linha digitável
-                sequencia = darm_data.get("SequenciaNumerica", "")
-                if sequencia:
-                    guia.linha_digitavel = sequencia
-                    # Código de barras seria uma conversão da linha digitável
-                    # Por enquanto usa a mesma sequência
-                    guia.codigo_barras = sequencia.replace(".", "").replace(" ", "")
-            else:
-                # Formato DARF
-                guia.darf_data = {
-                    "codigo_receita": darm_data.get("CodReceita", ""),
-                    "descricao_receita": darm_data.get("DesReceita", ""),
-                    "competencia": f"{darm_data.get('Exercicio', '')}/{darm_data.get('NGuia', '')}",
-                    "vencimento": vencimento,
-                    "valor": valor,
-                    "descricao": darm_data.get("DescricaoDARM", ""),
-                    "inscricao": darm_data.get("Inscricao", ""),
-                    "tipo": darm_data.get("Tipo", ""),
-                    "cotas": darm_data.get("Cotas", []),
-                }
-
-            return guia
-
+            # Cria objeto Darm usando Pydantic
+            darm = Darm(**darm_response)
+            
+            # Processa valores numéricos
+            darm.valor_numerico = self._parse_brazilian_currency(darm.valor_a_pagar)
+            
+            # Gera código de barras a partir da sequencia_numerica (linha digitável)
+            if darm.sequencia_numerica:
+                # Remove pontos e espaços para criar código de barras
+                darm.codigo_barras = darm.sequencia_numerica.replace(".", "").replace(" ", "")
+            
+            # Cria DadosDarm
+            dados_darm = DadosDarm(
+                inscricao_imobiliaria=inscricao_clean,
+                exercicio=str(exercicio),
+                numero_guia=numero_guia,
+                cotas_selecionadas=cotas_selecionadas,
+                darm=darm,
+            )
+            
+            logger.info(f"DARM data retrieved for guia {numero_guia} cotas {cotas_str}")
+            return dados_darm
+            
         except Exception as e:
-            logger.error(f"Error creating guia from DARM data: {str(e)}")
+            logger.error(f"Error processing DARM data: {str(e)} - Data: {darm_response}")
             return None
 
     async def download_pdf_darm(
-        self, inscricao: str, exercicio: int, guia: str, cotas: str
+        self, 
+        inscricao_imobiliaria: str, 
+        exercicio: int, 
+        numero_guia: str, 
+        cotas_selecionadas: List[str]
     ) -> Optional[str]:
         """
         Faz download do PDF da DARM em formato base64.
 
         Args:
-            inscricao: Inscrição imobiliária
+            inscricao_imobiliaria: Inscrição imobiliária
             exercicio: Ano do exercício
-            guia: Número da guia
-            cotas: Cotas separadas por vírgula (ex: "01,02")
+            numero_guia: Número da guia
+            cotas_selecionadas: Lista das cotas selecionadas (ex: ["01", "02"])
 
         Returns:
             String base64 do PDF ou None se falhar
         """
-        # Valida e limpa inscrição
-        inscricao_clean = self._validar_inscricao(inscricao)
-        if not inscricao_clean:
-            logger.warning(f"Invalid inscricao format: {inscricao}")
-            return None
+        # Limpa inscrição removendo caracteres não numéricos
+        inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
+        
+        # Converte lista de cotas para string separada por vírgula
+        cotas_str = ",".join(cotas_selecionadas)
 
         # Faz requisição esperando resposta de texto (base64)
         pdf_base64 = await self._make_api_request(
@@ -468,8 +388,8 @@ class IPTUAPIService:
             params={
                 "inscricao": inscricao_clean,
                 "exercicio": str(exercicio),
-                "guia": guia,
-                "cotas": cotas,
+                "guia": numero_guia,
+                "cotas": cotas_str,
             },
             expect_json=False,  # Espera texto/base64, não JSON
         )

@@ -58,7 +58,13 @@ class BaseWorkflow(ABC):
         if isinstance(final_state_result, ServiceState):
             final_state = final_state_result
         else:
-            # Se retornar dict, convertemos de volta para ServiceState
+            # Se retornar dict, convertemos de volta para ServiceState preservando campos obrigatórios
+            # Garantir que campos obrigatórios estão presentes
+            if 'user_id' not in final_state_result:
+                final_state_result['user_id'] = state.user_id
+            if 'service_name' not in final_state_result:
+                final_state_result['service_name'] = state.service_name
+            
             final_state = ServiceState(**final_state_result)
 
         # Se o grafo terminou sem uma resposta explícita, significa que o serviço foi concluído.

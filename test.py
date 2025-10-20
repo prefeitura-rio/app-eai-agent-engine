@@ -28,6 +28,9 @@ def main():
         {
             "inscricao_imobiliaria": "00000018",  # "18" padded to 14 digits
         },
+        {
+            "ano_exercicio": 2025,
+        },
         # # Step 2: Choose which guia to pay (IPTU or Taxa de Lixo)
         # {
         #     "guia_escolhida": "IPTU",

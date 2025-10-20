@@ -52,18 +52,18 @@ def test_api_service_placeholder():
         
         # Teste com inscrição válida
         inscricao_valida = "01234567890123"
-        dados = api_service.consultar_iptu(inscricao_valida)
+        dados = api_service.consultar_guias(inscricao_valida)
         
         assert dados is not None, "Consulta deveria retornar dados para inscrição válida"
-        assert dados.dados_iptu.inscricao_imobiliaria == inscricao_valida
-        assert dados.dados_iptu.valor_iptu > 0
-        assert dados.dados_iptu.ano_vigente == 2024
+        assert dados.inscricao_imobiliaria == inscricao_valida
+        assert dados.valor_iptu > 0
+        assert dados.ano_vigente == 2024
         
         print("✅ API Service - consulta válida funcionando")
         
         # Teste com inscrição inválida
         inscricao_invalida = "99999999999999"
-        dados_invalidos = api_service.consultar_iptu(inscricao_invalida)
+        dados_invalidos = api_service.consultar_guias(inscricao_invalida)
         
         assert dados_invalidos is None, "Consulta deveria retornar None para inscrição inválida"
         
@@ -98,7 +98,7 @@ def test_pydantic_models():
             InscricaoImobiliariaPayload,
             EscolhaCobrancaPayload,
             EscolhaFormatoPagamentoPayload,
-            DadosIPTU,
+            DadosGuias,
             GuiaIPTU
         )
         
@@ -116,8 +116,8 @@ def test_pydantic_models():
         formato = EscolhaFormatoPagamentoPayload(formato_pagamento="codigo_barras")
         assert formato.formato_pagamento == "codigo_barras"
         
-        # Teste dados IPTU
-        dados = DadosIPTU(
+        # Teste dados Guias
+        dados = DadosGuias(
             inscricao_imobiliaria="01234567890123",
             endereco="Rua Teste, 123",
             proprietario="João Silva",
@@ -182,7 +182,7 @@ def test_workflow_inscricao_valida():
                 "valor iptu" in description.lower()), f"Descrição inesperada: {description}"
         assert "data" in result
         assert "inscricao_imobiliaria" in result["data"]
-        assert "dados_iptu" in result["data"]
+        assert "dados_guias" in result["data"]
         
         print("✅ Consulta com inscrição válida funcionando")
         
