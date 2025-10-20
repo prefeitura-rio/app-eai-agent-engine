@@ -547,21 +547,21 @@ Por favor, selecione outra guia para pagamento."""
             return state
 
         # Se já foi respondido, pula
-        if "pagar_darf_separado" in state.internal:
+        if "pagar_darm_separado" in state.internal:
             return state
 
         # Processa payload se presente
-        if "pagar_darf_separado" in state.payload:
-            state.internal["pagar_darf_separado"] = bool(
-                state.payload["pagar_darf_separado"]
+        if "pagar_darm_separado" in state.payload:
+            state.internal["pagar_darm_separado"] = bool(
+                state.payload["pagar_darm_separado"]
             )
             state.agent_response = None
             return state
 
-        # Pergunta sobre DARF separado (apenas SIM/NÃO - informação interna)
-        description = """📋 **Deseja pagar as cotas em DARF separado?**
+        # Pergunta sobre DARM separado (apenas SIM/NÃO - informação interna)
+        description = """📋 **Deseja pagar as cotas em DARM separado?**
 
-• **SIM** - Cada cota será gerada em um DARF separado
+• **SIM** - Cada cota será gerada em um DARM separado
 • **NÃO** - Guias serão geradas em código de barras
 
 **Qual sua preferência?**"""
@@ -570,12 +570,12 @@ Por favor, selecione outra guia para pagamento."""
         schema = {
             "type": "object",
             "properties": {
-                "pagar_darf_separado": {
+                "pagar_darm_separado": {
                     "type": "boolean",
-                    "description": "Se deseja pagar as cotas em DARF separado",
+                    "description": "Se deseja pagar as cotas em DARM separado",
                 }
             },
-            "required": ["pagar_darf_separado"],
+            "required": ["pagar_darm_separado"],
         }
 
         state.agent_response = AgentResponse(
@@ -614,11 +614,11 @@ Por favor, selecione outra guia para pagamento."""
         # Para parcelado, mostra informação sobre DARF separado se foi respondido
         if (
             not fluxo_cota_unica
-            and "pagar_darf_separado" in state.internal
+            and "pagar_darm_separado" in state.internal
         ):
             formato_texto = (
-                "DARF separado"
-                if state.internal["pagar_darf_separado"]
+                "DARM separado"
+                if state.internal["pagar_darm_separado"]
                 else "Código de barras"
             )
             resumo_texto += f"\n**Formato:** {formato_texto}"
@@ -656,7 +656,7 @@ Por favor, selecione outra guia para pagamento."""
 
     @handle_errors
     def _gerar_darm(self, state: ServiceState) -> ServiceState:
-        """Gera DARM ou código de barras após confirmação dos dados."""
+        """Gera DARM após confirmação dos dados."""
         # Se já foi gerado, retorna
         if "guias_geradas" in state.data:
             return state
@@ -666,22 +666,27 @@ Por favor, selecione outra guia para pagamento."""
         guia_escolhida = state.data.get("guia_escolhida", "IPTU")
         cotas_escolhidas = state.data.get("cotas_escolhidas", [])
         exercicio = state.data.get("ano_exercicio", 2024)
-        fluxo_cota_unica = state.internal.get("fluxo_cota_unica", False)
 
-        # Para parcelado, verifica se foi escolhido DARF separado
-        pagar_darf_separado = state.internal.get("pagar_darf_separado", False)
-
-        # Usar API real para gerar DARM/Guias baseado no formato escolhido
-
+        # Usar API real para gerar DARM sempre
         api_service = IPTUAPIService()
 
         try:
-            # Para parcelado, usa a informação se deve gerar DARF separado
-            # Para cota única, sempre gera código de barras
-            if not fluxo_cota_unica and pagar_darf_separado:
-                # Gera DARM via API
-                dados_darm = asyncio.run(
-                    api_service.consultar_darm(
+            # Sempre gera DARM via API - independente das variáveis de fluxo
+            dados_darm = asyncio.run(
+                api_service.consultar_darm(
+                    inscricao_imobiliaria=inscricao,
+                    exercicio=exercicio,
+                    numero_guia=guia_escolhida,
+                    cotas_selecionadas=(
+                        cotas_escolhidas if cotas_escolhidas else ["00"]
+                    ),
+                )
+            )
+
+            if dados_darm and dados_darm.darm:
+                # Tenta fazer download do PDF
+                pdf_base64 = asyncio.run(
+                    api_service.download_pdf_darm(
                         inscricao_imobiliaria=inscricao,
                         exercicio=exercicio,
                         numero_guia=guia_escolhida,
@@ -691,33 +696,21 @@ Por favor, selecione outra guia para pagamento."""
                     )
                 )
 
-                if dados_darm and dados_darm.darm:
-                    # Tenta fazer download do PDF
-                    pdf_base64 = asyncio.run(
-                        api_service.download_pdf_darm(
-                            inscricao_imobiliaria=inscricao,
-                            exercicio=exercicio,
-                            numero_guia=guia_escolhida,
-                            cotas_selecionadas=(
-                                cotas_escolhidas if cotas_escolhidas else ["00"]
-                            ),
-                        )
-                    )
+                # Salva dados do DARM gerado (converte para dict para serialização JSON)
+                state.data["dados_darm"] = dados_darm.model_dump() if dados_darm else None
+                state.data["guias_geradas"] = [
+                    {
+                        "tipo": "darm",
+                        "numero_guia": guia_escolhida,
+                        "valor": dados_darm.darm.valor_numerico,
+                        "vencimento": dados_darm.darm.data_vencimento,
+                        "codigo_barras": dados_darm.darm.codigo_barras,
+                        "linha_digitavel": dados_darm.darm.sequencia_numerica,
+                        "pdf_base64": pdf_base64,
+                    }
+                ]
 
-                    # Salva dados do DARM gerado
-                    state.data["guias_geradas"] = [
-                        {
-                            "tipo": "darm",
-                            "numero_guia": guia_escolhida,
-                            "valor": dados_darm.darm.valor_numerico,
-                            "vencimento": dados_darm.darm.data_vencimento,
-                            "codigo_barras": dados_darm.darm.codigo_barras,
-                            "linha_digitavel": dados_darm.darm.sequencia_numerica,
-                            "pdf_base64": pdf_base64,
-                        }
-                    ]
-
-                    response_text = f"""✅ **DARM Gerado com Sucesso!**
+                response_text = f"""✅ **DARM Gerado com Sucesso!**
 
 🆔 **Inscrição:** {inscricao}
 📋 **Guia:** {guia_escolhida}
@@ -728,49 +721,12 @@ Por favor, selecione outra guia para pagamento."""
 
 {"📄 **PDF baixado com sucesso!**" if pdf_base64 else "⚠️ PDF não disponível no momento"}"""
 
-                else:
-                    # Falha na geração do DARM
-                    response_text = """❌ **Erro na Geração do DARM**
+            else:
+                # Falha na geração do DARM
+                response_text = """❌ **Erro na Geração do DARM**
 
 Não foi possível gerar o DARM no momento. 
-Por favor, tente novamente ou escolha o formato de código de barras."""
-
-            else:
-                # Formato código de barras - usa dados das cotas já carregadas
-                dados_cotas = state.data.get("dados_cotas", {})
-                cotas = dados_cotas.get("cotas", [])
-
-                guias_geradas = []
-                valor_total = 0.0
-
-                for cota in cotas:
-                    if (
-                        not cotas_escolhidas
-                        or cota.get("numero_cota") in cotas_escolhidas
-                    ):
-                        guias_geradas.append(
-                            {
-                                "tipo": "codigo_barras",
-                                "numero_cota": cota.get("numero_cota"),
-                                "valor": cota.get("valor_numerico", 0.0),
-                                "vencimento": cota.get("data_vencimento"),
-                                "codigo_barras": cota.get("codigo_barras", ""),
-                                "linha_digitavel": cota.get("linha_digitavel", ""),
-                            }
-                        )
-                        valor_total += cota.get("valor_numerico", 0.0)
-
-                state.data["guias_geradas"] = guias_geradas
-
-                response_text = f"""✅ **Guias de Código de Barras Geradas!**
-
-🆔 **Inscrição:** {inscricao}
-📋 **Guia:** {guia_escolhida}
-💳 **Cotas:** {', '.join(cotas_escolhidas) if cotas_escolhidas else 'Todas as cotas'}
-💰 **Valor Total:** R$ {valor_total:.2f}
-📋 **Total de Guias:** {len(guias_geradas)}
-
-As guias estão prontas para pagamento."""
+Por favor, tente novamente."""
 
         except Exception as e:
             # Em caso de erro na API, gera resposta de erro
@@ -789,8 +745,45 @@ Por favor, tente novamente."""
         if "quer_mesma_guia" in state.internal:
             return state
 
+        # Monta descrição com informações do DARM gerado
+        description_text = "✅ **DARM Gerado com Sucesso!**\n\n"
+        
+        # Verifica se há dados do DARM para mostrar
+        if "dados_darm" in state.data and state.data["dados_darm"]:
+            dados_darm = state.data["dados_darm"]
+            inscricao = dados_darm.get("inscricao_imobiliaria", "N/A")
+            numero_guia = dados_darm.get("numero_guia", "N/A")
+            cotas = dados_darm.get("cotas_selecionadas", [])
+            
+            # Informações do DARM se disponível
+            if "darm" in dados_darm and dados_darm["darm"]:
+                darm_info = dados_darm["darm"]
+                valor = darm_info.get("valor_numerico", 0)
+                vencimento = darm_info.get("data_vencimento", "N/A")
+                codigo_barras = darm_info.get("codigo_barras", "N/A")
+                
+                description_text += f"""🆔 **Inscrição:** {inscricao}
+📋 **Guia:** {numero_guia}
+💳 **Cotas:** {', '.join(cotas) if cotas else 'Cota única'}
+💰 **Valor:** R$ {valor:.2f}
+📅 **Vencimento:** {vencimento}
+📊 **Código de Barras:** {codigo_barras}
+
+"""
+        
+        # Verifica se há guias geradas para mostrar
+        if "guias_geradas" in state.data and state.data["guias_geradas"]:
+            guias = state.data["guias_geradas"]
+            if len(guias) > 0:
+                guia = guias[0]  # Primeira guia gerada
+                description_text += f"""📄 **PDF:** {'Disponível' if guia.get('pdf_base64') else 'Não disponível'}
+
+"""
+        
+        description_text += "🔄 **Deseja emitir mais guias para o mesmo imóvel?**"
+
         response = AgentResponse(
-            description="🔄 Deseja emitir mais guias para o mesmo imóvel?",
+            description=description_text,
             payload_schema=EscolhaGuiaMesmoImovelPayload.model_json_schema(),
         )
         state.agent_response = response

@@ -41,7 +41,7 @@ def main():
         },
         # # Step 5: Choose payment format (darf or codigo_barras)
         {
-            "pagar_darf_separado": False,
+            "pagar_darm_separado": False,
         },
         # # Step 6: Do you want to generate more guides for the same property?
         {
