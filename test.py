@@ -64,9 +64,12 @@ def main():
             "confirmacao": True,
         },
         # # Step 7: Do you want to generate guides for another property?
-        # {
-        #     "outro_imovel": False,
-        # },
+        {
+            "mais_cotas": False,
+        },
+        {
+            "outro_imovel": False,
+        },
     ]
 
     for i, payload in enumerate(steps, 1):

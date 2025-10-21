@@ -6,6 +6,7 @@ seguindo o fluxograma oficial da Prefeitura do Rio.
 """
 
 import asyncio
+from typing import Optional, Dict, List
 from langgraph.graph import StateGraph, END
 
 from src.services.core.base_workflow import BaseWorkflow, handle_errors
@@ -16,7 +17,8 @@ from src.services.workflows.iptu_pagamento.models import (
     EscolhaAnoPayload,
     EscolhaGuiasIPTUPayload,
     EscolhaCotasParceladasPayload,
-    EscolhaGuiaMesmoImovelPayload,
+    EscolhaMaisCotasPayload,
+    EscolhaOutrasGuiasPayload,
     EscolhaOutroImovelPayload,
     ConfirmacaoDadosPayload,
     DadosGuias,
@@ -51,25 +53,57 @@ class IPTUWorkflow(BaseWorkflow):
 
     # --- Métodos auxiliares ---
 
-    def _reset_completo(self, state: ServiceState, manter_inscricao: bool = False) -> None:
+    def _reset_completo(
+        self,
+        state: ServiceState,
+        manter_inscricao: bool = False,
+        fields: Optional[Dict[str, List[str]]] = None,
+    ) -> None:
         """
-        Faz reset completo dos dados e flags internas.
-        
+        Faz reset completo ou seletivo dos dados e flags internas.
+
         Args:
             state: Estado do serviço
             manter_inscricao: Se True, mantém a inscrição imobiliária atual
+            fields: Dict com 'data' e 'internal' contendo listas de campos para resetar.
+                   Se None, faz reset completo. Se especificado, reseta apenas os campos listados.
         """
-        inscricao_atual = state.data.get("inscricao_imobiliaria") if manter_inscricao else None
-        
-        # Reset completo do data
-        state.data.clear()
-        
-        # Reset completo do internal
-        state.internal.clear()
-        
-        # Restaura inscrição se necessário
-        if inscricao_atual:
-            state.data["inscricao_imobiliaria"] = inscricao_atual
+        if fields is None:
+            # Reset completo (comportamento original)
+            inscricao_atual = (
+                state.data.get("inscricao_imobiliaria") if manter_inscricao else None
+            )
+
+            # Reset completo do data
+            state.data.clear()
+
+            # Reset completo do internal
+            state.internal.clear()
+
+            # Restaura inscrição se necessário
+            if inscricao_atual:
+                state.data["inscricao_imobiliaria"] = inscricao_atual
+        else:
+            # Reset seletivo
+            inscricao_atual = (
+                state.data.get("inscricao_imobiliaria") if manter_inscricao else None
+            )
+
+            # Reset seletivo do data
+            if "data" in fields:
+                for field in fields["data"]:
+                    state.data.pop(field, None)
+
+            # Reset seletivo do internal
+            if "internal" in fields:
+                for field in fields["internal"]:
+                    state.internal.pop(field, None)
+
+            # Restaura inscrição se necessário e não foi removida no reset
+            if inscricao_atual and "inscricao_imobiliaria" not in fields.get(
+                "data", []
+            ):
+                state.data["inscricao_imobiliaria"] = inscricao_atual
 
     # --- Nós do Grafo ---
 
@@ -568,21 +602,109 @@ Informe o número da guia ("00", "01")"""
         # A resposta será definida no método _pergunta_mesma_guia
         return state
 
+    def _tem_mais_cotas_disponiveis(self, state: ServiceState) -> bool:
+        """Verifica se há mais cotas disponíveis da guia atual para pagar."""
+        dados_cotas_dict = state.data.get("dados_cotas")
+        cotas_escolhidas = state.data.get("cotas_escolhidas", [])
+
+        if not dados_cotas_dict or not cotas_escolhidas:
+            return False
+
+        cotas_disponiveis = dados_cotas_dict.get("cotas", [])
+        total_cotas = len(cotas_disponiveis)
+        cotas_selecionadas = len(cotas_escolhidas)
+
+        return cotas_selecionadas < total_cotas
+
+    def _tem_outras_guias_disponiveis(self, state: ServiceState) -> bool:
+        """Verifica se há outras guias disponíveis no imóvel."""
+        dados_guias_dict = state.data.get("dados_guias")
+        guia_atual = state.data.get("guia_escolhida")
+
+        if not dados_guias_dict:
+            return False
+
+        guias_disponiveis = dados_guias_dict.get("guias", [])
+        total_guias = len(guias_disponiveis)
+
+        # Se há mais de uma guia disponível, significa que há outras além da atual
+        return total_guias > 1
+
     @handle_errors
     def _pergunta_mesma_guia(self, state: ServiceState) -> ServiceState:
-        """Pergunta se quer gerar guia para o mesmo imóvel novamente."""
+        """
+        Roteador condicional inteligente pós-geração de boletos:
+        1. Se há mais cotas disponíveis da mesma guia → redireciona para pergunta_mais_cotas
+        2. Se há outras guias disponíveis no imóvel → redireciona para pergunta_outras_guias
+        3. Caso contrário → redireciona para pergunta_outro_imovel
+        """
+        # Analisa contexto para determinar próxima pergunta
+        tem_mais_cotas = self._tem_mais_cotas_disponiveis(state)
+        tem_outras_guias = self._tem_outras_guias_disponiveis(state)
+
+        # Define o tipo de pergunta baseado no contexto
+        if tem_mais_cotas:
+            state.internal["tipo_pergunta_seguinte"] = "mais_cotas"
+        elif tem_outras_guias:
+            state.internal["tipo_pergunta_seguinte"] = "outras_guias"
+        else:
+            state.internal["tipo_pergunta_seguinte"] = "outro_imovel"
+
+        # Não define agent_response, deixa o roteamento decidir o próximo nó
+        return state
+
+    @handle_errors
+    def _pergunta_mais_cotas(self, state: ServiceState) -> ServiceState:
+        """Pergunta se quer pagar mais cotas da mesma guia."""
         # Se já foi respondido, não pergunta novamente
-        if "quer_mesma_guia" in state.internal:
+        if "quer_mais_cotas" in state.internal:
             return state
 
         # Se tem payload com resposta, processa
-        if "mesma_guia" in state.payload:
-            validated_data = EscolhaGuiaMesmoImovelPayload.model_validate(state.payload)
-            state.internal["quer_mesma_guia"] = validated_data.mesma_guia
+        if "mais_cotas" in state.payload:
+            validated_data = EscolhaMaisCotasPayload.model_validate(state.payload)
+            state.internal["quer_mais_cotas"] = validated_data.mais_cotas
             state.agent_response = None
             return state
 
-        # Monta descrição com os boletos gerados
+        # Monta descrição com os boletos gerados + pergunta específica
+        description_text = self._gerar_descricao_boletos_gerados(state)
+        description_text += "\n🔄 **Deseja pagar mais cotas da mesma guia?**"
+
+        response = AgentResponse(
+            description=description_text,
+            payload_schema=EscolhaMaisCotasPayload.model_json_schema(),
+        )
+        state.agent_response = response
+        return state
+
+    @handle_errors
+    def _pergunta_outras_guias(self, state: ServiceState) -> ServiceState:
+        """Pergunta se quer pagar outras guias do mesmo imóvel."""
+        # Se já foi respondido, não pergunta novamente
+        if "quer_outras_guias" in state.internal:
+            return state
+
+        # Se tem payload com resposta, processa
+        if "outras_guias" in state.payload:
+            validated_data = EscolhaOutrasGuiasPayload.model_validate(state.payload)
+            state.internal["quer_outras_guias"] = validated_data.outras_guias
+            state.agent_response = None
+            return state
+
+        # Monta descrição com os boletos gerados + pergunta específica
+        description_text = self._gerar_descricao_boletos_gerados(state)
+        description_text += "\n🔄 **Deseja pagar outras guias do mesmo imóvel?**"
+
+        response = AgentResponse(
+            description=description_text,
+            payload_schema=EscolhaOutrasGuiasPayload.model_json_schema(),
+        )
+        state.agent_response = response
+        return state
+
+    def _gerar_descricao_boletos_gerados(self, state: ServiceState) -> str:
+        """Gera a descrição padrão dos boletos gerados."""
         description_text = "✅ **Boletos Gerados com Sucesso!**\n\n"
         guias_geradas = state.data.get("guias_geradas", [])
         inscricao = state.data.get("inscricao_imobiliaria", "N/A")
@@ -590,8 +712,8 @@ Informe o número da guia ("00", "01")"""
         if not guias_geradas:
             description_text = "Nenhum boleto foi gerado."
         else:
-            for i, guia in enumerate(guias_geradas, 1):
-                description_text += f"**Boleto {i}:**\n"
+            for boleto_num, guia in enumerate(guias_geradas, 1):
+                description_text += f"**Boleto {boleto_num}:**\n"
                 description_text += f"**Inscrição:** {inscricao}\n"
                 description_text += f"**Guia:** {guia['numero_guia']}\n"
                 description_text += f"**Cotas:** {guia['cotas']}\n"
@@ -601,15 +723,7 @@ Informe o número da guia ("00", "01")"""
                 description_text += f"**Linha Digitável:** {guia['linha_digitavel']}\n"
                 description_text += f"**PDF:** {'Disponível' if guia.get('pdf_base64') else 'Não disponível'}\n\n"
 
-        description_text += "🔄 **Deseja emitir mais guias para o mesmo imóvel?**"
-
-        response = AgentResponse(
-            description=description_text,
-            payload_schema=EscolhaGuiaMesmoImovelPayload.model_json_schema(),
-        )
-        state.agent_response = response
-
-        return state
+        return description_text
 
     @handle_errors
     def _pergunta_outro_imovel(self, state: ServiceState) -> ServiceState:
@@ -634,14 +748,44 @@ Informe o número da guia ("00", "01")"""
         return state
 
     @handle_errors
+    def _reset_para_mais_cotas(self, state: ServiceState) -> ServiceState:
+        """Reset seletivo para pagar mais cotas da mesma guia."""
+        # Reset apenas dos campos relacionados à seleção de cotas e posteriores
+        fields_to_reset = {
+            "data": ["cotas_escolhidas", "dados_darm", "guias_geradas"],
+            "internal": ["quer_mais_cotas", "quer_outras_guias", "quer_outro_imovel"],
+        }
+
+        self._reset_completo(state, manter_inscricao=True, fields=fields_to_reset)
+        return state
+
+    @handle_errors
+    def _reset_para_outras_guias(self, state: ServiceState) -> ServiceState:
+        """Reset seletivo para pagar outras guias do mesmo imóvel."""
+        # Reset dos campos relacionados à seleção de guia e posteriores
+        fields_to_reset = {
+            "data": [
+                "guia_escolhida",
+                "dados_cotas",
+                "cotas_escolhidas",
+                "dados_darm",
+                "guias_geradas",
+            ],
+            "internal": ["quer_mais_cotas", "quer_outras_guias", "quer_outro_imovel"],
+        }
+
+        self._reset_completo(state, manter_inscricao=True, fields=fields_to_reset)
+        return state
+
+    @handle_errors
     def _reset_para_mesma_guia(self, state: ServiceState) -> ServiceState:
         """Reset dados para gerar nova guia do mesmo imóvel."""
         # Reset completo mantendo inscrição e dados das guias consultadas
         inscricao = state.data.get("inscricao_imobiliaria")
         dados_guias = state.data.get("dados_guias")
-        
+
         self._reset_completo(state)
-        
+
         # Restaura apenas inscrição e dados das guias
         if inscricao:
             state.data["inscricao_imobiliaria"] = inscricao
@@ -698,14 +842,19 @@ Informe o número da guia ("00", "01")"""
         return "usuario_escolhe_guias"
 
     def _route_after_mesma_guia(self, state: ServiceState) -> str:
-        """Roteamento após pergunta sobre mesma guia."""
-        # Se ainda não respondeu, fica no nó atual para aguardar resposta
-        if "quer_mesma_guia" not in state.internal:
-            return END
+        """Roteamento após pergunta sobre mesma guia - agora é um roteador condicional."""
+        # Se já determinou o tipo de pergunta, roteia adequadamente
+        tipo_pergunta = state.internal.get("tipo_pergunta_seguinte")
 
-        if state.internal.get("quer_mesma_guia", False):
-            return "reset_mesma_guia"
-        return "pergunta_outro_imovel"
+        if tipo_pergunta == "mais_cotas":
+            return "pergunta_mais_cotas"
+        elif tipo_pergunta == "outras_guias":
+            return "pergunta_outras_guias"
+        elif tipo_pergunta == "outro_imovel":
+            return "pergunta_outro_imovel"
+
+        # Se não determinou ainda, fica no END (não deveria acontecer)
+        return END
 
     def _route_after_outro_imovel(self, state: ServiceState) -> str:
         """Roteamento após pergunta sobre outro imóvel."""
@@ -716,6 +865,34 @@ Informe o número da guia ("00", "01")"""
         if state.internal.get("quer_outro_imovel", False):
             return "reset_outro_imovel"
         return "finalizar_interacao"  # Finaliza com reset automático
+
+    def _route_after_mais_cotas(self, state: ServiceState) -> str:
+        """Roteamento após pergunta sobre mais cotas."""
+        # Se ainda não respondeu, fica no nó atual para aguardar resposta
+        if "quer_mais_cotas" not in state.internal:
+            return END
+
+        if state.internal.get("quer_mais_cotas", False):
+            return "reset_mais_cotas"
+
+        # Se não quer mais cotas, verifica se tem outras guias
+        if self._tem_outras_guias_disponiveis(state):
+            return "pergunta_outras_guias"
+
+        # Se não tem outras guias, vai direto para pergunta sobre outro imóvel
+        return "pergunta_outro_imovel"
+
+    def _route_after_outras_guias(self, state: ServiceState) -> str:
+        """Roteamento após pergunta sobre outras guias."""
+        # Se ainda não respondeu, fica no nó atual para aguardar resposta
+        if "quer_outras_guias" not in state.internal:
+            return END
+
+        if state.internal.get("quer_outras_guias", False):
+            return "reset_outras_guias"
+
+        # Se não quer outras guias, vai para pergunta sobre outro imóvel
+        return "pergunta_outro_imovel"
 
     # --- Construção do Grafo ---
 
@@ -734,8 +911,12 @@ Informe o número da guia ("00", "01")"""
         graph.add_node("confirmacao_dados", self._confirmacao_dados_pagamento)
         graph.add_node("gerar_darm", self._gerar_darm)
         graph.add_node("pergunta_mesma_guia", self._pergunta_mesma_guia)
+        graph.add_node("pergunta_mais_cotas", self._pergunta_mais_cotas)
+        graph.add_node("pergunta_outras_guias", self._pergunta_outras_guias)
         graph.add_node("pergunta_outro_imovel", self._pergunta_outro_imovel)
         graph.add_node("reset_mesma_guia", self._reset_para_mesma_guia)
+        graph.add_node("reset_mais_cotas", self._reset_para_mais_cotas)
+        graph.add_node("reset_outras_guias", self._reset_para_outras_guias)
         graph.add_node("reset_outro_imovel", self._reset_para_outro_imovel)
         graph.add_node("finalizar_interacao", self._finalizar_interacao)
 
@@ -789,12 +970,35 @@ Informe o número da guia ("00", "01")"""
             "pergunta_mesma_guia",
             self._route_after_mesma_guia,
             {
-                "reset_mesma_guia": "reset_mesma_guia",
+                "pergunta_mais_cotas": "pergunta_mais_cotas",
+                "pergunta_outras_guias": "pergunta_outras_guias",
                 "pergunta_outro_imovel": "pergunta_outro_imovel",
                 END: END,
             },
         )
-        graph.add_edge("reset_mesma_guia", "usuario_escolhe_guias")
+
+        graph.add_conditional_edges(
+            "pergunta_mais_cotas",
+            self._route_after_mais_cotas,
+            {
+                "reset_mais_cotas": "reset_mais_cotas",
+                "pergunta_outras_guias": "pergunta_outras_guias",
+                "pergunta_outro_imovel": "pergunta_outro_imovel",
+                END: END,
+            },
+        )
+        graph.add_edge("reset_mais_cotas", "usuario_escolhe_cotas")
+
+        graph.add_conditional_edges(
+            "pergunta_outras_guias",
+            self._route_after_outras_guias,
+            {
+                "reset_outras_guias": "reset_outras_guias",
+                "pergunta_outro_imovel": "pergunta_outro_imovel",
+                END: END,
+            },
+        )
+        graph.add_edge("reset_outras_guias", "usuario_escolhe_guias")
 
         graph.add_conditional_edges(
             "pergunta_outro_imovel",
