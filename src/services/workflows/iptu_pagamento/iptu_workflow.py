@@ -11,7 +11,7 @@ from langgraph.graph import StateGraph, END
 from src.services.core.base_workflow import BaseWorkflow, handle_errors
 from src.services.core.models import ServiceState, AgentResponse
 
-from src.services.workflows.iptu_ano_vigente.models import (
+from src.services.workflows.iptu_pagamento.models import (
     InscricaoImobiliariaPayload,
     EscolhaAnoPayload,
     EscolhaGuiasIPTUPayload,
@@ -20,11 +20,12 @@ from src.services.workflows.iptu_ano_vigente.models import (
     EscolhaOutroImovelPayload,
     ConfirmacaoDadosPayload,
     DadosGuias,
+    DadosCotas,
 )
-from src.services.workflows.iptu_ano_vigente.api_service import IPTUAPIService
+from src.services.workflows.iptu_pagamento.api_service import IPTUAPIService
 
 
-class IPTUAnoVigenteWorkflow(BaseWorkflow):
+class IPTUWorkflow(BaseWorkflow):
     """
     Workflow para consulta de IPTU da Prefeitura do Rio.
 
@@ -41,7 +42,7 @@ class IPTUAnoVigenteWorkflow(BaseWorkflow):
     10. Deseja emitir guias para outro imóvel?
     """
 
-    service_name = "iptu_ano_vigente"
+    service_name = "iptu_pagamento"
     description = "Consulta e emissão de guias de IPTU - Prefeitura do Rio de Janeiro"
 
     def __init__(self):
@@ -330,19 +331,13 @@ Informe o número da guia ({exemplos_reais})"""
 Informe o número da guia ("00", "01")"""
 
     @handle_errors
-    def _escolher_cotas_pagar(self, state: ServiceState) -> ServiceState:
-        """Consulta e permite ao usuário escolher as cotas a pagar."""
-        if "cotas_escolhidas" in state.data:
+    def _consultar_cotas(self, state: ServiceState) -> ServiceState:
+        """Consulta as cotas disponíveis para a guia selecionada via API."""
+        # Se já temos dados de cotas, pula a consulta
+        if "dados_cotas" in state.data:
             return state
 
-        # Processa payload se presente
-        if "cotas_escolhidas" in state.payload:
-            validated_data = EscolhaCotasParceladasPayload.model_validate(state.payload)
-            state.data["cotas_escolhidas"] = validated_data.cotas_escolhidas
-            state.agent_response = None
-            return state
-
-        # --- Lógica de consulta de cotas ---
+        # Valida dados necessários para consulta
         inscricao = state.data.get("inscricao_imobiliaria")
         exercicio = state.data.get("ano_exercicio")
         guia_escolhida = state.data.get("guia_escolhida")
@@ -354,9 +349,10 @@ Informe o número da guia ("00", "01")"""
             )
             return state
 
+        # Faz consulta via API
         dados_cotas = asyncio.run(
             self.api_service.obter_cotas(
-                str(inscricao), int(exercicio), str(guia_escolhida)
+                str(inscricao), int(exercicio or 2025), str(guia_escolhida)
             )
         )
 
@@ -368,6 +364,7 @@ Informe o número da guia ("00", "01")"""
             state.data.pop("guia_escolhida", None)
             return state
 
+        # Salva dados das cotas
         state.data["dados_cotas"] = dados_cotas.model_dump()
         cotas_em_aberto = [c for c in dados_cotas.cotas if not c.esta_paga]
 
@@ -379,13 +376,45 @@ Informe o número da guia ("00", "01")"""
             state.data.pop("guia_escolhida", None)
             return state
 
+        # Se há apenas uma cota, seleciona automaticamente
         if len(cotas_em_aberto) == 1:
             state.data["cotas_escolhidas"] = [cotas_em_aberto[0].numero_cota]
             state.internal["fluxo_cota_unica"] = True
             state.agent_response = None
             return state
 
-        # --- Apresentação das cotas para escolha ---
+        # Consulta realizada com sucesso, próximo nó irá apresentar escolhas
+        state.agent_response = None
+        return state
+
+    @handle_errors
+    def _usuario_escolhe_cotas_iptu(self, state: ServiceState) -> ServiceState:
+        """Permite ao usuário escolher as cotas a pagar."""
+        # Se já temos cotas escolhidas, não precisa escolher novamente
+        if "cotas_escolhidas" in state.data:
+            return state
+
+        # Processa payload se presente
+        if "cotas_escolhidas" in state.payload:
+            validated_data = EscolhaCotasParceladasPayload.model_validate(state.payload)
+            state.data["cotas_escolhidas"] = validated_data.cotas_escolhidas
+            state.agent_response = None
+            return state
+
+        # Carrega dados das cotas do state
+        dados_cotas_dict = state.data.get("dados_cotas")
+        if not dados_cotas_dict:
+            state.agent_response = AgentResponse(
+                description="❌ Erro interno: dados de cotas não encontrados.",
+                error_message="Dados de cotas não carregados.",
+            )
+            return state
+
+        # Reconstrói objeto DadosCotas
+        dados_cotas = DadosCotas(**dados_cotas_dict)
+        cotas_em_aberto = [c for c in dados_cotas.cotas if not c.esta_paga]
+
+        # Apresenta opções de cotas para escolha
         cotas_texto = "📋 **Selecione as cotas que deseja pagar:**\n\n"
         valor_total = 0.0
         for cota in cotas_em_aberto:
@@ -548,26 +577,25 @@ Informe o número da guia ("00", "01")"""
 
         state.data["guias_geradas"] = guias_geradas
 
-        if not guias_geradas:
-            response_text = "❌ Não foi possível gerar os boletos. Tente novamente."
-        else:
-            response_text = "✅ **Boletos Gerados com Sucesso!**\n\n"
-            for guia in guias_geradas:
-                response_text += f"**Cotas:** {guia['cotas']}\n"
-                response_text += f"**Valor:** R$ {guia['valor']:.2f}\n"
-                response_text += f"**Vencimento:** {guia['vencimento']}\n"
-                response_text += f"**Código de Barras:** {guia['codigo_barras']}\n"
-                response_text += f"**PDF:** {'Disponível' if guia.get('pdf_base64') else 'Não disponível'}\n\n"
-
-        state.agent_response = AgentResponse(description=response_text)
+        # Não define agent_response aqui, pois o workflow deve continuar para pergunta_mesma_guia
+        # A resposta será definida no método _pergunta_mesma_guia
         return state
 
     @handle_errors
     def _pergunta_mesma_guia(self, state: ServiceState) -> ServiceState:
         """Pergunta se quer gerar guia para o mesmo imóvel novamente."""
+        # Se já foi respondido, não pergunta novamente
         if "quer_mesma_guia" in state.internal:
             return state
 
+        # Se tem payload com resposta, processa
+        if "mesma_guia" in state.payload:
+            validated_data = EscolhaGuiaMesmoImovelPayload.model_validate(state.payload)
+            state.internal["quer_mesma_guia"] = validated_data.mesma_guia
+            state.agent_response = None
+            return state
+
+        # Monta descrição com os boletos gerados
         description_text = "✅ **Boletos Gerados com Sucesso!**\n\n"
         guias_geradas = state.data.get("guias_geradas", [])
         inscricao = state.data.get("inscricao_imobiliaria", "N/A")
@@ -594,11 +622,6 @@ Informe o número da guia ("00", "01")"""
         )
         state.agent_response = response
 
-        if "mesma_guia" in state.payload:
-            validated_data = EscolhaGuiaMesmoImovelPayload.model_validate(state.payload)
-            state.internal["quer_mesma_guia"] = validated_data.mesma_guia
-            state.agent_response = None
-
         return state
 
     @handle_errors
@@ -608,16 +631,18 @@ Informe o número da guia ("00", "01")"""
         if "quer_outro_imovel" in state.internal:
             return state
 
+        # Se tem payload com resposta, processa
+        if "outro_imovel" in state.payload:
+            validated_data = EscolhaOutroImovelPayload.model_validate(state.payload)
+            state.internal["quer_outro_imovel"] = validated_data.outro_imovel
+            state.agent_response = None
+            return state
+
         response = AgentResponse(
             description="🏠 Deseja emitir guia para outro imóvel?",
             payload_schema=EscolhaOutroImovelPayload.model_json_schema(),
         )
         state.agent_response = response
-
-        if "outro_imovel" in state.payload:
-            validated_data = EscolhaOutroImovelPayload.model_validate(state.payload)
-            state.internal["quer_outro_imovel"] = validated_data.outro_imovel
-            state.agent_response = None
 
         return state
 
@@ -753,12 +778,20 @@ Informe o número da guia ("00", "01")"""
 
     def _route_after_mesma_guia(self, state: ServiceState) -> str:
         """Roteamento após pergunta sobre mesma guia."""
+        # Se ainda não respondeu, fica no nó atual para aguardar resposta
+        if "quer_mesma_guia" not in state.internal:
+            return END
+
         if state.internal.get("quer_mesma_guia", False):
             return "reset_mesma_guia"
         return "pergunta_outro_imovel"
 
     def _route_after_outro_imovel(self, state: ServiceState) -> str:
         """Roteamento após pergunta sobre outro imóvel."""
+        # Se ainda não respondeu, fica no nó atual para aguardar resposta
+        if "quer_outro_imovel" not in state.internal:
+            return END
+
         if state.internal.get("quer_outro_imovel", False):
             return "reset_outro_imovel"
         return "finalizar_interacao"  # Finaliza com reset automático
@@ -774,7 +807,8 @@ Informe o número da guia ("00", "01")"""
         graph.add_node("escolher_ano", self._escolher_ano_exercicio)
         graph.add_node("consultar_guias", self._consultar_guias_disponiveis)
         graph.add_node("usuario_escolhe_guias", self._usuario_escolhe_guias_iptu)
-        graph.add_node("escolher_cotas", self._escolher_cotas_pagar)
+        graph.add_node("consultar_cotas", self._consultar_cotas)
+        graph.add_node("usuario_escolhe_cotas", self._usuario_escolhe_cotas_iptu)
         graph.add_node("perguntar_formato_darm", self._perguntar_formato_darm)
         graph.add_node("confirmacao_dados", self._confirmacao_dados_pagamento)
         graph.add_node("gerar_darm", self._gerar_darm)
@@ -806,10 +840,15 @@ Informe o número da guia ("00", "01")"""
         graph.add_conditional_edges(
             "usuario_escolhe_guias",
             self._decide_after_data_collection,
-            {"continue": "escolher_cotas", END: END},
+            {"continue": "consultar_cotas", END: END},
         )
         graph.add_conditional_edges(
-            "escolher_cotas",
+            "consultar_cotas",
+            self._decide_after_data_collection,
+            {"continue": "usuario_escolhe_cotas", END: END},
+        )
+        graph.add_conditional_edges(
+            "usuario_escolhe_cotas",
             self._decide_after_data_collection,
             {"continue": "perguntar_formato_darm", END: END},
         )
@@ -831,6 +870,7 @@ Informe o número da guia ("00", "01")"""
             {
                 "reset_mesma_guia": "reset_mesma_guia",
                 "pergunta_outro_imovel": "pergunta_outro_imovel",
+                END: END,
             },
         )
         graph.add_edge("reset_mesma_guia", "usuario_escolhe_guias")
@@ -841,6 +881,7 @@ Informe o número da guia ("00", "01")"""
             {
                 "reset_outro_imovel": "reset_outro_imovel",
                 "finalizar_interacao": "finalizar_interacao",
+                END: END,
             },
         )
         graph.add_edge("reset_outro_imovel", "informar_inscricao")

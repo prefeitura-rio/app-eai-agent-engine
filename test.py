@@ -25,7 +25,7 @@ def main():
     """
 
     user_id = f"test_user_iptu_{int(time.time())}"  # Unique user for each test
-    service_name = "iptu_ano_vigente"
+    service_name = "iptu_pagamento"
 
     print("=" * 80)
     print("TESTING IPTU WORKFLOW WITH REAL API INTEGRATION")

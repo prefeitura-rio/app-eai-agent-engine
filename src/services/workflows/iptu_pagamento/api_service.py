@@ -10,7 +10,7 @@ from typing import List, Optional, Dict, Any
 import httpx
 
 from src.config import env
-from src.services.workflows.iptu_ano_vigente.models import (
+from src.services.workflows.iptu_pagamento.models import (
     DadosGuias,
     Guia,
     Cota,
@@ -211,7 +211,11 @@ class IPTUAPIService:
         return dados_guias
 
     async def obter_cotas(
-        self, inscricao_imobiliaria: str, exercicio: int, numero_guia: str, tipo_guia: Optional[str] = None
+        self,
+        inscricao_imobiliaria: str,
+        exercicio: int,
+        numero_guia: str,
+        tipo_guia: Optional[str] = None,
     ) -> Optional[DadosCotas]:
         """
         Consulta cotas disponíveis para uma guia específica.

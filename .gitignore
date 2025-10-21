@@ -211,5 +211,5 @@ __marimo__/
 # Personal files
 llms-full.txt
 README_BRUNO.md
-src/services/workflows/iptu_ano_vigente/docs/*
+src/services/workflows/iptu_pagamento/docs/*
 src/services/data/*
