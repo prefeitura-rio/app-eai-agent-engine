@@ -59,17 +59,17 @@ def main():
         {
             "darm_separado": False,
         },
-        # # Step 6: Do you want to generate more guides for the same property?
+        # # # Step 6: Do you want to generate more guides for the same property?
         {
             "confirmacao": True,
         },
-        # # Step 7: Do you want to generate guides for another property?
-        {
-            "mais_cotas": False,
-        },
-        {
-            "outro_imovel": False,
-        },
+        # # # Step 7: Do you want to generate guides for another property?
+        # {
+        #     "mais_cotas": False,
+        # },
+        # {
+        #     "outro_imovel": False,
+        # },
     ]
 
     for i, payload in enumerate(steps, 1):

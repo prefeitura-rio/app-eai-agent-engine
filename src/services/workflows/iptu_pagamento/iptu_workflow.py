@@ -215,26 +215,17 @@ class IPTUWorkflow(BaseWorkflow):
         )
 
         if not dados_guias:
-            # Para desenvolvimento/testes: criar dados simulados quando API não está disponível
-            # Verifica se a inscrição tem formato válido (não remove dados do estado)
+            # Verifica se a inscrição tem formato válido
             if len(inscricao) >= 8 and inscricao.isdigit():
-                # Cria dados simulados para teste
-                dados_guias_simulados = DadosGuias(
-                    inscricao_imobiliaria=inscricao,
-                    exercicio=str(exercicio),
-                    guias=[],
-                    total_guias=0,
+                # Inscrição válida mas sem guias para o ano escolhido
+                # Remove o ano exercício e pede novo ano
+                state.data.pop("ano_exercicio", None)
+                state.internal.pop("consulta_guias_realizada", None)
+                
+                state.agent_response = AgentResponse(
+                    description=f"❌ Nenhuma guia de IPTU foi encontrada para o ano {exercicio} da inscrição {inscricao}.\n\n📅 Por favor, escolha outro ano de exercício:",
+                    payload_schema=EscolhaAnoPayload.model_json_schema(),
                 )
-
-                # Salva dados das guias
-                state.data["dados_guias"] = dados_guias_simulados.model_dump()
-                state.internal["consulta_guias_realizada"] = True
-                state.internal["dados_simulados"] = (
-                    True  # Flag para indicar dados de teste
-                )
-
-                # Continua o fluxo
-                state.agent_response = None
                 return state
             else:
                 # Inscrição com formato inválido - remove e pede nova
@@ -386,11 +377,15 @@ Informe o número da guia ("00", "01")"""
         )
 
         if not dados_cotas or not dados_cotas.cotas:
+            # Nenhuma cota encontrada para a guia selecionada
+            # Remove dados da guia escolhida e reseta campos relacionados
+            state.data.pop("guia_escolhida", None)
+            state.data.pop("dados_cotas", None)
+            
             state.agent_response = AgentResponse(
-                description="⚠️ Nenhuma cota encontrada para esta guia. Por favor, selecione outra guia.",
+                description=f"❌ Nenhuma cota foi encontrada para a guia {guia_escolhida}.\n\n🎯 Por favor, selecione outra guia disponível:",
                 payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
             )
-            state.data.pop("guia_escolhida", None)
             return state
 
         # Salva dados das cotas
@@ -398,11 +393,15 @@ Informe o número da guia ("00", "01")"""
         cotas_em_aberto = [c for c in dados_cotas.cotas if not c.esta_paga]
 
         if not cotas_em_aberto:
+            # Todas as cotas desta guia já foram quitadas
+            # Remove dados da guia escolhida e reseta campos relacionados
+            state.data.pop("guia_escolhida", None)
+            state.data.pop("dados_cotas", None)
+            
             state.agent_response = AgentResponse(
-                description="✅ Todas as cotas desta guia já foram quitadas. Selecione outra guia.",
+                description=f"✅ Todas as cotas da guia {guia_escolhida} já foram quitadas.\n\n🎯 Por favor, selecione outra guia disponível:",
                 payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
             )
-            state.data.pop("guia_escolhida", None)
             return state
 
         # Se há apenas uma cota, seleciona automaticamente
@@ -569,32 +568,64 @@ Informe o número da guia ("00", "01")"""
                     )
                 )
 
-                if dados_darm and dados_darm.darm:
-                    pdf_base64 = asyncio.run(
-                        self.api_service.download_pdf_darm(
-                            inscricao_imobiliaria=inscricao,
-                            exercicio=exercicio,
-                            numero_guia=guia_escolhida,
-                            cotas_selecionadas=cotas_para_darm,
-                        )
+                if not dados_darm or not dados_darm.darm:
+                    # Falha na geração do DARM - reseta dados de cotas e volta para seleção de cotas
+                    state.data.pop("cotas_escolhidas", None)
+                    state.data.pop("dados_darm", None)
+                    state.internal.pop("darm_separado", None)
+                    
+                    state.agent_response = AgentResponse(
+                        description=f"❌ Não foi possível gerar o DARM para as cotas {', '.join(cotas_para_darm)}.\n\n🎯 Por favor, selecione novamente as cotas para pagamento:",
+                        payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
                     )
-                    guias_geradas.append(
-                        {
-                            "tipo": "darm",
-                            "numero_guia": guia_escolhida,
-                            "cotas": ", ".join(cotas_para_darm),
-                            "valor": dados_darm.darm.valor_numerico,
-                            "vencimento": dados_darm.darm.data_vencimento,
-                            "codigo_barras": dados_darm.darm.codigo_barras,
-                            "linha_digitavel": dados_darm.darm.sequencia_numerica,
-                            # "pdf_base64": pdf_base64,
-                        }
+                    return state
+
+                # Tenta baixar o PDF, mas continua mesmo se falhar
+                pdf_base64 = asyncio.run(
+                    self.api_service.download_pdf_darm(
+                        inscricao_imobiliaria=inscricao,
+                        exercicio=exercicio,
+                        numero_guia=guia_escolhida,
+                        cotas_selecionadas=cotas_para_darm,
                     )
+                )
+                
+                guias_geradas.append(
+                    {
+                        "tipo": "darm",
+                        "numero_guia": guia_escolhida,
+                        "cotas": ", ".join(cotas_para_darm),
+                        "valor": dados_darm.darm.valor_numerico,
+                        "vencimento": dados_darm.darm.data_vencimento,
+                        "codigo_barras": dados_darm.darm.codigo_barras,
+                        "linha_digitavel": dados_darm.darm.sequencia_numerica,
+                        # "pdf_base64": pdf_base64,
+                    }
+                )
+                
             except Exception as e:
+                # Erro na API - reseta dados de cotas e volta para seleção de cotas
+                state.data.pop("cotas_escolhidas", None)
+                state.data.pop("dados_darm", None)
+                state.internal.pop("darm_separado", None)
+                
                 state.agent_response = AgentResponse(
-                    description=f"❌ Erro ao gerar DARM para as cotas {', '.join(cotas_para_darm)}: {e}"
+                    description=f"❌ Erro ao processar o pagamento das cotas {', '.join(cotas_para_darm)}: {str(e)}\n\n🎯 Por favor, selecione novamente as cotas para pagamento:",
+                    payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
                 )
                 return state
+
+        if not guias_geradas:
+            # Nenhuma guia foi gerada com sucesso - reseta dados de cotas
+            state.data.pop("cotas_escolhidas", None)
+            state.data.pop("dados_darm", None)
+            state.internal.pop("darm_separado", None)
+            
+            state.agent_response = AgentResponse(
+                description="❌ Não foi possível gerar nenhum boleto de pagamento.\n\n🎯 Por favor, selecione novamente as cotas para pagamento:",
+                payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
+            )
+            return state
 
         state.data["guias_geradas"] = guias_geradas
 
@@ -650,7 +681,8 @@ Informe o número da guia ("00", "01")"""
         else:
             state.internal["tipo_pergunta_seguinte"] = "outro_imovel"
 
-        # Não define agent_response, deixa o roteamento decidir o próximo nó
+        # Clear agent_response to allow proper routing
+        state.agent_response = None
         return state
 
     @handle_errors
@@ -753,7 +785,7 @@ Informe o número da guia ("00", "01")"""
         # Reset apenas dos campos relacionados à seleção de cotas e posteriores
         fields_to_reset = {
             "data": ["cotas_escolhidas", "dados_darm", "guias_geradas"],
-            "internal": ["quer_mais_cotas", "quer_outras_guias", "quer_outro_imovel"],
+            "internal": ["quer_mais_cotas", "quer_outras_guias", "quer_outro_imovel", "tipo_pergunta_seguinte"],
         }
 
         self._reset_completo(state, manter_inscricao=True, fields=fields_to_reset)
@@ -771,7 +803,7 @@ Informe o número da guia ("00", "01")"""
                 "dados_darm",
                 "guias_geradas",
             ],
-            "internal": ["quer_mais_cotas", "quer_outras_guias", "quer_outro_imovel"],
+            "internal": ["quer_mais_cotas", "quer_outras_guias", "quer_outro_imovel", "tipo_pergunta_seguinte"],
         }
 
         self._reset_completo(state, manter_inscricao=True, fields=fields_to_reset)
@@ -838,8 +870,22 @@ Informe o número da guia ("00", "01")"""
         """Roteamento após consulta de guias."""
         # Se não tem dados de guias, significa que a consulta falhou
         if "dados_guias" not in state.data:
+            # Se tem inscrição válida mas não tem ano, volta para escolha do ano
+            if "inscricao_imobiliaria" in state.data and "ano_exercicio" not in state.data:
+                return "escolher_ano"
+            # Caso contrário, volta para informar inscrição
             return "informar_inscricao"
         return "usuario_escolhe_guias"
+
+    def _route_consulta_cotas(self, state: ServiceState) -> str:
+        """Roteamento após consulta de cotas."""
+        # Se agent_response foi definido, significa que ocorreu erro/reset e precisa voltar
+        if state.agent_response is not None:
+            return END  # Para e espera nova seleção de guia
+        # Se não tem dados de cotas válidos, volta para seleção de guias
+        if "dados_cotas" not in state.data:
+            return "usuario_escolhe_guias"
+        return "usuario_escolhe_cotas"
 
     def _route_after_mesma_guia(self, state: ServiceState) -> str:
         """Roteamento após pergunta sobre mesma guia - agora é um roteador condicional."""
@@ -936,8 +982,12 @@ Informe o número da guia ("00", "01")"""
         )
         graph.add_conditional_edges(
             "consultar_guias",
-            self._decide_after_data_collection,
-            {"continue": "usuario_escolhe_guias", END: END},
+            self._route_consulta_guias,
+            {
+                "usuario_escolhe_guias": "usuario_escolhe_guias", 
+                "escolher_ano": "escolher_ano",
+                "informar_inscricao": "informar_inscricao"
+            },
         )
         graph.add_conditional_edges(
             "usuario_escolhe_guias",
@@ -946,8 +996,12 @@ Informe o número da guia ("00", "01")"""
         )
         graph.add_conditional_edges(
             "consultar_cotas",
-            self._decide_after_data_collection,
-            {"continue": "usuario_escolhe_cotas", END: END},
+            self._route_consulta_cotas,
+            {
+                "usuario_escolhe_cotas": "usuario_escolhe_cotas", 
+                "usuario_escolhe_guias": "usuario_escolhe_guias", 
+                END: END
+            },
         )
         graph.add_conditional_edges(
             "usuario_escolhe_cotas",
@@ -964,7 +1018,15 @@ Informe o número da guia ("00", "01")"""
             self._decide_after_data_collection,
             {"continue": "gerar_darm", END: END},
         )
-        graph.add_edge("gerar_darm", "pergunta_mesma_guia")
+        graph.add_conditional_edges(
+            "gerar_darm",
+            self._route_gerar_darm,
+            {
+                "pergunta_mesma_guia": "pergunta_mesma_guia", 
+                "usuario_escolhe_cotas": "usuario_escolhe_cotas", 
+                END: END
+            },
+        )
 
         graph.add_conditional_edges(
             "pergunta_mesma_guia",
@@ -1013,3 +1075,14 @@ Informe o número da guia ("00", "01")"""
         graph.add_edge("finalizar_interacao", END)
 
         return graph
+
+    def _route_gerar_darm(self, state: ServiceState) -> str:
+        """Roteamento após geração de DARM."""
+        # Se agent_response foi definido, significa que ocorreu erro/reset e precisa voltar
+        if state.agent_response is not None:
+            return END  # Para e espera nova seleção de cotas
+        # Se tem guias geradas, continua para pergunta_mesma_guia
+        if "guias_geradas" in state.data:
+            return "pergunta_mesma_guia"
+        # Se chegou aqui sem agent_response e sem guias_geradas, há um problema
+        return END
