@@ -49,6 +49,28 @@ class IPTUWorkflow(BaseWorkflow):
         super().__init__()
         self.api_service = IPTUAPIService()
 
+    # --- Métodos auxiliares ---
+
+    def _reset_completo(self, state: ServiceState, manter_inscricao: bool = False) -> None:
+        """
+        Faz reset completo dos dados e flags internas.
+        
+        Args:
+            state: Estado do serviço
+            manter_inscricao: Se True, mantém a inscrição imobiliária atual
+        """
+        inscricao_atual = state.data.get("inscricao_imobiliaria") if manter_inscricao else None
+        
+        # Reset completo do data
+        state.data.clear()
+        
+        # Reset completo do internal
+        state.internal.clear()
+        
+        # Restaura inscrição se necessário
+        if inscricao_atual:
+            state.data["inscricao_imobiliaria"] = inscricao_atual
+
     # --- Nós do Grafo ---
 
     @handle_errors
@@ -66,34 +88,7 @@ class IPTUWorkflow(BaseWorkflow):
                 # Se é uma nova inscrição diferente da atual, faz reset automático
                 if inscricao_atual and nova_inscricao != inscricao_atual:
                     # Reset automático para nova inscrição
-                    campos_limpar = [
-                        "inscricao_imobiliaria",
-                        "dados_guias",
-                        "guia_escolhida",
-                        "cotas_escolhidas",
-                        "formato_pagamento",
-                        "guias_geradas",
-                    ]
-                    for campo in campos_limpar:
-                        state.data.pop(campo, None)
-
-                    flags_limpar = [
-                        "consulta_guias_realizada",
-                        "dados_confirmados",
-                        "fluxo_cota_unica",
-                        "quer_mesma_guia",
-                        "quer_outro_imovel",
-                        "inscricao_invalida",
-                    ]
-                    # Limpa também todas as flags de consulta de cotas específicas
-                    flags_cotas_para_limpar = [
-                        key
-                        for key in state.internal.keys()
-                        if key.startswith("consulta_cotas_realizada_")
-                    ]
-                    flags_limpar.extend(flags_cotas_para_limpar)
-                    for flag in flags_limpar:
-                        state.internal.pop(flag, None)
+                    self._reset_completo(state)
 
                 # Salva a nova inscrição
                 state.data["inscricao_imobiliaria"] = nova_inscricao
@@ -213,8 +208,8 @@ class IPTUWorkflow(BaseWorkflow):
                     description="❌ Inscrição imobiliária não encontrada. Verifique o número e tente novamente.",
                     payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
                 )
-                # Remove inscrição inválida para permitir nova entrada
-                state.data.pop("inscricao_imobiliaria", None)
+                # Reset completo para permitir nova entrada
+                self._reset_completo(state)
                 return state
 
         # Salva dados das guias real
@@ -501,16 +496,8 @@ Informe o número da guia ("00", "01")"""
                 description="❌ **Dados não confirmados**. Voltando ao início.",
                 payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
             )
-            # Limpa dados para recomeçar
-            campos_limpar = [
-                "guia_escolhida",
-                "cotas_escolhidas",
-                "dados_darm",
-                "guias_geradas",
-            ]
-            for campo in campos_limpar:
-                state.data.pop(campo, None)
-            state.internal.pop("dados_confirmados", None)
+            # Reset completo para recomeçar, mantendo a inscrição
+            self._reset_completo(state, manter_inscricao=True)
             return state
 
         state.internal["dados_confirmados"] = True
@@ -649,65 +636,26 @@ Informe o número da guia ("00", "01")"""
     @handle_errors
     def _reset_para_mesma_guia(self, state: ServiceState) -> ServiceState:
         """Reset dados para gerar nova guia do mesmo imóvel."""
-        # Limpa apenas os dados de escolha, mantém a inscrição e dados do imóvel
-        campos_limpar = [
-            "guia_escolhida",
-            "cotas_escolhidas",
-            "formato_pagamento",
-            "guias_geradas",
-            "dados_darm",
-        ]
-        for campo in campos_limpar:
-            state.data.pop(campo, None)
-
-        # Limpa flags internas relacionadas ao fluxo
-        flags_limpar = [
-            "dados_confirmados",
-            "fluxo_cota_unica",
-            "quer_mesma_guia",
-            "darm_separado",
-        ]
-        for flag in flags_limpar:
-            state.internal.pop(flag, None)
+        # Reset completo mantendo inscrição e dados das guias consultadas
+        inscricao = state.data.get("inscricao_imobiliaria")
+        dados_guias = state.data.get("dados_guias")
+        
+        self._reset_completo(state)
+        
+        # Restaura apenas inscrição e dados das guias
+        if inscricao:
+            state.data["inscricao_imobiliaria"] = inscricao
+        if dados_guias:
+            state.data["dados_guias"] = dados_guias
+            state.internal["consulta_guias_realizada"] = True
 
         return state
 
     @handle_errors
     def _reset_para_outro_imovel(self, state: ServiceState) -> ServiceState:
         """Reset completo para outro imóvel."""
-        # Limpa todos os dados do imóvel anterior
-        campos_limpar = [
-            "inscricao_imobiliaria",
-            "dados_guias",
-            "guia_escolhida",
-            "cotas_escolhidas",
-            "formato_pagamento",
-            "guias_geradas",
-            "dados_darm",
-        ]
-        for campo in campos_limpar:
-            state.data.pop(campo, None)
-
-        # Limpa flags internas
-        flags_limpar = [
-            "consulta_guias_realizada",
-            "dados_confirmados",
-            "fluxo_cota_unica",
-            "quer_mesma_guia",
-            "quer_outro_imovel",
-            "inscricao_invalida",
-            "darm_separado",
-        ]
-        # Limpa também todas as flags de consulta de cotas específicas
-        flags_cotas_para_limpar = [
-            key
-            for key in state.internal.keys()
-            if key.startswith("consulta_cotas_realizada_")
-        ]
-        flags_limpar.extend(flags_cotas_para_limpar)
-        for flag in flags_limpar:
-            state.internal.pop(flag, None)
-
+        # Reset completo de tudo
+        self._reset_completo(state)
         return state
 
     @handle_errors
@@ -721,35 +669,8 @@ Informe o número da guia ("00", "01")"""
         )
         state.agent_response = response
 
-        # Reset automático no final da interação
-        # Limpa todos os dados da interação atual
-        campos_limpar = [
-            "inscricao_imobiliaria",
-            "dados_guias",
-            "guia_escolhida",
-            "cotas_escolhidas",
-            "formato_pagamento",
-            "guias_geradas",
-            "dados_darm",
-        ]
-        for campo in campos_limpar:
-            state.data.pop(campo, None)
-
-        # Limpa todas as flags internas
-        flags_limpar = [
-            "consulta_realizada",
-            "dados_confirmados",
-            "fluxo_cota_unica",
-            "quer_mesma_guia",
-            "quer_outro_imovel",
-            "inscricao_invalida",
-            "darm_separado",
-        ]
-        for flag in flags_limpar:
-            state.internal.pop(flag, None)
-
-        # Marca como finalizado para futuras interações
-        state.internal["interacao_finalizada"] = True
+        # Reset automático completo no final da interação
+        self._reset_completo(state)
 
         return state
 
