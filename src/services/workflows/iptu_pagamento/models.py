@@ -14,14 +14,14 @@ class InscricaoImobiliariaPayload(BaseModel):
         ...,
         min_length=8,
         max_length=15,
-        description="Inscrição imobiliária (8-16 dígitos)",
+        description="Inscrição imobiliária (8-15 dígitos)",
     )
 
 
 class EscolhaAnoPayload(BaseModel):
     """Payload para escolha do ano de exercício."""
 
-    ano_exercicio: Literal[2024, 2025, 2026] = Field(
+    ano_exercicio: int = Field(
         ..., description="Ano de exercício para consulta do IPTU"
     )
 

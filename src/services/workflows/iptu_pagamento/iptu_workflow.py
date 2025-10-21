@@ -131,7 +131,7 @@ class IPTUWorkflow(BaseWorkflow):
 
             except Exception as e:
                 response = AgentResponse(
-                    description="📋 Para consultar o IPTU, informe a inscrição imobiliária do seu imóvel (14 a 16 dígitos).",
+                    description="📋 Para consultar o IPTU, informe a inscrição imobiliária do seu imóvel (8 a 15 dígitos).",
                     payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
                     error_message=f"Inscrição imobiliária inválida: {str(e)}",
                 )
@@ -144,7 +144,7 @@ class IPTUWorkflow(BaseWorkflow):
 
         # Solicita inscrição se não tem nenhuma
         response = AgentResponse(
-            description="📋 Para consultar o IPTU, informe a inscrição imobiliária do seu imóvel (14 a 16 dígitos).",
+            description="📋 Para consultar o IPTU, informe a inscrição imobiliária do seu imóvel (8 a 15 dígitos).",
             payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
         )
         state.agent_response = response
@@ -587,7 +587,7 @@ Informe o número da guia ("00", "01")"""
                             "vencimento": dados_darm.darm.data_vencimento,
                             "codigo_barras": dados_darm.darm.codigo_barras,
                             "linha_digitavel": dados_darm.darm.sequencia_numerica,
-                            "pdf_base64": pdf_base64,
+                            # "pdf_base64": pdf_base64,
                         }
                     )
             except Exception as e:
