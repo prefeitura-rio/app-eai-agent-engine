@@ -25,6 +25,7 @@ from src.services.workflows.iptu_pagamento.models import (
     DadosCotas,
 )
 from src.services.workflows.iptu_pagamento.api_service import IPTUAPIService
+from src.services.workflows.iptu_pagamento.api_service_fake import IPTUAPIServiceFake
 
 
 class IPTUWorkflow(BaseWorkflow):
@@ -47,9 +48,20 @@ class IPTUWorkflow(BaseWorkflow):
     service_name = "iptu_pagamento"
     description = "Consulta e emissão de guias de IPTU - Prefeitura do Rio de Janeiro"
 
-    def __init__(self):
+    def __init__(self, use_fake_api: bool = False):
+        """
+        Inicializa o workflow IPTU.
+        
+        Args:
+            use_fake_api: Se True, usa api_service_fake com dados mockados.
+                         Se False, usa api_service real.
+        """
         super().__init__()
-        self.api_service = IPTUAPIService()
+        
+        if use_fake_api:
+            self.api_service = IPTUAPIServiceFake()
+        else:
+            self.api_service = IPTUAPIService()
 
     # --- Métodos auxiliares ---
 
@@ -170,6 +182,7 @@ class IPTUWorkflow(BaseWorkflow):
 
         # Se já tem ano escolhido, continua
         if "ano_exercicio" in state.data:
+            state.agent_response = None
             return state
 
         # Solicita escolha do ano
@@ -217,9 +230,26 @@ class IPTUWorkflow(BaseWorkflow):
         if not dados_guias:
             # Verifica se a inscrição tem formato válido
             if len(inscricao) >= 8 and inscricao.isdigit():
-                # Inscrição válida mas sem guias para o ano escolhido
-                # Remove o ano exercício e pede novo ano
+                # Rastreia tentativas falhas para esta inscrição
+                key_tentativas = f"tentativas_falhas_{inscricao}"
+                tentativas = state.internal.get(key_tentativas, 0) + 1
+                state.internal[key_tentativas] = tentativas
+                
+                # Se já tentou 3 anos diferentes e ainda não encontrou, a inscrição provavelmente não existe
+                if tentativas >= 3:
+                    # Remove os rastros das tentativas e reseta para nova inscrição
+                    state.internal.pop(key_tentativas, None)
+                    state.agent_response = AgentResponse(
+                        description="❌ Inscrição imobiliária não encontrada após múltiplas tentativas. Verifique o número e tente novamente.",
+                        payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
+                    )
+                    # Reset completo para permitir nova entrada
+                    self._reset_completo(state)
+                    return state
+                
+                # Ainda dentro do limite de tentativas - pede novo ano
                 state.data.pop("ano_exercicio", None)
+                state.payload.pop("ano_exercicio", None)  # Remove do payload também para evitar loop
                 state.internal.pop("consulta_guias_realizada", None)
                 
                 state.agent_response = AgentResponse(
@@ -236,6 +266,11 @@ class IPTUWorkflow(BaseWorkflow):
                 # Reset completo para permitir nova entrada
                 self._reset_completo(state)
                 return state
+
+        # Se chegou aqui, encontrou guias - limpa contador de tentativas falhas
+        inscricao_clean = inscricao.replace(" ", "").replace("-", "").replace(".", "")
+        key_tentativas = f"tentativas_falhas_{inscricao_clean}"
+        state.internal.pop(key_tentativas, None)
 
         # Salva dados das guias real
         state.data["dados_guias"] = dados_guias.model_dump()
