@@ -66,25 +66,27 @@ class IPTUAPIServiceFake:
         except (ValueError, AttributeError):
             return 0.0
 
-    def _get_mock_guias_data(self, inscricao_clean: str, exercicio: int) -> Optional[List[Dict]]:
+    def _get_mock_guias_data(
+        self, inscricao_clean: str, exercicio: int
+    ) -> Optional[List[Dict]]:
         """
         Retorna dados mockados de guias baseados na inscrição e exercício.
-        
+
         Cenários de teste baseados na inscrição:
         - 01234567890123: IPTU ORDINÁRIA + EXTRAORDINÁRIA (ambas em aberto)
         - 11111111111111: Apenas IPTU ORDINÁRIA em aberto
-        - 22222222222222: Apenas IPTU EXTRAORDINÁRIA em aberto  
+        - 22222222222222: Apenas IPTU EXTRAORDINÁRIA em aberto
         - 33333333333333: Todas as guias quitadas
         - 44444444444444: IPTU ORDINÁRIA com valor alto (teste desconto à vista)
         - 55555555555555: IPTU ORDINÁRIA com valores baixos
         - 66666666666666: Múltiplas guias EXTRAORDINÁRIAS (01, 02)
         - Qualquer outra: Nenhuma guia encontrada
         """
-        
+
         if exercicio < 2020 or exercicio > 2025:
             # Exercício fora do range válido
             return None
-            
+
         if inscricao_clean == "01234567890123":
             # Cenário padrão: IPTU ORDINÁRIA + EXTRAORDINÁRIA
             return [
@@ -106,7 +108,7 @@ class IPTUAPIServiceFake:
                     "CreditoCotaUnica": "201,46",
                     "ValorQuitado": "0,00",
                     "DataQuitacao": "",
-                    "Deposito": "N"
+                    "Deposito": "N",
                 },
                 {
                     "Situacao": {"codigo": "01", "descricao": "EM ABERTO"},
@@ -126,8 +128,8 @@ class IPTUAPIServiceFake:
                     "CreditoCotaUnica": "36,40",
                     "ValorQuitado": "0,00",
                     "DataQuitacao": "",
-                    "Deposito": "N"
-                }
+                    "Deposito": "N",
+                },
             ]
         elif inscricao_clean == "11111111111111":
             # Apenas IPTU ORDINÁRIA
@@ -150,7 +152,7 @@ class IPTUAPIServiceFake:
                     "CreditoCotaUnica": "105,00",
                     "ValorQuitado": "0,00",
                     "DataQuitacao": "",
-                    "Deposito": "N"
+                    "Deposito": "N",
                 }
             ]
         elif inscricao_clean == "22222222222222":
@@ -161,7 +163,7 @@ class IPTUAPIServiceFake:
                     "Inscricao": inscricao_clean,
                     "Exercicio": str(exercicio),
                     "NGuia": "01",
-                    "Tipo": "EXTRAORDINÁRIA", 
+                    "Tipo": "EXTRAORDINÁRIA",
                     "ValorIPTUOriginalGuia": "320,00",
                     "DataVenctoDescCotaUnica": "07/02/2024",
                     "QuantDiasEmAtraso": "290",
@@ -174,7 +176,7 @@ class IPTUAPIServiceFake:
                     "CreditoCotaUnica": "22,40",
                     "ValorQuitado": "0,00",
                     "DataQuitacao": "",
-                    "Deposito": "N"
+                    "Deposito": "N",
                 }
             ]
         elif inscricao_clean == "33333333333333":
@@ -198,7 +200,7 @@ class IPTUAPIServiceFake:
                     "CreditoCotaUnica": "201,46",
                     "ValorQuitado": "2.676,54",
                     "DataQuitacao": "28/01/2024",
-                    "Deposito": "N"
+                    "Deposito": "N",
                 }
             ]
         elif inscricao_clean == "44444444444444":
@@ -222,7 +224,7 @@ class IPTUAPIServiceFake:
                     "CreditoCotaUnica": "595,00",
                     "ValorQuitado": "0,00",
                     "DataQuitacao": "",
-                    "Deposito": "N"
+                    "Deposito": "N",
                 }
             ]
         elif inscricao_clean == "55555555555555":
@@ -246,7 +248,7 @@ class IPTUAPIServiceFake:
                     "CreditoCotaUnica": "12,60",
                     "ValorQuitado": "0,00",
                     "DataQuitacao": "",
-                    "Deposito": "N"
+                    "Deposito": "N",
                 }
             ]
         elif inscricao_clean == "66666666666666":
@@ -270,7 +272,7 @@ class IPTUAPIServiceFake:
                     "CreditoCotaUnica": "31,50",
                     "ValorQuitado": "0,00",
                     "DataQuitacao": "",
-                    "Deposito": "N"
+                    "Deposito": "N",
                 },
                 {
                     "Situacao": {"codigo": "01", "descricao": "EM ABERTO"},
@@ -290,35 +292,37 @@ class IPTUAPIServiceFake:
                     "CreditoCotaUnica": "26,60",
                     "ValorQuitado": "0,00",
                     "DataQuitacao": "",
-                    "Deposito": "N"
-                }
+                    "Deposito": "N",
+                },
             ]
         else:
             # Qualquer outra inscrição: não encontrada
             return None
 
-    def _get_mock_cotas_data(self, inscricao_clean: str, exercicio: int, numero_guia: str) -> Optional[Dict]:
+    def _get_mock_cotas_data(
+        self, inscricao_clean: str, exercicio: int, numero_guia: str
+    ) -> Optional[Dict]:
         """
         Retorna dados mockados de cotas baseados na inscrição, exercício e número da guia.
         """
-        
+
         # Verifica se a inscrição tem guias (reutiliza lógica)
         guias_data = self._get_mock_guias_data(inscricao_clean, exercicio)
         if not guias_data:
             return None
-        
+
         # Verifica se a guia específica existe
         guia_existe = any(g["NGuia"] == numero_guia for g in guias_data)
         if not guia_existe:
             return None
-        
+
         if numero_guia == "00":  # IPTU ORDINÁRIA
             # Cotas IPTU ORDINÁRIA padrão - 32 cotas
             cotas = []
             for i in range(1, 33):
                 numero_cota = f"{i:02d}"
                 valor_cota = "89,44" if inscricao_clean == "01234567890123" else "46,88"
-                
+
                 # Algumas cotas com situações diferentes para teste
                 if i <= 3:
                     situacao = {"codigo": "01", "descricao": "PAGA"}
@@ -332,25 +336,29 @@ class IPTUAPIServiceFake:
                     situacao = {"codigo": "03", "descricao": "VENCIDA"}
                     valor_pago = "0,00"
                     data_pagamento = ""
-                
-                cotas.append({
-                    "Situacao": situacao,
-                    "NCota": numero_cota,
-                    "ValorCota": valor_cota,
-                    "DataVencimento": f"07/{i if i <= 12 else i-12:02d}/2024",
-                    "ValorPago": valor_pago,
-                    "DataPagamento": data_pagamento,
-                    "QuantDiasEmAtraso": "290" if situacao["codigo"] == "03" else "0"
-                })
-                
+
+                cotas.append(
+                    {
+                        "Situacao": situacao,
+                        "NCota": numero_cota,
+                        "ValorCota": valor_cota,
+                        "DataVencimento": f"07/{i if i <= 12 else i-12:02d}/2024",
+                        "ValorPago": valor_pago,
+                        "DataPagamento": data_pagamento,
+                        "QuantDiasEmAtraso": (
+                            "290" if situacao["codigo"] == "03" else "0"
+                        ),
+                    }
+                )
+
             return {"Cotas": cotas}
-            
+
         elif numero_guia in ["01", "02"]:  # IPTU EXTRAORDINÁRIA
             # Cotas IPTU EXTRAORDINÁRIA - 6 cotas
             cotas = []
             for i in range(1, 7):
                 numero_cota = f"{i:02d}"
-                
+
                 # Valores diferentes baseados na inscrição e número da guia
                 if inscricao_clean == "01234567890123":
                     valor_cota = "86,67"
@@ -360,68 +368,71 @@ class IPTUAPIServiceFake:
                     valor_cota = "63,33"
                 else:
                     valor_cota = "53,33"
-                
+
                 situacao = {"codigo": "02", "descricao": "EM ABERTO"}
                 valor_pago = "0,00"
                 data_pagamento = ""
-                
-                cotas.append({
-                    "Situacao": situacao,
-                    "NCota": numero_cota,
-                    "ValorCota": valor_cota,
-                    "DataVencimento": f"07/{(i*2):02d}/2024",
-                    "ValorPago": valor_pago,
-                    "DataPagamento": data_pagamento,
-                    "QuantDiasEmAtraso": "0"
-                })
-                
+
+                cotas.append(
+                    {
+                        "Situacao": situacao,
+                        "NCota": numero_cota,
+                        "ValorCota": valor_cota,
+                        "DataVencimento": f"07/{(i*2):02d}/2024",
+                        "ValorPago": valor_pago,
+                        "DataPagamento": data_pagamento,
+                        "QuantDiasEmAtraso": "0",
+                    }
+                )
+
             return {"Cotas": cotas}
-        
+
         return None
 
     def _get_mock_darm_data(
-        self, 
-        inscricao_clean: str, 
-        exercicio: int, 
-        numero_guia: str, 
-        cotas_selecionadas: List[str]
+        self,
+        inscricao_clean: str,
+        exercicio: int,
+        numero_guia: str,
+        cotas_selecionadas: List[str],
     ) -> Optional[Dict]:
         """
         Retorna dados mockados de DARM baseados nos parâmetros.
         """
-        
+
         # Verifica se tem cotas para esta guia
         cotas_data = self._get_mock_cotas_data(inscricao_clean, exercicio, numero_guia)
         if not cotas_data:
             return None
-        
+
         # Verifica se as cotas selecionadas existem
         cotas_disponiveis = [c["NCota"] for c in cotas_data["Cotas"]]
         for cota in cotas_selecionadas:
             if cota not in cotas_disponiveis:
                 return None
-        
+
         # Calcula valor total das cotas selecionadas
         valor_total = 0.0
         cotas_darm = []
-        
+
         for cota_data in cotas_data["Cotas"]:
             if cota_data["NCota"] in cotas_selecionadas:
                 valor_cota = self._parse_brazilian_currency(cota_data["ValorCota"])
                 valor_total += valor_cota
-                
-                cotas_darm.append({
-                    "ncota": cota_data["NCota"],
-                    "valor": cota_data["ValorCota"]
-                })
-        
+
+                cotas_darm.append(
+                    {"ncota": cota_data["NCota"], "valor": cota_data["ValorCota"]}
+                )
+
         # Formata valor total no padrão brasileiro
-        valor_total_str = f"{valor_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        
+        valor_total_str = (
+            f"{valor_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
+
         # Gera linha digitável fictícia
         sequencia_base = f"310-7.{inscricao_clean[:8]}.{exercicio}.{numero_guia}.{len(cotas_selecionadas):02d}"
         sequencia_numerica = f"{sequencia_base}.{int(valor_total * 100):08d}"
-        
+
         return {
             "Cotas": cotas_darm,
             "Inscricao": inscricao_clean,
@@ -442,7 +453,7 @@ class IPTUAPIServiceFake:
             "CodReceita": "310-7",
             "DesReceita": "RECEITA DE PAGAMENTO",
             "Endereco": "RUA EXEMPLO, 123 - CENTRO",
-            "Nome": "PROPRIETARIO TESTE"
+            "Nome": "PROPRIETARIO TESTE",
         }
 
     async def consultar_guias(
@@ -460,14 +471,18 @@ class IPTUAPIServiceFake:
         """
         # Limpa inscrição removendo caracteres não numéricos
         inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
-        
-        logger.info(f"FAKE API: Consulting guides for inscription {inscricao_clean}, year {exercicio}")
-        
+
+        logger.info(
+            f"FAKE API: Consulting guides for inscription {inscricao_clean}, year {exercicio}"
+        )
+
         # Busca dados mockados
         guias_response = self._get_mock_guias_data(inscricao_clean, exercicio)
-        
+
         if not guias_response:
-            logger.info(f"FAKE API: No guides found for inscription {inscricao_clean}, year {exercicio}")
+            logger.info(
+                f"FAKE API: No guides found for inscription {inscricao_clean}, year {exercicio}"
+            )
             return None
 
         # Converte response para objetos Guia usando Pydantic
@@ -491,14 +506,18 @@ class IPTUAPIServiceFake:
 
                 guias.append(guia)
             except Exception as e:
-                logger.warning(f"FAKE API: Failed to parse guide data: {guia_data}, error: {e}")
+                logger.warning(
+                    f"FAKE API: Failed to parse guide data: {guia_data}, error: {e}"
+                )
                 continue
 
         # Filtra apenas as guias em aberto para retorno
         guias_em_aberto = [g for g in guias if g.esta_em_aberto]
 
         if not guias_em_aberto:
-            logger.info(f"FAKE API: No open guides found for inscription {inscricao_clean}")
+            logger.info(
+                f"FAKE API: No open guides found for inscription {inscricao_clean}"
+            )
             return None
 
         # Cria objeto de dados das guias usando a estrutura simplificada
@@ -509,7 +528,9 @@ class IPTUAPIServiceFake:
             total_guias=len(guias_em_aberto),
         )
 
-        logger.info(f"FAKE API: IPTU data retrieved for inscription with {len(guias)} guides available")
+        logger.info(
+            f"FAKE API: IPTU data retrieved for inscription with {len(guias)} guides available"
+        )
         return dados_guias
 
     async def obter_cotas(
@@ -533,12 +554,16 @@ class IPTUAPIServiceFake:
         """
         # Limpa inscrição removendo caracteres não numéricos
         inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
-        
-        logger.info(f"FAKE API: Consulting cotas for inscription {inscricao_clean}, guide {numero_guia}")
+
+        logger.info(
+            f"FAKE API: Consulting cotas for inscription {inscricao_clean}, guide {numero_guia}"
+        )
 
         # Consulta cotas disponíveis para esta guia
-        cotas_response = self._get_mock_cotas_data(inscricao_clean, exercicio, numero_guia)
-        
+        cotas_response = self._get_mock_cotas_data(
+            inscricao_clean, exercicio, numero_guia
+        )
+
         if not cotas_response or "Cotas" not in cotas_response:
             logger.warning(f"FAKE API: No cotas found for guide {numero_guia}")
             return None
@@ -564,7 +589,9 @@ class IPTUAPIServiceFake:
 
                 cotas.append(cota)
             except Exception as e:
-                logger.warning(f"FAKE API: Failed to parse cota data: {cota_data}, error: {e}")
+                logger.warning(
+                    f"FAKE API: Failed to parse cota data: {cota_data}, error: {e}"
+                )
                 continue
 
         # Calcula valor total
@@ -585,7 +612,9 @@ class IPTUAPIServiceFake:
             valor_total=valor_total,
         )
 
-        logger.info(f"FAKE API: Cotas data retrieved for guide {numero_guia} with {len(cotas)} cotas")
+        logger.info(
+            f"FAKE API: Cotas data retrieved for guide {numero_guia} with {len(cotas)} cotas"
+        )
         return dados_cotas
 
     async def consultar_darm(
@@ -609,17 +638,23 @@ class IPTUAPIServiceFake:
         """
         # Limpa inscrição removendo caracteres não numéricos
         inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
-        
+
         # Converte lista de cotas para string separada por vírgula
         cotas_str = ",".join(cotas_selecionadas)
-        
-        logger.info(f"FAKE API: Consulting DARM for inscription {inscricao_clean}, guide {numero_guia}, cotas {cotas_str}")
+
+        logger.info(
+            f"FAKE API: Consulting DARM for inscription {inscricao_clean}, guide {numero_guia}, cotas {cotas_str}"
+        )
 
         # Faz consulta mockada
-        darm_response = self._get_mock_darm_data(inscricao_clean, exercicio, numero_guia, cotas_selecionadas)
+        darm_response = self._get_mock_darm_data(
+            inscricao_clean, exercicio, numero_guia, cotas_selecionadas
+        )
 
         if not darm_response:
-            logger.warning(f"FAKE API: No DARM found for guide {numero_guia} cotas {cotas_str}")
+            logger.warning(
+                f"FAKE API: No DARM found for guide {numero_guia} cotas {cotas_str}"
+            )
             return None
 
         try:
@@ -632,7 +667,9 @@ class IPTUAPIServiceFake:
             # Gera código de barras a partir da sequencia_numerica (linha digitável)
             if darm.sequencia_numerica:
                 # Remove pontos e espaços para criar código de barras
-                darm.codigo_barras = darm.sequencia_numerica.replace(".", "").replace(" ", "")
+                darm.codigo_barras = darm.sequencia_numerica.replace(".", "").replace(
+                    " ", ""
+                )
 
             # Cria DadosDarm
             dados_darm = DadosDarm(
@@ -643,11 +680,15 @@ class IPTUAPIServiceFake:
                 darm=darm,
             )
 
-            logger.info(f"FAKE API: DARM data retrieved for guide {numero_guia} cotas {cotas_str}")
+            logger.info(
+                f"FAKE API: DARM data retrieved for guide {numero_guia} cotas {cotas_str}"
+            )
             return dados_darm
 
         except Exception as e:
-            logger.error(f"FAKE API: Error processing DARM data: {str(e)} - Data: {darm_response}")
+            logger.error(
+                f"FAKE API: Error processing DARM data: {str(e)} - Data: {darm_response}"
+            )
             return None
 
     async def download_pdf_darm(
@@ -671,24 +712,34 @@ class IPTUAPIServiceFake:
         """
         # Limpa inscrição removendo caracteres não numéricos
         inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
-        
+
         # Converte lista de cotas para string separada por vírgula
         cotas_str = ",".join(cotas_selecionadas)
-        
-        logger.info(f"FAKE API: Downloading PDF for inscription {inscricao_clean}, guide {numero_guia}, cotas {cotas_str}")
+
+        logger.info(
+            f"FAKE API: Downloading PDF for inscription {inscricao_clean}, guide {numero_guia}, cotas {cotas_str}"
+        )
 
         # Verifica se tem DARM válido para essas cotas
-        darm_data = self._get_mock_darm_data(inscricao_clean, exercicio, numero_guia, cotas_selecionadas)
-        
+        darm_data = self._get_mock_darm_data(
+            inscricao_clean, exercicio, numero_guia, cotas_selecionadas
+        )
+
         if not darm_data:
             logger.warning(f"FAKE API: PDF download failed - no DARM data available")
             return None
 
         # Gera PDF base64 mockado (um PDF mínimo válido)
         # Este é um PDF extremamente simples em base64 para teste
-        fake_pdf_base64 = (
-            "JVBERi0xLjQKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKL01lZGlhQm94IFswIDAgNTk1IDg0Ml0KPj4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgovTWVkaWFCb3ggWzAgMCA1OTUgODQyXQovQ29udGVudHMgNCAwIFIKPj4KZW5kb2JqCjQgMCBvYmoKPDwKL0xlbmd0aCA0NAo+PgpzdHJlYW0KQlQKL0YxIDEyIFRmCjEwMCA3MDAgVGQKKERBUk0gVGVzdGUpIFRqCkVUCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDUKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjA0IDAwMDAwIG4gCnRyYWlsZXIKPDwKL1NpemUgNQovUm9vdCAxIDAgUgo+PgpzdGFydHhyZWYKMjk4CiUlRU9GCg=="
-        )
+        fake_pdf_base64 = "www.fake.url.com"
 
-        logger.info(f"FAKE API: PDF downloaded successfully for inscription {inscricao_clean}")
+        logger.info(
+            f"FAKE API: PDF downloaded successfully for inscription {inscricao_clean}"
+        )
         return fake_pdf_base64
+
+    async def get_imovel_info(self, inscricao):
+        return {
+            "endereco": "Rua Fake, Bairro Fake, 0000-0000",
+            "proprietario": "Fake da Silva",
+        }

@@ -51,13 +51,13 @@ class IPTUWorkflow(BaseWorkflow):
     def __init__(self, use_fake_api: bool = False):
         """
         Inicializa o workflow IPTU.
-        
+
         Args:
             use_fake_api: Se True, usa api_service_fake com dados mockados.
                          Se False, usa api_service real.
         """
         super().__init__()
-        
+
         if use_fake_api:
             self.api_service = IPTUAPIServiceFake()
         else:
@@ -138,6 +138,7 @@ class IPTUWorkflow(BaseWorkflow):
 
                 # Salva a nova inscrição
                 state.data["inscricao_imobiliaria"] = nova_inscricao
+
                 state.agent_response = None
                 return state
 
@@ -234,7 +235,7 @@ class IPTUWorkflow(BaseWorkflow):
                 key_tentativas = f"tentativas_falhas_{inscricao}"
                 tentativas = state.internal.get(key_tentativas, 0) + 1
                 state.internal[key_tentativas] = tentativas
-                
+
                 # Se já tentou 3 anos diferentes e ainda não encontrou, a inscrição provavelmente não existe
                 if tentativas >= 3:
                     # Remove os rastros das tentativas e reseta para nova inscrição
@@ -246,12 +247,14 @@ class IPTUWorkflow(BaseWorkflow):
                     # Reset completo para permitir nova entrada
                     self._reset_completo(state)
                     return state
-                
+
                 # Ainda dentro do limite de tentativas - pede novo ano
                 state.data.pop("ano_exercicio", None)
-                state.payload.pop("ano_exercicio", None)  # Remove do payload também para evitar loop
+                state.payload.pop(
+                    "ano_exercicio", None
+                )  # Remove do payload também para evitar loop
                 state.internal.pop("consulta_guias_realizada", None)
-                
+
                 state.agent_response = AgentResponse(
                     description=f"❌ Nenhuma guia de IPTU foi encontrada para o ano {exercicio} da inscrição {inscricao}.\n\n📅 Por favor, escolha outro ano de exercício:",
                     payload_schema=EscolhaAnoPayload.model_json_schema(),
@@ -275,6 +278,13 @@ class IPTUWorkflow(BaseWorkflow):
         # Salva dados das guias real
         state.data["dados_guias"] = dados_guias.model_dump()
         state.internal["consulta_guias_realizada"] = True
+        dados_imovel = asyncio.run(
+            self.api_service.get_imovel_info(inscricao=inscricao)
+        )
+
+        if dados_imovel:
+            state.data["endereco"] = dados_imovel["endereco"]
+            state.data["proprietario"] = dados_imovel["proprietario"]
 
         # Não para o fluxo aqui - continua para mostrar as guias
         state.agent_response = None
@@ -416,7 +426,7 @@ Informe o número da guia ("00", "01")"""
             # Remove dados da guia escolhida e reseta campos relacionados
             state.data.pop("guia_escolhida", None)
             state.data.pop("dados_cotas", None)
-            
+
             state.agent_response = AgentResponse(
                 description=f"❌ Nenhuma cota foi encontrada para a guia {guia_escolhida}.\n\n🎯 Por favor, selecione outra guia disponível:",
                 payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
@@ -432,7 +442,7 @@ Informe o número da guia ("00", "01")"""
             # Remove dados da guia escolhida e reseta campos relacionados
             state.data.pop("guia_escolhida", None)
             state.data.pop("dados_cotas", None)
-            
+
             state.agent_response = AgentResponse(
                 description=f"✅ Todas as cotas da guia {guia_escolhida} já foram quitadas.\n\n🎯 Por favor, selecione outra guia disponível:",
                 payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
@@ -541,10 +551,13 @@ Informe o número da guia ("00", "01")"""
         guia_escolhida = state.data.get("guia_escolhida", "N/A")
         cotas_escolhidas = state.data.get("cotas_escolhidas", [])
         darm_separado = state.internal.get("darm_separado", False)
-
+        endereco = state.data.get("endereco", "N/A")
+        proprietario = state.data.get("proprietario", "N/A")
         resumo_texto = f"""📋 **Confirmação dos Dados**
 
 **Imóvel:** {inscricao}
+**Endereço:** {endereco}
+**Proprietário:** {proprietario}
 **Guia:** {guia_escolhida}
 **Cotas:** {', '.join(cotas_escolhidas)}
 **Boletos a serem gerados:** {len(cotas_escolhidas) if darm_separado else 1}
@@ -608,7 +621,7 @@ Informe o número da guia ("00", "01")"""
                     state.data.pop("cotas_escolhidas", None)
                     state.data.pop("dados_darm", None)
                     state.internal.pop("darm_separado", None)
-                    
+
                     state.agent_response = AgentResponse(
                         description=f"❌ Não foi possível gerar o DARM para as cotas {', '.join(cotas_para_darm)}.\n\n🎯 Por favor, selecione novamente as cotas para pagamento:",
                         payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
@@ -616,7 +629,7 @@ Informe o número da guia ("00", "01")"""
                     return state
 
                 # Tenta baixar o PDF, mas continua mesmo se falhar
-                pdf_base64 = asyncio.run(
+                urls = asyncio.run(
                     self.api_service.download_pdf_darm(
                         inscricao_imobiliaria=inscricao,
                         exercicio=exercicio,
@@ -624,7 +637,7 @@ Informe o número da guia ("00", "01")"""
                         cotas_selecionadas=cotas_para_darm,
                     )
                 )
-                
+
                 guias_geradas.append(
                     {
                         "tipo": "darm",
@@ -634,16 +647,16 @@ Informe o número da guia ("00", "01")"""
                         "vencimento": dados_darm.darm.data_vencimento,
                         "codigo_barras": dados_darm.darm.codigo_barras,
                         "linha_digitavel": dados_darm.darm.sequencia_numerica,
-                        # "pdf_base64": pdf_base64,
+                        "pdf": urls,
                     }
                 )
-                
+
             except Exception as e:
                 # Erro na API - reseta dados de cotas e volta para seleção de cotas
                 state.data.pop("cotas_escolhidas", None)
                 state.data.pop("dados_darm", None)
                 state.internal.pop("darm_separado", None)
-                
+
                 state.agent_response = AgentResponse(
                     description=f"❌ Erro ao processar o pagamento das cotas {', '.join(cotas_para_darm)}: {str(e)}\n\n🎯 Por favor, selecione novamente as cotas para pagamento:",
                     payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
@@ -655,7 +668,7 @@ Informe o número da guia ("00", "01")"""
             state.data.pop("cotas_escolhidas", None)
             state.data.pop("dados_darm", None)
             state.internal.pop("darm_separado", None)
-            
+
             state.agent_response = AgentResponse(
                 description="❌ Não foi possível gerar nenhum boleto de pagamento.\n\n🎯 Por favor, selecione novamente as cotas para pagamento:",
                 payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
@@ -820,7 +833,12 @@ Informe o número da guia ("00", "01")"""
         # Reset apenas dos campos relacionados à seleção de cotas e posteriores
         fields_to_reset = {
             "data": ["cotas_escolhidas", "dados_darm", "guias_geradas"],
-            "internal": ["quer_mais_cotas", "quer_outras_guias", "quer_outro_imovel", "tipo_pergunta_seguinte"],
+            "internal": [
+                "quer_mais_cotas",
+                "quer_outras_guias",
+                "quer_outro_imovel",
+                "tipo_pergunta_seguinte",
+            ],
         }
 
         self._reset_completo(state, manter_inscricao=True, fields=fields_to_reset)
@@ -838,7 +856,12 @@ Informe o número da guia ("00", "01")"""
                 "dados_darm",
                 "guias_geradas",
             ],
-            "internal": ["quer_mais_cotas", "quer_outras_guias", "quer_outro_imovel", "tipo_pergunta_seguinte"],
+            "internal": [
+                "quer_mais_cotas",
+                "quer_outras_guias",
+                "quer_outro_imovel",
+                "tipo_pergunta_seguinte",
+            ],
         }
 
         self._reset_completo(state, manter_inscricao=True, fields=fields_to_reset)
@@ -906,7 +929,10 @@ Informe o número da guia ("00", "01")"""
         # Se não tem dados de guias, significa que a consulta falhou
         if "dados_guias" not in state.data:
             # Se tem inscrição válida mas não tem ano, volta para escolha do ano
-            if "inscricao_imobiliaria" in state.data and "ano_exercicio" not in state.data:
+            if (
+                "inscricao_imobiliaria" in state.data
+                and "ano_exercicio" not in state.data
+            ):
                 return "escolher_ano"
             # Caso contrário, volta para informar inscrição
             return "informar_inscricao"
@@ -1019,9 +1045,9 @@ Informe o número da guia ("00", "01")"""
             "consultar_guias",
             self._route_consulta_guias,
             {
-                "usuario_escolhe_guias": "usuario_escolhe_guias", 
+                "usuario_escolhe_guias": "usuario_escolhe_guias",
                 "escolher_ano": "escolher_ano",
-                "informar_inscricao": "informar_inscricao"
+                "informar_inscricao": "informar_inscricao",
             },
         )
         graph.add_conditional_edges(
@@ -1033,9 +1059,9 @@ Informe o número da guia ("00", "01")"""
             "consultar_cotas",
             self._route_consulta_cotas,
             {
-                "usuario_escolhe_cotas": "usuario_escolhe_cotas", 
-                "usuario_escolhe_guias": "usuario_escolhe_guias", 
-                END: END
+                "usuario_escolhe_cotas": "usuario_escolhe_cotas",
+                "usuario_escolhe_guias": "usuario_escolhe_guias",
+                END: END,
             },
         )
         graph.add_conditional_edges(
@@ -1057,9 +1083,9 @@ Informe o número da guia ("00", "01")"""
             "gerar_darm",
             self._route_gerar_darm,
             {
-                "pergunta_mesma_guia": "pergunta_mesma_guia", 
-                "usuario_escolhe_cotas": "usuario_escolhe_cotas", 
-                END: END
+                "pergunta_mesma_guia": "pergunta_mesma_guia",
+                "usuario_escolhe_cotas": "usuario_escolhe_cotas",
+                END: END,
             },
         )
 

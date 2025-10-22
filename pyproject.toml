@@ -21,6 +21,7 @@ dependencies = [
     "pip>=25.2",
     "pydantic>=2.11.7",
     "jmespath>=1.0.1",
+    "google-cloud-storage>=2.19.0",
 ]
 
 

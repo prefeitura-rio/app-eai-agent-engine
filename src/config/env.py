@@ -44,4 +44,14 @@ IPTU_API_URL = getenv_or_action("IPTU_API_URL")
 IPTU_API_TOKEN = getenv_or_action("IPTU_API_TOKEN")
 IPTU_API_NOTIFICA_URL = getenv_or_action("IPTU_API_NOTIFICA_URL")
 IPTU_API_NOTIFICA_TOKEN = getenv_or_action("IPTU_API_NOTIFICA_TOKEN")
-SHARE_DADOS_RIO_API_TOKEN = getenv_or_action("SHARE_DADOS_RIO_API_TOKEN", default="", action="warn")
+
+SHARE_DADOS_RIO_URL = getenv_or_action("SHARE_DADOS_RIO_URL")
+SHARE_DADOS_RIO_API_TOKEN = getenv_or_action(
+    "SHARE_DADOS_RIO_API_TOKEN", default="", action="warn"
+)
+
+WA_IPTU_URL = getenv_or_action("WA_IPTU_URL")
+WA_IPTU_TOKEN = getenv_or_action("WA_IPTU_TOKEN")
+WA_IPTU_PUBLIC_KEY = getenv_or_action("WA_IPTU_PUBLIC_KEY")
+
+WORKFLOWS_GCP_SERVICE_ACCOUNT = getenv_or_action("WORKFLOWS_GCP_SERVICE_ACCOUNT")

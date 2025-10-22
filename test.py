@@ -17,6 +17,8 @@ nao remova as logicas de reset pois elas sao importantes para o fluxo funcionar 
 import json
 import time
 from src.services.tool import multi_step_service, save_single_workflow_graph
+from src.services.workflows.iptu_pagamento.api_service import IPTUAPIService
+import asyncio
 
 
 def main():

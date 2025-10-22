@@ -6,8 +6,19 @@ para consulta de IPTU e geração de guias de pagamento.
 """
 
 import re
+import json
 from typing import List, Optional, Dict, Any
 import httpx
+import base64
+import textwrap
+import datetime as dt
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+import uuid
+
+from google.cloud import storage
+from google.oauth2 import service_account
 
 from src.config import env
 from src.services.workflows.iptu_pagamento.models import (
@@ -74,7 +85,6 @@ class IPTUAPIService:
 
         try:
             async with httpx.AsyncClient(proxy=self.proxy, timeout=30.0) as client:
-                logger.info(f"Calling API: {endpoint} with params: {params}")
                 response = await client.get(url, params=params)
 
                 if response.status_code == 200:
@@ -409,7 +419,137 @@ class IPTUAPIService:
         if pdf_base64 and not pdf_base64.startswith("<!DOCTYPE"):
             # Retorna apenas se não for uma página de erro HTML
             logger.info(f"PDF downloaded successfully for inscricao {inscricao_clean}")
-            return pdf_base64
+            signed_url = await self.upload_base64_to_gcs(base64_content=pdf_base64)
+            shorted_url = await self.get_short_url(url=signed_url)
+            return shorted_url
         else:
             logger.warning(f"PDF download failed or returned HTML error page")
             return None
+
+    async def get_imovel_info(self, inscricao: str) -> Optional[Dict]:
+        """
+        Faz uma requisição GET na API REST de IPTU utilizando a VPN interna.
+
+        Args:
+            pem_public_key (str): Chave pública no formato PEM.
+            raw_token (str): Token original a ser criptografado.
+            inscricao (str): Número da inscrição do imóvel.
+
+        Returns:
+            dict: Resposta JSON da API.
+        """
+        inscricao_clean = self._limpar_inscricao(inscricao=inscricao)
+
+        logger.info(
+            f"Iniciando consulta de imóvel via VPN para inscrição: {inscricao_clean}"
+        )
+        encrypted_token = encrypt_token_rsa(
+            chave_publica_pem=env.WA_IPTU_PUBLIC_KEY, token=env.WA_IPTU_TOKEN
+        )
+
+        auth_header = f"Basic {encrypted_token}"
+
+        url = f"{env.WA_IPTU_URL}/{inscricao_clean}"
+        headers = {"Authorization": auth_header}
+        async with httpx.AsyncClient(proxy=self.proxy, timeout=30.0) as client:
+            response = await client.get(url, headers=headers)
+
+        if response.status_code != 200:
+            logger.error(
+                f"Erro ao consultar imóvel via VPN. Status: {response.status_code}, Texto: {response.text}"
+            )
+            return None
+        response = response.json()
+
+        # Construindo o endereço completo
+        endereco_completo = f"{response['tipoLogradouro']} {response['nomeLogradouro']}, {response['numPorta']}, {response.get('complEndereco', '')}, {response['bairro']}, {response['cep']}"
+        # Retornando os dados desejados
+        return {
+            "endereco": endereco_completo.strip(", "),
+            "proprietario": response["proprietarioPrincipal"],
+        }
+
+    async def upload_base64_to_gcs(self, base64_content) -> str:
+        """
+        Faz o upload de um arquivo em base64 para o Google Cloud Storage e retorna uma URL assinada válida por 7 dias.
+
+        Args:
+            base64_content (str): Conteúdo do arquivo codificado em base64.
+
+        Returns:
+            str: URL assinada para download do arquivo válida por 7 dias.
+        """
+
+        google_credentials = await self.get_credentials_from_env()
+        client = storage.Client(credentials=google_credentials)
+        bucket = client.bucket("langgraph-workflows")
+
+        file_data = base64.b64decode(base64_content)
+
+        file_name = f"iptu/{uuid.uuid4()}.pdf"
+
+        blob = bucket.blob(file_name)
+
+        blob.upload_from_string(file_data, content_type="application/pdf")
+
+        expiration = dt.timedelta(days=7)
+        signed_url = blob.generate_signed_url(
+            expiration=expiration,
+            api_access_endpoint="https://storage.cloud.google.com",
+        )
+
+        return signed_url
+
+    async def get_credentials_from_env(self) -> service_account.Credentials:
+        """
+        Gets credentials from env vars
+        """
+        info: dict = json.loads(base64.b64decode(env.WORKFLOWS_GCP_SERVICE_ACCOUNT))
+        return service_account.Credentials.from_service_account_info(info)
+
+    async def get_short_url(self, url) -> Optional[str]:
+        """
+        Envia uma URL para o endpoint de encurtamento de URL e retorna a URL encurtada.
+
+        :param url: A URL que será encurtada.
+        :return: A URL encurtada como string.
+        """
+        api_url = f"{env.SHARE_DADOS_RIO_URL}/api/urls/"
+        headers = {
+            "Authorization": f"Bearer {env.SHARE_DADOS_RIO_API_TOKEN}",
+            "Content-Type": "application/json",
+        }
+        payload = {"url": url}
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(api_url, json=payload, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                return f"{env.SHARE_DADOS_RIO_URL}/{data['short_url']}"
+            except httpx.RequestError as e:
+                print(f"Erro ao encurtar a URL: {e}")
+                return None
+
+
+def encrypt_token_rsa(chave_publica_pem: str, token: str) -> str:
+    utc_now = dt.datetime.now(dt.timezone.utc)
+    datahora_str = utc_now.strftime("%d/%m/%Y %H:%M:%S")
+
+    dataHoraToken = datahora_str + token
+
+    dataHoraToken_bytes = dataHoraToken.encode("utf-16-le")
+
+    pem_formatado = convert_base64_to_pem(chave_publica_pem)
+    public_key = serialization.load_pem_public_key(pem_formatado.encode())
+
+    encrypted = public_key.encrypt(dataHoraToken_bytes, padding.PKCS1v15())
+
+    return base64.b64encode(encrypted).decode("ascii")
+
+
+def convert_base64_to_pem(base64_key: str) -> str:
+    if "BEGIN PUBLIC KEY" in base64_key:
+        return base64_key.strip()
+    wrapped = textwrap.fill(base64_key, 64)
+    return f"-----BEGIN PUBLIC KEY-----\n{wrapped}\n-----END PUBLIC KEY-----"
