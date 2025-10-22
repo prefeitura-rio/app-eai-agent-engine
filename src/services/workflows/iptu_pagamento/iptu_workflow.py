@@ -326,7 +326,8 @@ class IPTUWorkflow(BaseWorkflow):
     def _buscar_guias_detalhadas(self, state: ServiceState) -> str:
         """Formata informações detalhadas das guias disponíveis usando dados já consultados."""
         dados_guias = state.data.get("dados_guias", {})
-
+        endereco = state.data.get("endereco", "N/A")
+        proprietario = state.data.get("proprietario", "N/A")
         # Se temos dados simulados, usa fallback simples
         if state.internal.get("dados_simulados", False):
             return self._guias_info_fallback(dados_guias)
@@ -342,16 +343,29 @@ class IPTUWorkflow(BaseWorkflow):
             if not guias_disponiveis or len(guias_disponiveis) == 0:
                 return self._guias_info_fallback(dados_guias)
 
-            return self._formatar_lista_guias(dados_guias, guias_disponiveis)
+            return self._formatar_lista_guias(
+                dados_guias=dados_guias,
+                guias_disponiveis=guias_disponiveis,
+                endereco=endereco,
+                proprietario=proprietario,
+            )
 
         except Exception as e:
             # Fallback em caso de erro
             return self._guias_info_fallback(dados_guias)
 
-    def _formatar_lista_guias(self, dados_guias: dict, guias_disponiveis: list) -> str:
+    def _formatar_lista_guias(
+        self,
+        dados_guias: dict,
+        guias_disponiveis: list,
+        endereco: str,
+        proprietario: str,
+    ) -> str:
         """Exibe lista das guias disponíveis para seleção do usuário."""
         response_text = f"""🏠 **Dados do Imóvel Encontrado:**
 🆔 **Inscrição:** {dados_guias.get('inscricao_imobiliaria', '')}
+💼 **Proprietário:** {proprietario}
+📍 **Endereço:** {endereco}
 
 📋 **Guias Disponíveis para IPTU {dados_guias.get('exercicio', '')}:**
 
