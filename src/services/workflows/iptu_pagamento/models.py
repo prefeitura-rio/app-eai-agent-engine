@@ -40,39 +40,12 @@ class EscolhaAnoPayload(BaseModel):
         ..., description="Ano de exercício para consulta do IPTU"
     )
 
-    @classmethod
-    def validate_inscricao(cls, v):
-        """Valida formato da inscrição imobiliária."""
-        # Remove espaços e caracteres especiais
-        clean_inscricao = re.sub(r"[^0-9]", "", v)
-
-        if len(clean_inscricao) < 8 or len(clean_inscricao) > 15:
-            raise ValueError("Inscrição imobiliária deve ter entre 14 e 15 dígitos")
-
-        return clean_inscricao
-
 
 class EscolhaGuiasIPTUPayload(BaseModel):
     """Payload para escolher qual guia de IPTU o usuário quer pagar."""
 
     guia_escolhida: str = Field(
         ..., description="Número da guia escolhida para pagamento (ex: '00', '01')"
-    )
-
-
-class EscolhaCobrancaPayload(BaseModel):
-    """Payload para escolha do tipo de cobrança."""
-
-    tipo_cobranca: Literal["cota_unica", "cota_parcelada"] = Field(
-        ..., description="Tipo de cobrança: cota única ou parcelada"
-    )
-
-
-class EscolhaFormatoPagamentoPayload(BaseModel):
-    """Payload para escolha do formato de pagamento."""
-
-    formato_pagamento: Literal["darf", "codigo_barras"] = Field(
-        ..., description="Formato de pagamento: DARF separado ou código de barras"
     )
 
 

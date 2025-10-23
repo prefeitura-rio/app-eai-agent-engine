@@ -14,14 +14,23 @@ def multi_step_service(
 
     Args:
         service_name: Nome do serviço (ex: "bank_account")
-        payload: Dicionário com campos solicitados no payload_schema. Envie apenas o que for solicidado na etapa atual.
+        payload: Dicionário com campos solicitados no payload_schema. **Envie apenas o que for solicidado na etapa atual!!**.
         user_id: ID do agente, passar sempre 'agent'
-    Exemplos:
-        # Início - payload vazio
-        payload = {}
 
-        # Um campo
-        payload = {"document_type":"CPF"}
+    IMPORTANTE: Este serviço funciona em ETAPAS SEQUENCIAIS.
+    - Cada etapa solicita campos específico no payload_schema
+    - Você DEVE enviar SOMENTE o campo solicitado na etapa atual
+    - NÃO inclua campos de etapas anteriores no payload
+    - O sistema já armazena os dados das etapas anteriores automaticamente
+
+    Exemplo CORRETO:
+    - Etapa 1 pede "nome" → envie {"nome": "..."}
+    - Etapa 2 pede "email" → envie {"email": "..."} (SEM nome)
+    - Etapa 3 pede "idade e endereco" → envie {"idade": ..., "endereco":"..."} (SEM campos anteriores)
+
+    Exemplo INCORRETO (NÃO FAÇA ISSO):
+    - Etapa 2: {"nome": "...", "email": "..."} ❌ ERRADO
+    - Etapa 3: {"nome": "...", "email": "...", "idade": ..., "endereco":"..."} ❌ ERRADO"
 
     Serviços disponíveis:
         - service_name: description

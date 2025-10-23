@@ -22,11 +22,12 @@ class IPTUMessageTemplates:
     def escolher_ano(inscricao: str, endereco: str, proprietario: str) -> str:
         """Mensagem para escolha do ano de exercício."""
         return f"""🏠 **Dados do Imóvel Encontrado:**
-    🆔 **Inscrição:** {inscricao}
-    💼 **Proprietário:** {proprietario}
-    📍 **Endereço:** {endereco}
-    📅 Agora preciso que vc escolha o ano de exercício para consulta do IPTU:
-    """
+🆔 **Inscrição:** {inscricao}
+💼 **Proprietário:** {proprietario}
+📍 **Endereço:** {endereco}
+
+📅 Agora informe o **ano de exercício** para consulta do IPTU (ex: 2024, 2025).
+"""
 
     # --- Erros de Consulta ---
 
@@ -109,7 +110,7 @@ Informe o número da guia ({exemplos_reais})"""
             status_icon = "🟡" if esta_vencida else "🟢"
             status_text = "VENCIDA" if esta_vencida else "EM ABERTO"
 
-            texto += f"• **{numero_cota}ª Cota** - Venc: {data_vencimento} - R$ {valor_cota} - {status_icon} {status_text}\n"
+            texto += f"• **{numero_cota}ª Cota** - Vencimento: {data_vencimento} - R$ {valor_cota} - {status_icon} {status_text}\n"
 
         texto += f"\n• **Todas as cotas** - Total: R$ {valor_total:.2f}\n"
         texto += "\n**Quais cotas você deseja pagar?**"
