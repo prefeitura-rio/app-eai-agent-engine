@@ -110,7 +110,16 @@ class IPTUWorkflow(BaseWorkflow):
                 # Salva a nova inscrição
                 state.data["inscricao_imobiliaria"] = nova_inscricao
 
+                dados_imovel = asyncio.run(
+                    self.api_service.get_imovel_info(inscricao=nova_inscricao)
+                )
+
+                if dados_imovel:
+                    state.data["endereco"] = dados_imovel["endereco"]
+                    state.data["proprietario"] = dados_imovel["proprietario"]
+
                 state.agent_response = None
+
                 return state
 
             except Exception as e:
@@ -138,6 +147,9 @@ class IPTUWorkflow(BaseWorkflow):
     @handle_errors
     def _escolher_ano_exercicio(self, state: ServiceState) -> ServiceState:
         """Coleta o ano de exercício para consulta do IPTU."""
+        inscricao = state.data.get("inscricao_imobiliaria", "N/A")
+        endereco = state.data.get("endereco", "N/A")
+        proprietario = state.data.get("proprietario", "N/A")
         if "ano_exercicio" in state.payload:
             try:
                 validated_data = EscolhaAnoPayload.model_validate(state.payload)
@@ -146,7 +158,11 @@ class IPTUWorkflow(BaseWorkflow):
                 return state
             except Exception as e:
                 state.agent_response = AgentResponse(
-                    description=IPTUMessageTemplates.escolher_ano(),
+                    description=IPTUMessageTemplates.escolher_ano(
+                        inscricao=inscricao,
+                        endereco=endereco,
+                        proprietario=proprietario,
+                    ),
                     payload_schema=EscolhaAnoPayload.model_json_schema(),
                     error_message=f"Ano inválido: {str(e)}",
                 )
@@ -159,7 +175,9 @@ class IPTUWorkflow(BaseWorkflow):
 
         # Solicita escolha do ano
         response = AgentResponse(
-            description=IPTUMessageTemplates.escolher_ano(),
+            description=IPTUMessageTemplates.escolher_ano(
+                inscricao=inscricao, endereco=endereco, proprietario=proprietario
+            ),
             payload_schema=EscolhaAnoPayload.model_json_schema(),
         )
         state.agent_response = response
@@ -227,7 +245,9 @@ class IPTUWorkflow(BaseWorkflow):
                 state.internal.pop("consulta_guias_realizada", None)
 
                 state.agent_response = AgentResponse(
-                    description=IPTUMessageTemplates.nenhuma_guia_encontrada(inscricao, exercicio),
+                    description=IPTUMessageTemplates.nenhuma_guia_encontrada(
+                        inscricao, exercicio
+                    ),
                     payload_schema=EscolhaAnoPayload.model_json_schema(),
                 )
                 return state
@@ -249,14 +269,6 @@ class IPTUWorkflow(BaseWorkflow):
         # Salva dados das guias real
         state.data["dados_guias"] = dados_guias.model_dump()
         state.internal["consulta_guias_realizada"] = True
-        dados_imovel = asyncio.run(
-            self.api_service.get_imovel_info(inscricao=inscricao)
-        )
-
-        if dados_imovel:
-            state.data["endereco"] = dados_imovel["endereco"]
-            state.data["proprietario"] = dados_imovel["proprietario"]
-
         # Não para o fluxo aqui - continua para mostrar as guias
         state.agent_response = None
 
@@ -334,10 +346,10 @@ class IPTUWorkflow(BaseWorkflow):
         )
 
         return IPTUMessageTemplates.dados_imovel(
-            inscricao=dados_guias.get('inscricao_imobiliaria', ''),
+            inscricao=dados_guias.get("inscricao_imobiliaria", ""),
             proprietario=proprietario,
             endereco=endereco,
-            exercicio=dados_guias.get('exercicio', ''),
+            exercicio=dados_guias.get("exercicio", ""),
             guias=guias_formatadas,
         )
 
@@ -374,7 +386,9 @@ class IPTUWorkflow(BaseWorkflow):
             state.data.pop("dados_cotas", None)
 
             state.agent_response = AgentResponse(
-                description=IPTUMessageTemplates.nenhuma_cota_encontrada(str(guia_escolhida)),
+                description=IPTUMessageTemplates.nenhuma_cota_encontrada(
+                    str(guia_escolhida)
+                ),
                 payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
             )
             return state
@@ -437,7 +451,9 @@ class IPTUWorkflow(BaseWorkflow):
         valor_total = sum(c["valor_numerico"] for c in cotas_formatadas)
 
         # Apresenta opções de cotas para escolha
-        cotas_texto = IPTUMessageTemplates.selecionar_cotas(cotas_formatadas, valor_total)
+        cotas_texto = IPTUMessageTemplates.selecionar_cotas(
+            cotas_formatadas, valor_total
+        )
 
         state.agent_response = AgentResponse(
             description=cotas_texto,
@@ -489,7 +505,9 @@ class IPTUWorkflow(BaseWorkflow):
         endereco = state.data.get("endereco", "N/A")
         proprietario = state.data.get("proprietario", "N/A")
 
-        num_boletos = utils.calcular_numero_boletos(darm_separado, len(cotas_escolhidas))
+        num_boletos = utils.calcular_numero_boletos(
+            darm_separado, len(cotas_escolhidas)
+        )
 
         resumo_texto = IPTUMessageTemplates.confirmacao_dados(
             inscricao=inscricao,
@@ -559,7 +577,9 @@ class IPTUWorkflow(BaseWorkflow):
                     state.internal.pop("darm_separado", None)
 
                     state.agent_response = AgentResponse(
-                        description=IPTUMessageTemplates.erro_gerar_darm(cotas_para_darm),
+                        description=IPTUMessageTemplates.erro_gerar_darm(
+                            cotas_para_darm
+                        ),
                         payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
                     )
                     return state
@@ -594,7 +614,9 @@ class IPTUWorkflow(BaseWorkflow):
                 state.internal.pop("darm_separado", None)
 
                 state.agent_response = AgentResponse(
-                    description=IPTUMessageTemplates.erro_processar_pagamento(cotas_para_darm, str(e)),
+                    description=IPTUMessageTemplates.erro_processar_pagamento(
+                        cotas_para_darm, str(e)
+                    ),
                     payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
                 )
                 return state

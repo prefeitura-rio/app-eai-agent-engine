@@ -19,9 +19,14 @@ class IPTUMessageTemplates:
         return "📋 Para consultar o IPTU, informe a inscrição imobiliária do seu imóvel (8 a 15 dígitos)."
 
     @staticmethod
-    def escolher_ano() -> str:
+    def escolher_ano(inscricao: str, endereco: str, proprietario: str) -> str:
         """Mensagem para escolha do ano de exercício."""
-        return "📅 Escolha o ano de exercício para consulta do IPTU:"
+        return f"""🏠 **Dados do Imóvel Encontrado:**
+    🆔 **Inscrição:** {inscricao}
+    💼 **Proprietário:** {proprietario}
+    📍 **Endereço:** {endereco}
+    📅 Agora preciso que vc escolha o ano de exercício para consulta do IPTU:
+    """
 
     # --- Erros de Consulta ---
 
@@ -90,7 +95,6 @@ Informe o número da guia ({exemplos_reais})"""
 
         return texto
 
-
     @staticmethod
     def selecionar_cotas(cotas: List[Dict[str, Any]], valor_total: float) -> str:
         """Formata lista de cotas disponíveis para seleção."""
@@ -154,9 +158,7 @@ Informe o número da guia ({exemplos_reais})"""
     # --- Geração de Boletos ---
 
     @staticmethod
-    def boletos_gerados(
-        guias_geradas: List[Dict[str, Any]], inscricao: str
-    ) -> str:
+    def boletos_gerados(guias_geradas: List[Dict[str, Any]], inscricao: str) -> str:
         """Formata informações dos boletos gerados."""
         if not guias_geradas:
             return "❌ Nenhum boleto foi gerado."
