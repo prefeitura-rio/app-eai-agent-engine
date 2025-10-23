@@ -514,21 +514,26 @@ class IPTUAPIService:
         :param url: A URL que será encurtada.
         :return: A URL encurtada como string.
         """
-        api_url = f"{env.SHARE_DADOS_RIO_URL}/api/urls/"
+        api_url = f"{env.SHORT_API_URL}/link/api/urls"
         headers = {
-            "Authorization": f"Bearer {env.SHARE_DADOS_RIO_API_TOKEN}",
+            "Authorization": f"Bearer {env.SHORT_API_TOKEN}",
             "Content-Type": "application/json",
         }
-        payload = {"url": url}
+        payload = {
+            "description": "Link for IPTU generated pdf",
+            "destination": url,
+            "title": "IPTU EAI Workflow",
+        }
 
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(api_url, json=payload, headers=headers)
                 response.raise_for_status()
                 data = response.json()
-                return f"{env.SHARE_DADOS_RIO_URL}/{data['short_url']}"
+                logger.info(f"URL shortened successfully: {data}")
+                return f"{env.SHORT_API_URL}/link/{data['short_path']}"
             except httpx.RequestError as e:
-                print(f"Erro ao encurtar a URL: {e}")
+                logger.error(f"Erro ao encurtar a URL: {e}")
                 return None
 
 
