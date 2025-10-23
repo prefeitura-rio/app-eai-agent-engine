@@ -27,6 +27,8 @@ from src.services.workflows.iptu_pagamento.models import (
 )
 from src.services.workflows.iptu_pagamento.api_service import IPTUAPIService
 from src.services.workflows.iptu_pagamento.api_service_fake import IPTUAPIServiceFake
+from src.services.workflows.iptu_pagamento.templates import IPTUMessageTemplates
+from src.services.workflows.iptu_pagamento import utils
 
 
 class IPTUWorkflow(BaseWorkflow):
@@ -82,41 +84,9 @@ class IPTUWorkflow(BaseWorkflow):
                    Se None, faz reset completo. Se especificado, reseta apenas os campos listados.
         """
         if fields is None:
-            # Reset completo (comportamento original)
-            inscricao_atual = (
-                state.data.get("inscricao_imobiliaria") if manter_inscricao else None
-            )
-
-            # Reset completo do data
-            state.data.clear()
-
-            # Reset completo do internal
-            state.internal.clear()
-
-            # Restaura inscrição se necessário
-            if inscricao_atual:
-                state.data["inscricao_imobiliaria"] = inscricao_atual
+            utils.reset_completo(state, manter_inscricao)
         else:
-            # Reset seletivo
-            inscricao_atual = (
-                state.data.get("inscricao_imobiliaria") if manter_inscricao else None
-            )
-
-            # Reset seletivo do data
-            if "data" in fields:
-                for field in fields["data"]:
-                    state.data.pop(field, None)
-
-            # Reset seletivo do internal
-            if "internal" in fields:
-                for field in fields["internal"]:
-                    state.internal.pop(field, None)
-
-            # Restaura inscrição se necessário e não foi removida no reset
-            if inscricao_atual and "inscricao_imobiliaria" not in fields.get(
-                "data", []
-            ):
-                state.data["inscricao_imobiliaria"] = inscricao_atual
+            utils.reset_campos_seletivo(state, fields, manter_inscricao)
 
     # --- Nós do Grafo ---
 
@@ -145,7 +115,7 @@ class IPTUWorkflow(BaseWorkflow):
 
             except Exception as e:
                 response = AgentResponse(
-                    description="📋 Para consultar o IPTU, informe a inscrição imobiliária do seu imóvel (8 a 15 dígitos).",
+                    description=IPTUMessageTemplates.solicitar_inscricao(),
                     payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
                     error_message=f"Inscrição imobiliária inválida: {str(e)}",
                 )
@@ -158,7 +128,7 @@ class IPTUWorkflow(BaseWorkflow):
 
         # Solicita inscrição se não tem nenhuma
         response = AgentResponse(
-            description="📋 Para consultar o IPTU, informe a inscrição imobiliária do seu imóvel (8 a 15 dígitos).",
+            description=IPTUMessageTemplates.solicitar_inscricao(),
             payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
         )
         state.agent_response = response
@@ -176,7 +146,7 @@ class IPTUWorkflow(BaseWorkflow):
                 return state
             except Exception as e:
                 state.agent_response = AgentResponse(
-                    description="📅 Escolha o ano de exercício para consulta do IPTU:",
+                    description=IPTUMessageTemplates.escolher_ano(),
                     payload_schema=EscolhaAnoPayload.model_json_schema(),
                     error_message=f"Ano inválido: {str(e)}",
                 )
@@ -189,7 +159,7 @@ class IPTUWorkflow(BaseWorkflow):
 
         # Solicita escolha do ano
         response = AgentResponse(
-            description="📅 Escolha o ano de exercício para consulta do IPTU:",
+            description=IPTUMessageTemplates.escolher_ano(),
             payload_schema=EscolhaAnoPayload.model_json_schema(),
         )
         state.agent_response = response
@@ -242,7 +212,7 @@ class IPTUWorkflow(BaseWorkflow):
                     # Remove os rastros das tentativas e reseta para nova inscrição
                     state.internal.pop(key_tentativas, None)
                     state.agent_response = AgentResponse(
-                        description="❌ Inscrição imobiliária não encontrada após múltiplas tentativas. Verifique o número e tente novamente.",
+                        description=IPTUMessageTemplates.inscricao_nao_encontrada_apos_tentativas(),
                         payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
                     )
                     # Reset completo para permitir nova entrada
@@ -257,14 +227,14 @@ class IPTUWorkflow(BaseWorkflow):
                 state.internal.pop("consulta_guias_realizada", None)
 
                 state.agent_response = AgentResponse(
-                    description=f"❌ Nenhuma guia de IPTU foi encontrada para o ano {exercicio} da inscrição {inscricao}.\n\n📅 Por favor, escolha outro ano de exercício:",
+                    description=IPTUMessageTemplates.nenhuma_guia_encontrada(inscricao, exercicio),
                     payload_schema=EscolhaAnoPayload.model_json_schema(),
                 )
                 return state
             else:
                 # Inscrição com formato inválido - remove e pede nova
                 state.agent_response = AgentResponse(
-                    description="❌ Inscrição imobiliária não encontrada. Verifique o número e tente novamente.",
+                    description=IPTUMessageTemplates.inscricao_nao_encontrada(),
                     payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
                 )
                 # Reset completo para permitir nova entrada
@@ -302,12 +272,21 @@ class IPTUWorkflow(BaseWorkflow):
                 state.agent_response = None
                 return state
             except Exception as e:
-                guias_info = self._buscar_guias_detalhadas(state)
-                state.agent_response = AgentResponse(
-                    description=guias_info,
-                    payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
-                    error_message=f"Seleção inválida: {str(e)}",
-                )
+                try:
+                    guias_info = self._buscar_guias_detalhadas(state)
+                    state.agent_response = AgentResponse(
+                        description=guias_info,
+                        payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
+                        error_message=f"Seleção inválida: {str(e)}",
+                    )
+                except ValueError as ve:
+                    # Se erro ao buscar guias, retorna erro apropriado
+                    state.agent_response = AgentResponse(
+                        description=IPTUMessageTemplates.erro_dados_guias_invalidos(),
+                        payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
+                        error_message=str(ve),
+                    )
+                    self._reset_completo(state)
                 return state
 
         # Se já tem guia escolhida, continua
@@ -315,13 +294,22 @@ class IPTUWorkflow(BaseWorkflow):
             return state
 
         # Busca e apresenta informações detalhadas das guias
-        guias_info = self._buscar_guias_detalhadas(state)
+        try:
+            guias_info = self._buscar_guias_detalhadas(state)
+            response = AgentResponse(
+                description=guias_info,
+                payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
+            )
+            state.agent_response = response
+        except ValueError as e:
+            # Se erro ao buscar guias, retorna erro apropriado
+            state.agent_response = AgentResponse(
+                description=IPTUMessageTemplates.erro_dados_guias_invalidos(),
+                payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
+                error_message=str(e),
+            )
+            self._reset_completo(state)
 
-        response = AgentResponse(
-            description=guias_info,
-            payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
-        )
-        state.agent_response = response
         return state
 
     def _buscar_guias_detalhadas(self, state: ServiceState) -> str:
@@ -329,86 +317,29 @@ class IPTUWorkflow(BaseWorkflow):
         dados_guias = state.data.get("dados_guias", {})
         endereco = state.data.get("endereco", "N/A")
         proprietario = state.data.get("proprietario", "N/A")
-        # Se temos dados simulados, usa fallback simples
-        if state.internal.get("dados_simulados", False):
-            return self._guias_info_fallback(dados_guias)
 
-        # Se não temos dados de guias, usa fallback
+        # Validação: Se não temos dados de guias válidos, retorna erro
         if not dados_guias or "guias" not in dados_guias:
-            return self._guias_info_fallback(dados_guias)
+            raise ValueError("Dados das guias não encontrados ou inválidos")
 
-        # Exibe lista das guias disponíveis para seleção
-        try:
-            guias_disponiveis = dados_guias.get("guias", [])
+        guias_disponiveis = dados_guias.get("guias", [])
 
-            if not guias_disponiveis or len(guias_disponiveis) == 0:
-                return self._guias_info_fallback(dados_guias)
+        # Validação: Se não há guias disponíveis, retorna erro
+        if not guias_disponiveis or len(guias_disponiveis) == 0:
+            raise ValueError("Nenhuma guia disponível encontrada")
 
-            return self._formatar_lista_guias(
-                dados_guias=dados_guias,
-                guias_disponiveis=guias_disponiveis,
-                endereco=endereco,
-                proprietario=proprietario,
-            )
+        # Prepara dados para o template
+        guias_formatadas = utils.preparar_dados_guias_para_template(
+            dados_guias, self.api_service
+        )
 
-        except Exception as e:
-            # Fallback em caso de erro
-            return self._guias_info_fallback(dados_guias)
-
-    def _formatar_lista_guias(
-        self,
-        dados_guias: dict,
-        guias_disponiveis: list,
-        endereco: str,
-        proprietario: str,
-    ) -> str:
-        """Exibe lista das guias disponíveis para seleção do usuário."""
-        response_text = f"""🏠 **Dados do Imóvel Encontrado:**
-🆔 **Inscrição:** {dados_guias.get('inscricao_imobiliaria', '')}
-💼 **Proprietário:** {proprietario}
-📍 **Endereço:** {endereco}
-
-📋 **Guias Disponíveis para IPTU {dados_guias.get('exercicio', '')}:**
-
-"""
-
-        # Lista todas as guias disponíveis
-        for i, guia in enumerate(guias_disponiveis, 1):
-            numero_guia = guia.get("numero_guia", "N/A")
-            tipo_guia = guia.get("tipo", "IPTU").upper()
-            valor_original = self.api_service._parse_brazilian_currency(
-                guia.get("valor_iptu_original_guia", "0,00")
-            )
-            situacao = guia.get("situacao", {}).get("descricao", "EM ABERTO")
-
-            response_text += f"""💳 **Guia {numero_guia}** - {tipo_guia}
-• Valor: R$ {valor_original:.2f}
-• Situação: {situacao}
-
-"""
-
-        # Coleta os números das guias disponíveis para mostrar no prompt
-        numeros_disponiveis = [
-            guia.get("numero_guia", "N/A") for guia in guias_disponiveis
-        ]
-        exemplos_reais = ", ".join([f'"{num}"' for num in numeros_disponiveis])
-
-        response_text += f"""🎯 **Para continuar, selecione a guia desejada:**
-Informe o número da guia ({exemplos_reais})"""
-
-        return response_text
-
-    def _guias_info_fallback(self, dados_guias: dict) -> str:
-        """Informações básicas quando API não está disponível."""
-        return f"""🏠 **Dados do Imóvel Encontrado:**
-🆔 **Inscrição:** {dados_guias.get('inscricao_imobiliaria', '')}
-
-💳 **Guias Disponíveis:**
-• "00" - IPTU (Guia Principal)
-• "01" - Taxa de Limpeza
-
-🎯 **Para continuar, selecione a guia desejada:**
-Informe o número da guia ("00", "01")"""
+        return IPTUMessageTemplates.dados_imovel(
+            inscricao=dados_guias.get('inscricao_imobiliaria', ''),
+            proprietario=proprietario,
+            endereco=endereco,
+            exercicio=dados_guias.get('exercicio', ''),
+            guias=guias_formatadas,
+        )
 
     @handle_errors
     def _consultar_cotas(self, state: ServiceState) -> ServiceState:
@@ -443,7 +374,7 @@ Informe o número da guia ("00", "01")"""
             state.data.pop("dados_cotas", None)
 
             state.agent_response = AgentResponse(
-                description=f"❌ Nenhuma cota foi encontrada para a guia {guia_escolhida}.\n\n🎯 Por favor, selecione outra guia disponível:",
+                description=IPTUMessageTemplates.nenhuma_cota_encontrada(str(guia_escolhida)),
                 payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
             )
             return state
@@ -459,7 +390,7 @@ Informe o número da guia ("00", "01")"""
             state.data.pop("dados_cotas", None)
 
             state.agent_response = AgentResponse(
-                description=f"✅ Todas as cotas da guia {guia_escolhida} já foram quitadas.\n\n🎯 Por favor, selecione outra guia disponível:",
+                description=IPTUMessageTemplates.cotas_quitadas(str(guia_escolhida)),
                 payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
             )
             return state
@@ -500,19 +431,13 @@ Informe o número da guia ("00", "01")"""
 
         # Reconstrói objeto DadosCotas
         dados_cotas = DadosCotas(**dados_cotas_dict)
-        cotas_em_aberto = [c for c in dados_cotas.cotas if not c.esta_paga]
+
+        # Prepara dados das cotas para o template
+        cotas_formatadas = utils.preparar_dados_cotas_para_template(dados_cotas)
+        valor_total = sum(c["valor_numerico"] for c in cotas_formatadas)
 
         # Apresenta opções de cotas para escolha
-        cotas_texto = "📋 **Selecione as cotas que deseja pagar:**\n\n"
-        valor_total = 0.0
-        for cota in cotas_em_aberto:
-            valor_total += 0.0 if cota.valor_numerico is None else cota.valor_numerico
-            status_icon = "🟡" if cota.esta_vencida else "🟢"
-            status_text = "VENCIDA" if cota.esta_vencida else "EM ABERTO"
-            cotas_texto += f"• **{cota.numero_cota}ª Cota** - Venc: {cota.data_vencimento} - R$ {cota.valor_cota} - {status_icon} {status_text}\n"
-
-        cotas_texto += f"\n• **Todas as cotas** - Total: R$ {valor_total:.2f}\n"
-        cotas_texto += "\n**Quais cotas você deseja pagar?**"
+        cotas_texto = IPTUMessageTemplates.selecionar_cotas(cotas_formatadas, valor_total)
 
         state.agent_response = AgentResponse(
             description=cotas_texto,
@@ -539,22 +464,14 @@ Informe o número da guia ("00", "01")"""
                 return state
             except Exception as e:
                 state.agent_response = AgentResponse(
-                    description="""📋 **Como deseja gerar os boletos?**
-
-• **Boleto único** para todas as cotas selecionadas.
-• **Um boleto para cada cota** selecionada.
-""",
+                    description=IPTUMessageTemplates.escolher_formato_darm(),
                     payload_schema=EscolhaFormatoDarmPayload.model_json_schema(),
                     error_message=f"Formato inválido: {str(e)}",
                 )
                 return state
 
         state.agent_response = AgentResponse(
-            description="""📋 **Como deseja gerar os boletos?**
-
-• **Boleto único** para todas as cotas selecionadas.
-• **Um boleto para cada cota** selecionada.
-""",
+            description=IPTUMessageTemplates.escolher_formato_darm(),
             payload_schema=EscolhaFormatoDarmPayload.model_json_schema(),
         )
         return state
@@ -571,16 +488,17 @@ Informe o número da guia ("00", "01")"""
         darm_separado = state.internal.get("darm_separado", False)
         endereco = state.data.get("endereco", "N/A")
         proprietario = state.data.get("proprietario", "N/A")
-        resumo_texto = f"""📋 **Confirmação dos Dados**
 
-**Imóvel:** {inscricao}
-**Endereço:** {endereco}
-**Proprietário:** {proprietario}
-**Guia:** {guia_escolhida}
-**Cotas:** {', '.join(cotas_escolhidas)}
-**Boletos a serem gerados:** {len(cotas_escolhidas) if darm_separado else 1}
+        num_boletos = utils.calcular_numero_boletos(darm_separado, len(cotas_escolhidas))
 
-✅ **Os dados estão corretos?**"""
+        resumo_texto = IPTUMessageTemplates.confirmacao_dados(
+            inscricao=inscricao,
+            endereco=endereco,
+            proprietario=proprietario,
+            guia_escolhida=guia_escolhida,
+            cotas_escolhidas=cotas_escolhidas,
+            num_boletos=num_boletos,
+        )
 
         if "confirmacao" not in state.payload:
             state.agent_response = AgentResponse(
@@ -592,7 +510,7 @@ Informe o número da guia ("00", "01")"""
         validated_data = ConfirmacaoDadosPayload.model_validate(state.payload)
         if not validated_data.confirmacao:
             state.agent_response = AgentResponse(
-                description="❌ **Dados não confirmados**. Voltando ao início.",
+                description=IPTUMessageTemplates.dados_nao_confirmados(),
                 payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
             )
             # Reset completo para recomeçar, mantendo a inscrição
@@ -641,7 +559,7 @@ Informe o número da guia ("00", "01")"""
                     state.internal.pop("darm_separado", None)
 
                     state.agent_response = AgentResponse(
-                        description=f"❌ Não foi possível gerar o DARM para as cotas {', '.join(cotas_para_darm)}.\n\n🎯 Por favor, selecione novamente as cotas para pagamento:",
+                        description=IPTUMessageTemplates.erro_gerar_darm(cotas_para_darm),
                         payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
                     )
                     return state
@@ -676,7 +594,7 @@ Informe o número da guia ("00", "01")"""
                 state.internal.pop("darm_separado", None)
 
                 state.agent_response = AgentResponse(
-                    description=f"❌ Erro ao processar o pagamento das cotas {', '.join(cotas_para_darm)}: {str(e)}\n\n🎯 Por favor, selecione novamente as cotas para pagamento:",
+                    description=IPTUMessageTemplates.erro_processar_pagamento(cotas_para_darm, str(e)),
                     payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
                 )
                 return state
@@ -688,7 +606,7 @@ Informe o número da guia ("00", "01")"""
             state.internal.pop("darm_separado", None)
 
             state.agent_response = AgentResponse(
-                description="❌ Não foi possível gerar nenhum boleto de pagamento.\n\n🎯 Por favor, selecione novamente as cotas para pagamento:",
+                description=IPTUMessageTemplates.nenhum_boleto_gerado(),
                 payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
             )
             return state
@@ -701,31 +619,11 @@ Informe o número da guia ("00", "01")"""
 
     def _tem_mais_cotas_disponiveis(self, state: ServiceState) -> bool:
         """Verifica se há mais cotas disponíveis da guia atual para pagar."""
-        dados_cotas_dict = state.data.get("dados_cotas")
-        cotas_escolhidas = state.data.get("cotas_escolhidas", [])
-
-        if not dados_cotas_dict or not cotas_escolhidas:
-            return False
-
-        cotas_disponiveis = dados_cotas_dict.get("cotas", [])
-        total_cotas = len(cotas_disponiveis)
-        cotas_selecionadas = len(cotas_escolhidas)
-
-        return cotas_selecionadas < total_cotas
+        return utils.tem_mais_cotas_disponiveis(state)
 
     def _tem_outras_guias_disponiveis(self, state: ServiceState) -> bool:
         """Verifica se há outras guias disponíveis no imóvel."""
-        dados_guias_dict = state.data.get("dados_guias")
-        guia_atual = state.data.get("guia_escolhida")
-
-        if not dados_guias_dict:
-            return False
-
-        guias_disponiveis = dados_guias_dict.get("guias", [])
-        total_guias = len(guias_disponiveis)
-
-        # Se há mais de uma guia disponível, significa que há outras além da atual
-        return total_guias > 1
+        return utils.tem_outras_guias_disponiveis(state)
 
     @handle_errors
     def _pergunta_mesma_guia(self, state: ServiceState) -> ServiceState:
@@ -767,7 +665,7 @@ Informe o número da guia ("00", "01")"""
 
         # Monta descrição com os boletos gerados + pergunta específica
         description_text = self._gerar_descricao_boletos_gerados(state)
-        description_text += "\n🔄 **Deseja pagar mais cotas da mesma guia?**"
+        description_text = IPTUMessageTemplates.perguntar_mais_cotas(description_text)
 
         response = AgentResponse(
             description=description_text,
@@ -792,7 +690,7 @@ Informe o número da guia ("00", "01")"""
 
         # Monta descrição com os boletos gerados + pergunta específica
         description_text = self._gerar_descricao_boletos_gerados(state)
-        description_text += "\n🔄 **Deseja pagar outras guias do mesmo imóvel?**"
+        description_text = IPTUMessageTemplates.perguntar_outras_guias(description_text)
 
         response = AgentResponse(
             description=description_text,
@@ -803,25 +701,13 @@ Informe o número da guia ("00", "01")"""
 
     def _gerar_descricao_boletos_gerados(self, state: ServiceState) -> str:
         """Gera a descrição padrão dos boletos gerados."""
-        description_text = "✅ **Boletos Gerados com Sucesso!**\n\n"
         guias_geradas = state.data.get("guias_geradas", [])
         inscricao = state.data.get("inscricao_imobiliaria", "N/A")
 
-        if not guias_geradas:
-            description_text = "Nenhum boleto foi gerado."
-        else:
-            for boleto_num, guia in enumerate(guias_geradas, 1):
-                description_text += f"**Boleto {boleto_num}:**\n"
-                description_text += f"**Inscrição:** {inscricao}\n"
-                description_text += f"**Guia:** {guia['numero_guia']}\n"
-                description_text += f"**Cotas:** {guia['cotas']}\n"
-                description_text += f"**Valor:** R$ {guia['valor']:.2f}\n"
-                description_text += f"**Vencimento:** {guia['vencimento']}\n"
-                description_text += f"**Código de Barras:** {guia['codigo_barras']}\n"
-                description_text += f"**Linha Digitável:** {guia['linha_digitavel']}\n"
-                description_text += f"**PDF:** {'Disponível' if guia.get('pdf_base64') else 'Não disponível'}\n\n"
+        # Prepara dados dos boletos para o template
+        boletos_formatados = utils.preparar_dados_boletos_para_template(guias_geradas)
 
-        return description_text
+        return IPTUMessageTemplates.boletos_gerados(boletos_formatados, inscricao)
 
     @handle_errors
     def _pergunta_outro_imovel(self, state: ServiceState) -> ServiceState:
@@ -838,7 +724,7 @@ Informe o número da guia ("00", "01")"""
             return state
 
         response = AgentResponse(
-            description="🏠 Deseja emitir guia para outro imóvel?",
+            description=IPTUMessageTemplates.perguntar_outro_imovel(),
             payload_schema=EscolhaOutroImovelPayload.model_json_schema(),
         )
         state.agent_response = response
@@ -915,9 +801,7 @@ Informe o número da guia ("00", "01")"""
         """Finaliza a interação e faz reset automático dos dados."""
         # Mensagem de finalização
         response = AgentResponse(
-            description="✅ **Serviço finalizado com sucesso!**\n\n"
-            "Obrigado por utilizar o serviço de consulta do IPTU da Prefeitura do Rio de Janeiro.\n\n"
-            "Para uma nova consulta, informe uma nova inscrição imobiliária.",
+            description=IPTUMessageTemplates.finalizacao(),
         )
         state.agent_response = response
 
