@@ -20,6 +20,7 @@ from src.services.workflows.iptu_pagamento.models import (
     EscolhaMaisCotasPayload,
     EscolhaOutrasGuiasPayload,
     EscolhaOutroImovelPayload,
+    EscolhaFormatoDarmPayload,
     ConfirmacaoDadosPayload,
     DadosGuias,
     DadosCotas,
@@ -531,27 +532,30 @@ Informe o número da guia ("00", "01")"""
             return state
 
         if "darm_separado" in state.payload:
-            state.internal["darm_separado"] = bool(state.payload["darm_separado"])
-            state.agent_response = None
-            return state
-
-        description = """📋 **Como deseja gerar os boletos?**
+            try:
+                validated_data = EscolhaFormatoDarmPayload.model_validate(state.payload)
+                state.internal["darm_separado"] = validated_data.darm_separado
+                state.agent_response = None
+                return state
+            except Exception as e:
+                state.agent_response = AgentResponse(
+                    description="""📋 **Como deseja gerar os boletos?**
 
 • **Boleto único** para todas as cotas selecionadas.
 • **Um boleto para cada cota** selecionada.
-"""
-        schema = {
-            "type": "object",
-            "properties": {
-                "darm_separado": {
-                    "type": "boolean",
-                    "description": "True para boletos separados, False para boleto único.",
-                }
-            },
-            "required": ["darm_separado"],
-        }
+""",
+                    payload_schema=EscolhaFormatoDarmPayload.model_json_schema(),
+                    error_message=f"Formato inválido: {str(e)}",
+                )
+                return state
+
         state.agent_response = AgentResponse(
-            description=description, payload_schema=schema
+            description="""📋 **Como deseja gerar os boletos?**
+
+• **Boleto único** para todas as cotas selecionadas.
+• **Um boleto para cada cota** selecionada.
+""",
+            payload_schema=EscolhaFormatoDarmPayload.model_json_schema(),
         )
         return state
 

@@ -267,6 +267,14 @@ class EscolhaOutroImovelPayload(BaseModel):
     )
 
 
+class EscolhaFormatoDarmPayload(BaseModel):
+    """Payload para escolha do formato de geração de boletos (único ou separado)."""
+
+    darm_separado: bool = Field(
+        ..., description="True para gerar um boleto para cada cota, False para boleto único com todas as cotas"
+    )
+
+
 class DadosConsulta(BaseModel):
     """Dados completos da consulta de IPTU."""
 
