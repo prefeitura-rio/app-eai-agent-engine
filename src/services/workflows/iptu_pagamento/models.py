@@ -3,7 +3,7 @@ Modelos Pydantic para validação do workflow IPTU Ano Vigente
 """
 
 from typing import Literal, Optional, List, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import re
 
 
@@ -12,10 +12,25 @@ class InscricaoImobiliariaPayload(BaseModel):
 
     inscricao_imobiliaria: str = Field(
         ...,
-        min_length=8,
-        max_length=15,
-        description="Inscrição imobiliária (8-15 dígitos)",
+        description="Inscrição imobiliária (8-15 dígitos, formatação opcional)",
     )
+
+    @field_validator("inscricao_imobiliaria", mode="before")
+    @classmethod
+    def validate_inscricao(cls, v: str) -> str:
+        """
+        Valida e sanitiza a inscrição imobiliária.
+
+        Remove caracteres não numéricos e valida comprimento.
+        """
+        # Remove todos os caracteres não numéricos
+        clean_inscricao = re.sub(r"[^0-9]", "", v)
+
+        # Valida comprimento
+        if len(clean_inscricao) < 8 or len(clean_inscricao) > 15:
+            raise ValueError("Inscrição imobiliária deve ter entre 8 e 15 dígitos")
+
+        return clean_inscricao
 
 
 class EscolhaAnoPayload(BaseModel):

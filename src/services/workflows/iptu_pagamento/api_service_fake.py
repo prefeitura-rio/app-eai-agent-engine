@@ -47,7 +47,7 @@ class IPTUAPIServiceFake:
         return re.sub(r"[^0-9]", "", inscricao)
 
     @staticmethod
-    def _parse_brazilian_currency(value_str: str) -> float:
+    def parse_brazilian_currency(value_str: str) -> float:
         """
         Converte string de valor brasileiro para float.
 
@@ -65,6 +65,12 @@ class IPTUAPIServiceFake:
             return float(clean_value)
         except (ValueError, AttributeError):
             return 0.0
+
+    # Alias para compatibilidade
+    @staticmethod
+    def _parse_brazilian_currency(value_str: str) -> float:
+        """DEPRECATED: Use parse_brazilian_currency() instead."""
+        return IPTUAPIServiceFake.parse_brazilian_currency(value_str)
 
     def _get_mock_guias_data(
         self, inscricao_clean: str, exercicio: int

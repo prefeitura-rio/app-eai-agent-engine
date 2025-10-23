@@ -8,6 +8,7 @@ seguindo o fluxograma oficial da Prefeitura do Rio.
 import asyncio
 from typing import Optional, Dict, List
 from langgraph.graph import StateGraph, END
+from loguru import logger
 
 from src.services.core.base_workflow import BaseWorkflow, handle_errors
 from src.services.core.models import ServiceState, AgentResponse
@@ -61,12 +62,34 @@ class IPTUWorkflow(BaseWorkflow):
         """
         super().__init__()
 
-        if use_fake_api:
+        # Verifica variável de ambiente para testes
+        import os
+        force_fake_api = os.getenv("IPTU_USE_FAKE_API", "").lower() == "true"
+
+        if use_fake_api or force_fake_api:
             self.api_service = IPTUAPIServiceFake()
         else:
             self.api_service = IPTUAPIService()
 
     # --- Métodos auxiliares ---
+
+    def _validar_dados_obrigatorios(
+        self, state: ServiceState, campos: List[str]
+    ) -> Optional[str]:
+        """
+        Valida se campos obrigatórios existem no state.data.
+
+        Args:
+            state: Estado do serviço
+            campos: Lista de campos obrigatórios a validar
+
+        Returns:
+            None se todos os campos existem, ou nome do primeiro campo faltante
+        """
+        for campo in campos:
+            if campo not in state.data or state.data[campo] is None:
+                return campo
+        return None
 
     def _reset_completo(
         self,
@@ -87,6 +110,18 @@ class IPTUWorkflow(BaseWorkflow):
             utils.reset_completo(state, manter_inscricao)
         else:
             utils.reset_campos_seletivo(state, fields, manter_inscricao)
+
+    def _reset_para_selecao_cotas(self, state: ServiceState) -> None:
+        """
+        Reset específico para voltar à seleção de cotas.
+
+        Remove dados de cotas escolhidas, DARM e formato de boleto.
+        Útil quando há erro na geração de boletos.
+        """
+        state.data.pop("cotas_escolhidas", None)
+        state.data.pop("dados_darm", None)
+        state.internal.pop("darm_separado", None)
+        state.internal.pop("dados_confirmados", None)
 
     # --- Nós do Grafo ---
 
@@ -109,7 +144,9 @@ class IPTUWorkflow(BaseWorkflow):
 
                 # Salva a nova inscrição
                 state.data["inscricao_imobiliaria"] = nova_inscricao
+                logger.info(f"✅ Inscrição salva: {nova_inscricao}")
 
+                logger.debug(f"🔍 Buscando dados do imóvel para inscrição: {nova_inscricao}")
                 dados_imovel = asyncio.run(
                     self.api_service.get_imovel_info(inscricao=nova_inscricao)
                 )
@@ -117,6 +154,7 @@ class IPTUWorkflow(BaseWorkflow):
                 if dados_imovel:
                     state.data["endereco"] = dados_imovel["endereco"]
                     state.data["proprietario"] = dados_imovel["proprietario"]
+                    logger.info(f"✅ Dados do imóvel carregados - Proprietário: {dados_imovel['proprietario'][:30]}...")
 
                 state.agent_response = None
 
@@ -498,6 +536,20 @@ class IPTUWorkflow(BaseWorkflow):
         if state.internal.get("dados_confirmados", False):
             return state
 
+        # Validação de campos obrigatórios
+        campo_faltante = self._validar_dados_obrigatorios(
+            state, ["inscricao_imobiliaria", "guia_escolhida", "cotas_escolhidas"]
+        )
+        if campo_faltante:
+            state.agent_response = AgentResponse(
+                description=IPTUMessageTemplates.erro_interno(
+                    f"Campo obrigatório faltante: {campo_faltante}"
+                ),
+                payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
+            )
+            self._reset_completo(state)
+            return state
+
         inscricao = state.data["inscricao_imobiliaria"]
         guia_escolhida = state.data.get("guia_escolhida", "N/A")
         cotas_escolhidas = state.data.get("cotas_escolhidas", [])
@@ -545,6 +597,26 @@ class IPTUWorkflow(BaseWorkflow):
         if "guias_geradas" in state.data:
             return state
 
+        # Validação de campos obrigatórios
+        campo_faltante = self._validar_dados_obrigatorios(
+            state,
+            [
+                "inscricao_imobiliaria",
+                "guia_escolhida",
+                "cotas_escolhidas",
+                "ano_exercicio",
+            ],
+        )
+        if campo_faltante:
+            state.agent_response = AgentResponse(
+                description=IPTUMessageTemplates.erro_interno(
+                    f"Campo obrigatório faltante: {campo_faltante}"
+                ),
+                payload_schema=InscricaoImobiliariaPayload.model_json_schema(),
+            )
+            self._reset_completo(state)
+            return state
+
         inscricao = state.data["inscricao_imobiliaria"]
         guia_escolhida = state.data["guia_escolhida"]
         cotas_escolhidas = state.data["cotas_escolhidas"]
@@ -572,9 +644,7 @@ class IPTUWorkflow(BaseWorkflow):
 
                 if not dados_darm or not dados_darm.darm:
                     # Falha na geração do DARM - reseta dados de cotas e volta para seleção de cotas
-                    state.data.pop("cotas_escolhidas", None)
-                    state.data.pop("dados_darm", None)
-                    state.internal.pop("darm_separado", None)
+                    self._reset_para_selecao_cotas(state)
 
                     state.agent_response = AgentResponse(
                         description=IPTUMessageTemplates.erro_gerar_darm(
@@ -609,9 +679,7 @@ class IPTUWorkflow(BaseWorkflow):
 
             except Exception as e:
                 # Erro na API - reseta dados de cotas e volta para seleção de cotas
-                state.data.pop("cotas_escolhidas", None)
-                state.data.pop("dados_darm", None)
-                state.internal.pop("darm_separado", None)
+                self._reset_para_selecao_cotas(state)
 
                 state.agent_response = AgentResponse(
                     description=IPTUMessageTemplates.erro_processar_pagamento(
@@ -623,9 +691,7 @@ class IPTUWorkflow(BaseWorkflow):
 
         if not guias_geradas:
             # Nenhuma guia foi gerada com sucesso - reseta dados de cotas
-            state.data.pop("cotas_escolhidas", None)
-            state.data.pop("dados_darm", None)
-            state.internal.pop("darm_separado", None)
+            self._reset_para_selecao_cotas(state)
 
             state.agent_response = AgentResponse(
                 description=IPTUMessageTemplates.nenhum_boleto_gerado(),

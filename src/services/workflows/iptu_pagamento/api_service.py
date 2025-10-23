@@ -121,7 +121,7 @@ class IPTUAPIService:
             return None
 
     @staticmethod
-    def _parse_brazilian_currency(value_str: str) -> float:
+    def parse_brazilian_currency(value_str: str) -> float:
         """
         Converte string de valor brasileiro para float.
 
@@ -132,6 +132,12 @@ class IPTUAPIService:
 
         Returns:
             Valor convertido para float
+
+        Examples:
+            >>> IPTUAPIService.parse_brazilian_currency("1.234,56")
+            1234.56
+            >>> IPTUAPIService.parse_brazilian_currency("0,00")
+            0.0
         """
         if not value_str or value_str == "0,00":
             return 0.0
@@ -143,6 +149,15 @@ class IPTUAPIService:
         except (ValueError, AttributeError):
             logger.warning(f"Failed to parse currency value: {value_str}")
             return 0.0
+
+    # Alias para compatibilidade com código existente
+    @staticmethod
+    def _parse_brazilian_currency(value_str: str) -> float:
+        """
+        DEPRECATED: Use parse_brazilian_currency() instead.
+        Mantido para compatibilidade com código existente.
+        """
+        return IPTUAPIService.parse_brazilian_currency(value_str)
 
     async def consultar_guias(
         self, inscricao_imobiliaria: str, exercicio: int
