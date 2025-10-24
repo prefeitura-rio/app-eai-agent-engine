@@ -420,12 +420,12 @@ class IPTUWorkflow(BaseWorkflow):
             )
             return state
 
-        # Se há apenas uma cota, seleciona automaticamente
-        if len(cotas_em_aberto) == 1:
-            state.data["cotas_escolhidas"] = [cotas_em_aberto[0].numero_cota]
-            state.internal[STATE_IS_SINGLE_QUOTA_FLOW] = True
-            state.agent_response = None
-            return state
+        # # Se há apenas uma cota, seleciona automaticamente
+        # if len(cotas_em_aberto) == 1:
+        #     state.data["cotas_escolhidas"] = [cotas_em_aberto[0].numero_cota]
+        #     state.internal[STATE_IS_SINGLE_QUOTA_FLOW] = True
+        #     state.agent_response = None
+        #     return state
 
         # Consulta realizada com sucesso, próximo nó irá apresentar escolhas
         state.agent_response = None
