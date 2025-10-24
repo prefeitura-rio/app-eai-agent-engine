@@ -137,9 +137,7 @@ class IPTUAPIService:
             raise
         except Exception as e:
             logger.error(f"Error calling API endpoint {endpoint}: {str(e)}")
-            raise APIUnavailableError(
-                f"Erro ao comunicar com serviço IPTU: {str(e)}"
-            )
+            raise APIUnavailableError(f"Erro ao comunicar com serviço IPTU: {str(e)}")
 
     @staticmethod
     def parse_brazilian_currency(value_str: str) -> float:
@@ -507,28 +505,46 @@ class IPTUAPIService:
                     "proprietario": response_data["proprietarioPrincipal"],
                 }
             elif response.status_code == 401:
-                logger.error(f"Erro de autenticação ao consultar imóvel. Status: {response.status_code}")
-                raise AuthenticationError("Falha na autenticação do serviço de dados do imóvel")
+                logger.error(
+                    f"Erro de autenticação ao consultar imóvel. Status: {response.status_code}"
+                )
+                raise AuthenticationError(
+                    "Falha na autenticação do serviço de dados do imóvel"
+                )
             elif response.status_code in [500, 503]:
-                logger.error(f"Erro de servidor ao consultar imóvel. Status: {response.status_code}, Texto: {response.text}")
-                raise APIUnavailableError(f"Serviço de dados do imóvel temporariamente indisponível (HTTP {response.status_code})")
+                logger.error(
+                    f"Erro de servidor ao consultar imóvel. Status: {response.status_code}, Texto: {response.text}"
+                )
+                raise APIUnavailableError(
+                    f"Serviço de dados do imóvel temporariamente indisponível (HTTP {response.status_code})"
+                )
             elif response.status_code == 404:
                 # 404 não é erro de API, apenas não encontrou - retorna None
-                logger.warning(f"Imóvel não encontrado para inscrição: {inscricao_clean}")
+                logger.warning(
+                    f"Imóvel não encontrado para inscrição: {inscricao_clean}"
+                )
                 return None
             else:
-                logger.error(f"Erro ao consultar imóvel. Status: {response.status_code}, Texto: {response.text}")
-                raise APIUnavailableError(f"Erro ao comunicar com serviço de dados do imóvel (HTTP {response.status_code})")
+                logger.error(
+                    f"Erro ao consultar imóvel. Status: {response.status_code}, Texto: {response.text}"
+                )
+                raise APIUnavailableError(
+                    f"Erro ao comunicar com serviço de dados do imóvel (HTTP {response.status_code})"
+                )
 
         except httpx.TimeoutException:
             logger.error("Timeout ao consultar dados do imóvel")
-            raise APIUnavailableError("Serviço de dados do imóvel não respondeu no tempo esperado")
+            raise APIUnavailableError(
+                "Serviço de dados do imóvel não respondeu no tempo esperado"
+            )
         except (APIUnavailableError, AuthenticationError):
             # Re-lança exceções customizadas
             raise
         except Exception as e:
             logger.error(f"Erro ao consultar dados do imóvel: {str(e)}")
-            raise APIUnavailableError(f"Erro ao comunicar com serviço de dados do imóvel: {str(e)}")
+            raise APIUnavailableError(
+                f"Erro ao comunicar com serviço de dados do imóvel: {str(e)}"
+            )
 
     async def upload_base64_to_gcs(self, base64_content) -> str:
         """
@@ -556,7 +572,6 @@ class IPTUAPIService:
         expiration = dt.timedelta(days=7)
         signed_url = blob.generate_signed_url(
             expiration=expiration,
-            api_access_endpoint="https://storage.cloud.google.com",
         )
 
         return signed_url

@@ -95,7 +95,7 @@ class IPTUWorkflow(BaseWorkflow):
         if use_fake_api or force_fake_api:
             self.api_service = IPTUAPIServiceFake()
         else:
-            self.api_service = IPTUAPIServiceFake()
+            self.api_service = IPTUAPIService()
 
     # --- Nós do Grafo ---
 
