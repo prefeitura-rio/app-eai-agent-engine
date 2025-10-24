@@ -1040,6 +1040,198 @@ class TestIPTUWorkflowCasosEspeciais:
         print("✅ TESTE PASSOU: Todos os tipos de guias funcionam")
 
 
+class TestIPTUWorkflowErrosAPI:
+    """Testes de erros de API (APIUnavailableError, AuthenticationError)."""
+
+    def setup_method(self):
+        """Setup executado antes de cada teste."""
+        setup_fake_api()
+        self.user_id = f"test_user_{int(time.time() * 1000000)}"
+        self.service_name = "iptu_pagamento"
+
+    def teardown_method(self):
+        """Cleanup executado após cada teste."""
+        teardown_fake_api()
+
+    def test_api_indisponivel_consultar_guias(self):
+        """
+        Testa que APIUnavailableError é tratado corretamente ao consultar guias.
+
+        Cenário:
+        1. Usuário informa inscrição que simula API indisponível (77777777777777)
+        2. Tenta escolher ano
+        3. Deve receber mensagem de API indisponível
+        4. Dados devem ser mantidos para retry
+        """
+        print("\n🧪 Teste: API indisponível ao consultar guias")
+
+        # Etapa 1: Informar inscrição que simula erro
+        print("📝 Informando inscrição que simula API indisponível...")
+        response1 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"inscricao_imobiliaria": "77777777777777"}
+        })
+
+        # Deve aceitar a inscrição (validação OK)
+        assert response1["error_message"] is None, "Inscrição deve ser aceita"
+        print(f"✅ Inscrição aceita: {response1['description'][:80]}...")
+
+        # Etapa 2: Escolher ano - API vai falhar aqui
+        print("📅 Tentando escolher ano (API vai falhar)...")
+        response2 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"ano_exercicio": 2025}
+        })
+
+        # Deve retornar erro de API indisponível
+        assert response2["error_message"] is not None, "Deve ter error_message"
+        assert "indisponível" in response2["description"].lower() or "unavailable" in response2["description"].lower(), \
+            f"Mensagem deve indicar que API está indisponível. Got: {response2['description']}"
+
+        # Deve manter o payload_schema para permitir retry
+        assert response2["payload_schema"] is not None, "Deve manter schema para retry"
+        print(f"✅ Erro tratado corretamente: {response2['description'][:100]}...")
+
+        print("✅ TESTE PASSOU: API indisponível tratada corretamente")
+
+    def test_erro_autenticacao(self):
+        """
+        Testa que AuthenticationError é tratado corretamente.
+
+        Cenário:
+        1. Usuário informa inscrição que simula erro de autenticação (88888888888888)
+        2. Tenta escolher ano
+        3. Deve receber mensagem de erro de autenticação
+        """
+        print("\n🧪 Teste: Erro de autenticação")
+
+        # Etapa 1: Informar inscrição
+        response1 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"inscricao_imobiliaria": "88888888888888"}
+        })
+
+        assert response1["error_message"] is None, "Inscrição deve ser aceita"
+
+        # Etapa 2: Escolher ano - erro de autenticação
+        print("📅 Tentando escolher ano (erro de autenticação)...")
+        response2 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"ano_exercicio": 2025}
+        })
+
+        # Deve retornar erro de autenticação
+        assert response2["error_message"] is not None, "Deve ter error_message"
+        assert "autenticação" in response2["description"].lower() or "authentication" in response2["description"].lower(), \
+            f"Mensagem deve indicar erro de autenticação. Got: {response2['description']}"
+
+        print(f"✅ Erro de autenticação tratado: {response2['description'][:100]}...")
+
+        print("✅ TESTE PASSOU: Erro de autenticação tratado corretamente")
+
+    def test_timeout_consultar_guias(self):
+        """
+        Testa que timeout é tratado como APIUnavailableError.
+
+        Cenário:
+        1. Inscrição 99999999990000 simula timeout
+        2. Deve receber mensagem apropriada de timeout
+        """
+        print("\n🧪 Teste: Timeout ao consultar guias")
+
+        response1 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"inscricao_imobiliaria": "99999999990000"}
+        })
+
+        assert response1["error_message"] is None
+
+        # Escolher ano - timeout
+        response2 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"ano_exercicio": 2025}
+        })
+
+        assert response2["error_message"] is not None
+        assert "tempo" in response2["description"].lower() or "timeout" in response2["description"].lower(), \
+            f"Mensagem deve mencionar timeout. Got: {response2['description']}"
+
+        print(f"✅ Timeout tratado: {response2['description'][:100]}...")
+        print("✅ TESTE PASSOU: Timeout tratado corretamente")
+
+    def test_inscricao_nao_existente_vs_api_indisponivel(self):
+        """
+        Testa diferença entre inscrição não existente e API indisponível.
+
+        Cenário 1: Inscrição não existente (99999999999999)
+        - Deve retornar mensagem de inscrição não encontrada
+        - Após 3 tentativas com anos diferentes, deve pedir nova inscrição
+
+        Cenário 2: API indisponível (77777777777777)
+        - Deve retornar mensagem de API indisponível
+        - Deve manter dados para retry
+        """
+        print("\n🧪 Teste: Diferença entre inscrição inexistente e API indisponível")
+
+        # --- Cenário 1: Inscrição não existente ---
+        print("\n  📌 Cenário 1: Inscrição não existente (após 3 tentativas)")
+        user_id_1 = f"{self.user_id}_inexistente"
+
+        response1 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": user_id_1,
+            "payload": {"inscricao_imobiliaria": "99999999999999"}  # Não existe na fake API
+        })
+
+        # Tenta 3 anos diferentes (MAX_TENTATIVAS_ANO = 3)
+        for i, ano in enumerate([2025, 2024, 2023], 1):
+            print(f"  Tentativa {i} com ano {ano}...")
+            response = multi_step_service.invoke({
+                "service_name": self.service_name,
+                "user_id": user_id_1,
+                "payload": {"ano_exercicio": ano}
+            })
+
+        # Na terceira tentativa, deve pedir nova inscrição (fez reset)
+        print(f"  Response após 3 tentativas: {response['description'][:120]}...")
+        # Deve estar pedindo nova inscrição imobiliária (reset completo)
+        assert response["payload_schema"] is not None, "Deve ter payload_schema"
+        assert "inscricao_imobiliaria" in response["payload_schema"].get("properties", {}), \
+            f"Deve estar pedindo nova inscrição. Got schema: {response['payload_schema']}"
+        # A mensagem pode ser de "não encontrada" ou de "solicitar inscrição" (ambos são válidos após reset)
+        print(f"  ✓ Após 3 tentativas, sistema resetou e está pedindo nova inscrição")
+
+        # --- Cenário 2: API indisponível ---
+        print("\n  📌 Cenário 2: API indisponível")
+        user_id_2 = f"{self.user_id}_indisponivel"
+
+        response3 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": user_id_2,
+            "payload": {"inscricao_imobiliaria": "77777777777777"}
+        })
+
+        response4 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": user_id_2,
+            "payload": {"ano_exercicio": 2025}
+        })
+
+        # Deve indicar que API está indisponível
+        print(f"  Response para API indisponível: {response4['description'][:120]}...")
+        assert "indisponível" in response4["description"].lower() or "unavailable" in response4["description"].lower()
+        assert "não encontr" not in response4["description"].lower(), \
+            "Não deve dizer que inscrição não foi encontrada"
+
+        print("✅ TESTE PASSOU: Diferença entre erros está clara")
+
+
 # Função main para executar todos os testes
 def run_all_tests():
     """
@@ -1055,6 +1247,7 @@ def run_all_tests():
         TestIPTUWorkflowFluxosContinuidade,
         TestIPTUWorkflowResetEstado,
         TestIPTUWorkflowCasosEspeciais,
+        TestIPTUWorkflowErrosAPI,
     ]
 
     total_tests = 0

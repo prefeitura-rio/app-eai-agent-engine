@@ -11,6 +11,7 @@ from src.config import env
 from src.prompt import prompt_data
 from engine.agent import Agent
 from src.tools import mcp_tools
+from uuid import uuid4
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -25,7 +26,8 @@ def get_agent():
     )
 
 
-user_id = "hahaha010101234asd4"
+# user_id = "hahaha010101234asd4"
+user_id = str(uuid4())
 
 
 # Initialize agents

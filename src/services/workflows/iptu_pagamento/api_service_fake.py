@@ -18,6 +18,11 @@ from src.services.workflows.iptu_pagamento.models import (
     DadosDarm,
     CotaDarm,
 )
+from src.services.workflows.iptu_pagamento.exceptions import (
+    APIUnavailableError,
+    DataNotFoundError,
+    AuthenticationError,
+)
 from loguru import logger
 
 
@@ -27,6 +32,13 @@ class IPTUAPIServiceFake:
 
     Implementa a mesma interface do IPTUAPIService real para permitir
     testes completos de todos os cenários possíveis.
+
+    Suporta simulação de erros de API através de inscrições especiais:
+    - 77777777777777: Simula APIUnavailableError
+    - 88888888888888: Simula AuthenticationError
+    - 99999999990000: Simula timeout na consulta de guias
+    - 99999999990001: Simula erro 500 na consulta de cotas
+    - 99999999990002: Simula erro 503 na geração de DARM
     """
 
     def __init__(self):
@@ -474,6 +486,10 @@ class IPTUAPIServiceFake:
 
         Returns:
             DadosGuias com informações do IPTU e guias disponíveis ou None se não encontrado
+
+        Raises:
+            APIUnavailableError: Para inscrições 77777777777777 ou 99999999990000
+            AuthenticationError: Para inscrição 88888888888888
         """
         # Limpa inscrição removendo caracteres não numéricos
         inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
@@ -481,6 +497,19 @@ class IPTUAPIServiceFake:
         logger.info(
             f"FAKE API: Consulting guides for inscription {inscricao_clean}, year {exercicio}"
         )
+
+        # Simulação de erros baseada em inscrições especiais
+        if inscricao_clean == "77777777777777":
+            logger.error("FAKE API: Simulating APIUnavailableError (generic)")
+            raise APIUnavailableError("Serviço IPTU temporariamente indisponível (erro simulado)")
+
+        if inscricao_clean == "88888888888888":
+            logger.error("FAKE API: Simulating AuthenticationError")
+            raise AuthenticationError("Falha na autenticação do serviço IPTU (erro simulado)")
+
+        if inscricao_clean == "99999999990000":
+            logger.error("FAKE API: Simulating APIUnavailableError (timeout)")
+            raise APIUnavailableError("Serviço IPTU não respondeu no tempo esperado. Por favor, tente novamente. (erro simulado)")
 
         # Busca dados mockados
         guias_response = self._get_mock_guias_data(inscricao_clean, exercicio)
@@ -557,6 +586,9 @@ class IPTUAPIServiceFake:
 
         Returns:
             DadosCotas com informações das cotas disponíveis ou None se não encontrado
+
+        Raises:
+            APIUnavailableError: Para inscrição 99999999990001
         """
         # Limpa inscrição removendo caracteres não numéricos
         inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
@@ -564,6 +596,11 @@ class IPTUAPIServiceFake:
         logger.info(
             f"FAKE API: Consulting cotas for inscription {inscricao_clean}, guide {numero_guia}"
         )
+
+        # Simulação de erro 500 na consulta de cotas
+        if inscricao_clean == "99999999990001":
+            logger.error("FAKE API: Simulating APIUnavailableError (500) on obter_cotas")
+            raise APIUnavailableError("Serviço IPTU temporariamente indisponível (HTTP 500) (erro simulado)")
 
         # Consulta cotas disponíveis para esta guia
         cotas_response = self._get_mock_cotas_data(
@@ -641,6 +678,9 @@ class IPTUAPIServiceFake:
 
         Returns:
             DadosDarm com dados do DARM ou None se não encontrar
+
+        Raises:
+            APIUnavailableError: Para inscrição 99999999990002
         """
         # Limpa inscrição removendo caracteres não numéricos
         inscricao_clean = self._limpar_inscricao(inscricao_imobiliaria)
@@ -651,6 +691,11 @@ class IPTUAPIServiceFake:
         logger.info(
             f"FAKE API: Consulting DARM for inscription {inscricao_clean}, guide {numero_guia}, cotas {cotas_str}"
         )
+
+        # Simulação de erro 503 na geração de DARM
+        if inscricao_clean == "99999999990002":
+            logger.error("FAKE API: Simulating APIUnavailableError (503) on consultar_darm")
+            raise APIUnavailableError("Serviço IPTU temporariamente indisponível (HTTP 503) (erro simulado)")
 
         # Faz consulta mockada
         darm_response = self._get_mock_darm_data(

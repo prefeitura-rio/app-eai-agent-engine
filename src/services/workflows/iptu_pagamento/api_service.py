@@ -29,6 +29,11 @@ from src.services.workflows.iptu_pagamento.models import (
     Darm,
     DadosDarm,
 )
+from src.services.workflows.iptu_pagamento.exceptions import (
+    APIUnavailableError,
+    DataNotFoundError,
+    AuthenticationError,
+)
 from loguru import logger
 
 
@@ -76,7 +81,12 @@ class IPTUAPIService:
             expect_json: Se True, espera resposta JSON. Se False, retorna texto bruto (para PDFs)
 
         Returns:
-            Resposta JSON da API, texto bruto, ou None em caso de erro
+            Resposta JSON da API ou texto bruto
+
+        Raises:
+            APIUnavailableError: Quando API está indisponível (timeout, 500, 503, etc.)
+            AuthenticationError: Quando falha autenticação (401)
+            DataNotFoundError: Quando endpoint não existe (404)
         """
         # Adiciona token aos parâmetros
         params["token"] = self.api_token
@@ -100,25 +110,36 @@ class IPTUAPIService:
                         return response.text
                 elif response.status_code == 404:
                     logger.warning(f"API endpoint not found: {endpoint}")
-                    return None
+                    raise DataNotFoundError(f"Endpoint não encontrado: {endpoint}")
                 elif response.status_code == 401:
                     logger.error(f"API authentication failed for {endpoint}")
-                    return None
-                elif response.status_code == 500:
+                    raise AuthenticationError(f"Falha na autenticação do serviço IPTU")
+                elif response.status_code in [500, 503]:
                     logger.error(f"API internal error for {endpoint}: {response.text}")
-                    return None
+                    raise APIUnavailableError(
+                        f"Serviço IPTU temporariamente indisponível (HTTP {response.status_code})"
+                    )
                 else:
                     logger.error(
                         f"API error {response.status_code} for {endpoint}: {response.text}"
                     )
-                    return None
+                    raise APIUnavailableError(
+                        f"Erro ao comunicar com serviço IPTU (HTTP {response.status_code})"
+                    )
 
         except httpx.TimeoutException:
             logger.error(f"Timeout calling API endpoint {endpoint}")
-            return None
+            raise APIUnavailableError(
+                "Serviço IPTU não respondeu no tempo esperado. Por favor, tente novamente."
+            )
+        except (APIUnavailableError, AuthenticationError, DataNotFoundError):
+            # Re-lança exceções customizadas sem modificar
+            raise
         except Exception as e:
             logger.error(f"Error calling API endpoint {endpoint}: {str(e)}")
-            return None
+            raise APIUnavailableError(
+                f"Erro ao comunicar com serviço IPTU: {str(e)}"
+            )
 
     @staticmethod
     def parse_brazilian_currency(value_str: str) -> float:
@@ -446,43 +467,68 @@ class IPTUAPIService:
         Faz uma requisição GET na API REST de IPTU utilizando a VPN interna.
 
         Args:
-            pem_public_key (str): Chave pública no formato PEM.
-            raw_token (str): Token original a ser criptografado.
             inscricao (str): Número da inscrição do imóvel.
 
         Returns:
-            dict: Resposta JSON da API.
+            dict: Resposta JSON da API com endereco e proprietario, ou None se erro
+
+        Raises:
+            APIUnavailableError: Quando API está indisponível (timeout, 500, 503, etc.)
+            AuthenticationError: Quando falha autenticação (401)
         """
         inscricao_clean = self._limpar_inscricao(inscricao=inscricao)
 
         logger.info(
             f"Iniciando consulta de imóvel via VPN para inscrição: {inscricao_clean}"
         )
-        encrypted_token = encrypt_token_rsa(
-            chave_publica_pem=env.WA_IPTU_PUBLIC_KEY, token=env.WA_IPTU_TOKEN
-        )
 
-        auth_header = f"Basic {encrypted_token}"
-
-        url = f"{env.WA_IPTU_URL}/{inscricao_clean}"
-        headers = {"Authorization": auth_header}
-        async with httpx.AsyncClient(proxy=self.proxy, timeout=30.0) as client:
-            response = await client.get(url, headers=headers)
-
-        if response.status_code != 200:
-            logger.error(
-                f"Erro ao consultar imóvel via VPN. Status: {response.status_code}, Texto: {response.text}"
+        try:
+            encrypted_token = encrypt_token_rsa(
+                chave_publica_pem=env.WA_IPTU_PUBLIC_KEY, token=env.WA_IPTU_TOKEN
             )
-            return None
-        response = response.json()
 
-        # Construindo o endereço completo
-        endereco_completo = f"{response['tipoLogradouro']} {response['nomeLogradouro']}, {response['numPorta']}, {response.get('complEndereco', '')}, {response['bairro']}, {response['cep']}"
-        # Retornando os dados desejados
-        return {
-            "endereco": endereco_completo.strip(", "),
-            "proprietario": response["proprietarioPrincipal"],
-        }
+            auth_header = f"Basic {encrypted_token}"
+
+            url = f"{env.WA_IPTU_URL}/{inscricao_clean}"
+            headers = {"Authorization": auth_header}
+
+            async with httpx.AsyncClient(proxy=self.proxy, timeout=30.0) as client:
+                response = await client.get(url, headers=headers)
+
+            if response.status_code == 200:
+                response_data = response.json()
+
+                # Construindo o endereço completo
+                endereco_completo = f"{response_data['tipoLogradouro']} {response_data['nomeLogradouro']}, {response_data['numPorta']}, {response_data.get('complEndereco', '')}, {response_data['bairro']}, {response_data['cep']}"
+
+                # Retornando os dados desejados
+                return {
+                    "endereco": endereco_completo.strip(", "),
+                    "proprietario": response_data["proprietarioPrincipal"],
+                }
+            elif response.status_code == 401:
+                logger.error(f"Erro de autenticação ao consultar imóvel. Status: {response.status_code}")
+                raise AuthenticationError("Falha na autenticação do serviço de dados do imóvel")
+            elif response.status_code in [500, 503]:
+                logger.error(f"Erro de servidor ao consultar imóvel. Status: {response.status_code}, Texto: {response.text}")
+                raise APIUnavailableError(f"Serviço de dados do imóvel temporariamente indisponível (HTTP {response.status_code})")
+            elif response.status_code == 404:
+                # 404 não é erro de API, apenas não encontrou - retorna None
+                logger.warning(f"Imóvel não encontrado para inscrição: {inscricao_clean}")
+                return None
+            else:
+                logger.error(f"Erro ao consultar imóvel. Status: {response.status_code}, Texto: {response.text}")
+                raise APIUnavailableError(f"Erro ao comunicar com serviço de dados do imóvel (HTTP {response.status_code})")
+
+        except httpx.TimeoutException:
+            logger.error("Timeout ao consultar dados do imóvel")
+            raise APIUnavailableError("Serviço de dados do imóvel não respondeu no tempo esperado")
+        except (APIUnavailableError, AuthenticationError):
+            # Re-lança exceções customizadas
+            raise
+        except Exception as e:
+            logger.error(f"Erro ao consultar dados do imóvel: {str(e)}")
+            raise APIUnavailableError(f"Erro ao comunicar com serviço de dados do imóvel: {str(e)}")
 
     async def upload_base64_to_gcs(self, base64_content) -> str:
         """

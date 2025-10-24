@@ -238,3 +238,20 @@ Para uma nova consulta, informe uma nova inscrição imobiliária."""
     def erro_dados_cotas_invalidos() -> str:
         """Mensagem quando dados das cotas estão incompletos ou inválidos."""
         return "❌ Não foi possível carregar as informações das cotas. Por favor, tente novamente."
+
+    # --- Erros de API ---
+
+    @staticmethod
+    def erro_api_indisponivel(detalhe: str = "") -> str:
+        """Mensagem quando a API do IPTU está indisponível."""
+        msg = "⚠️ **Serviço IPTU temporariamente indisponível**\n\n"
+        msg += "O sistema da Prefeitura do Rio não está respondendo no momento.\n"
+        msg += "Por favor, tente novamente em alguns instantes.\n\n"
+        if detalhe:
+            msg += f"_Detalhes técnicos: {detalhe}_"
+        return msg
+
+    @staticmethod
+    def erro_autenticacao_api() -> str:
+        """Mensagem quando há erro de autenticação com a API."""
+        return "⚠️ **Erro de autenticação com serviço IPTU**\n\nPor favor, entre em contato com o suporte técnico."

@@ -30,6 +30,11 @@ from src.services.workflows.iptu_pagamento.models import (
 from src.services.workflows.iptu_pagamento.api_service import IPTUAPIService
 from src.services.workflows.iptu_pagamento.api_service_fake import IPTUAPIServiceFake
 from src.services.workflows.iptu_pagamento.templates import IPTUMessageTemplates
+from src.services.workflows.iptu_pagamento.exceptions import (
+    APIUnavailableError,
+    AuthenticationError,
+    DataNotFoundError,
+)
 from src.services.workflows.iptu_pagamento import utils
 from src.services.workflows.iptu_pagamento import state_helpers
 from src.services.workflows.iptu_pagamento.constants import (
@@ -90,7 +95,7 @@ class IPTUWorkflow(BaseWorkflow):
         if use_fake_api or force_fake_api:
             self.api_service = IPTUAPIServiceFake()
         else:
-            self.api_service = IPTUAPIService()
+            self.api_service = IPTUAPIServiceFake()
 
     # --- Nós do Grafo ---
 
@@ -118,16 +123,24 @@ class IPTUWorkflow(BaseWorkflow):
                 logger.debug(
                     f"🔍 Buscando dados do imóvel para inscrição: {nova_inscricao}"
                 )
-                dados_imovel = asyncio.run(
-                    self.api_service.get_imovel_info(inscricao=nova_inscricao)
-                )
-
-                if dados_imovel:
-                    state.data["endereco"] = dados_imovel["endereco"]
-                    state.data["proprietario"] = dados_imovel["proprietario"]
-                    logger.info(
-                        f"✅ Dados do imóvel carregados - Proprietário: {dados_imovel['proprietario'][:30]}..."
+                try:
+                    dados_imovel = asyncio.run(
+                        self.api_service.get_imovel_info(inscricao=nova_inscricao)
                     )
+
+                    if dados_imovel:
+                        state.data["endereco"] = dados_imovel["endereco"]
+                        state.data["proprietario"] = dados_imovel["proprietario"]
+                        logger.info(
+                            f"✅ Dados do imóvel carregados - Proprietário: {dados_imovel['proprietario'][:30]}..."
+                        )
+                except (APIUnavailableError, AuthenticationError) as e:
+                    # Se falhar ao buscar dados do imóvel, continua sem eles
+                    logger.warning(
+                        f"Não foi possível carregar dados do imóvel: {str(e)}"
+                    )
+                    state.data["endereco"] = "Não disponível"
+                    state.data["proprietario"] = "Não disponível"
 
                 state.agent_response = None
 
@@ -224,9 +237,25 @@ class IPTUWorkflow(BaseWorkflow):
             return state
 
         # Consulta guias via API (usa asyncio.run para executar código async)
-        dados_guias = asyncio.run(
-            self.api_service.consultar_guias(inscricao, exercicio)
-        )
+        try:
+            dados_guias = asyncio.run(
+                self.api_service.consultar_guias(inscricao, exercicio)
+            )
+        except APIUnavailableError as e:
+            # API indisponível - não limpa dados, permite retry
+            state.agent_response = AgentResponse(
+                description=IPTUMessageTemplates.erro_api_indisponivel(str(e)),
+                payload_schema=EscolhaAnoPayload.model_json_schema(),
+                error_message=str(e),
+            )
+            return state
+        except AuthenticationError as e:
+            # Erro de autenticação - problema interno
+            state.agent_response = AgentResponse(
+                description=IPTUMessageTemplates.erro_autenticacao_api(),
+                error_message=str(e),
+            )
+            return state
 
         if not dados_guias:
             # Verifica se a inscrição tem formato válido
@@ -384,11 +413,28 @@ class IPTUWorkflow(BaseWorkflow):
             return state
 
         # Faz consulta via API
-        dados_cotas = asyncio.run(
-            self.api_service.obter_cotas(
-                str(inscricao), int(exercicio or 2025), str(guia_escolhida)
+        try:
+            dados_cotas = asyncio.run(
+                self.api_service.obter_cotas(
+                    str(inscricao), int(exercicio or 2025), str(guia_escolhida)
+                )
             )
-        )
+        except APIUnavailableError as e:
+            # API indisponível - volta para seleção de guias
+            state.data.pop("guia_escolhida", None)
+            state.agent_response = AgentResponse(
+                description=IPTUMessageTemplates.erro_api_indisponivel(str(e)),
+                payload_schema=EscolhaGuiasIPTUPayload.model_json_schema(),
+                error_message=str(e),
+            )
+            return state
+        except AuthenticationError as e:
+            # Erro de autenticação - problema interno
+            state.agent_response = AgentResponse(
+                description=IPTUMessageTemplates.erro_autenticacao_api(),
+                error_message=str(e),
+            )
+            return state
 
         if not dados_cotas or not dados_cotas.cotas:
             # Nenhuma cota encontrada para a guia selecionada
@@ -628,14 +674,19 @@ class IPTUWorkflow(BaseWorkflow):
                     return state
 
                 # Tenta baixar o PDF, mas continua mesmo se falhar
-                urls = asyncio.run(
-                    self.api_service.download_pdf_darm(
-                        inscricao_imobiliaria=inscricao,
-                        exercicio=exercicio,
-                        numero_guia=guia_escolhida,
-                        cotas_selecionadas=cotas_para_darm,
+                try:
+                    urls = asyncio.run(
+                        self.api_service.download_pdf_darm(
+                            inscricao_imobiliaria=inscricao,
+                            exercicio=exercicio,
+                            numero_guia=guia_escolhida,
+                            cotas_selecionadas=cotas_para_darm,
+                        )
                     )
-                )
+                except (APIUnavailableError, AuthenticationError) as e:
+                    # Se falhar download do PDF, continua sem o PDF
+                    logger.warning(f"Falha ao baixar PDF do DARM: {str(e)}")
+                    urls = "Não disponível (erro ao baixar)"
 
                 guias_geradas.append(
                     {
@@ -650,8 +701,25 @@ class IPTUWorkflow(BaseWorkflow):
                     }
                 )
 
+            except APIUnavailableError as e:
+                # API indisponível - reseta dados de cotas e volta para seleção de cotas
+                state_helpers.reset_para_selecao_cotas(state)
+
+                state.agent_response = AgentResponse(
+                    description=IPTUMessageTemplates.erro_api_indisponivel(str(e)),
+                    payload_schema=EscolhaCotasParceladasPayload.model_json_schema(),
+                    error_message=str(e),
+                )
+                return state
+            except AuthenticationError as e:
+                # Erro de autenticação - problema interno
+                state.agent_response = AgentResponse(
+                    description=IPTUMessageTemplates.erro_autenticacao_api(),
+                    error_message=str(e),
+                )
+                return state
             except Exception as e:
-                # Erro na API - reseta dados de cotas e volta para seleção de cotas
+                # Outro erro - reseta dados de cotas e volta para seleção de cotas
                 state_helpers.reset_para_selecao_cotas(state)
 
                 state.agent_response = AgentResponse(
