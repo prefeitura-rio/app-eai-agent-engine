@@ -14,7 +14,7 @@ from loguru import logger
 from src.services.core.base_workflow import BaseWorkflow, handle_errors
 from src.services.core.models import ServiceState, AgentResponse
 
-from src.services.workflows.iptu_pagamento.models import (
+from src.services.workflows.iptu_pagamento.core.models import (
     InscricaoImobiliariaPayload,
     EscolhaAnoPayload,
     EscolhaGuiasIPTUPayload,
@@ -28,17 +28,17 @@ from src.services.workflows.iptu_pagamento.models import (
     DadosCotas,
     DadosDividaAtiva,
 )
-from src.services.workflows.iptu_pagamento.api_service import IPTUAPIService
-from src.services.workflows.iptu_pagamento.api_service_fake import IPTUAPIServiceFake
-from src.services.workflows.iptu_pagamento.templates import IPTUMessageTemplates
-from src.services.workflows.iptu_pagamento.exceptions import (
+from src.services.workflows.iptu_pagamento.api.api_service import IPTUAPIService
+from src.services.workflows.iptu_pagamento.api.api_service_fake import IPTUAPIServiceFake
+from src.services.workflows.iptu_pagamento.api.exceptions import (
     APIUnavailableError,
     AuthenticationError,
     DataNotFoundError,
 )
-from src.services.workflows.iptu_pagamento import utils
-from src.services.workflows.iptu_pagamento import state_helpers
-from src.services.workflows.iptu_pagamento.constants import (
+from src.services.workflows.iptu_pagamento.templates import IPTUMessageTemplates
+from src.services.workflows.iptu_pagamento.helpers import utils
+from src.services.workflows.iptu_pagamento.helpers import state_helpers
+from src.services.workflows.iptu_pagamento.core.constants import (
     FAKE_API_ENV_VAR,
     MAX_TENTATIVAS_ANO,
     ERROR_INSCRICAO_AUSENTE,

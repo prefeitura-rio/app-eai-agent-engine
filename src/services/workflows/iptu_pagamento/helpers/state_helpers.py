@@ -6,7 +6,7 @@ Contém funções utilitárias para validação e reset de dados no ServiceState
 
 from typing import Optional, List, Dict
 from src.services.core.models import ServiceState
-from src.services.workflows.iptu_pagamento import utils
+from src.services.workflows.iptu_pagamento.helpers import utils
 
 
 def validar_dados_obrigatorios(

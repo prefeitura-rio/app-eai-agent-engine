@@ -8,12 +8,12 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 import httpx
 
-from src.services.workflows.iptu_pagamento.api_service import IPTUAPIService
-from src.services.workflows.iptu_pagamento.exceptions import (
+from src.services.workflows.iptu_pagamento.api.api_service import IPTUAPIService
+from src.services.workflows.iptu_pagamento.api.exceptions import (
     APIUnavailableError,
     AuthenticationError,
 )
-from src.services.workflows.iptu_pagamento.models import DadosDividaAtiva
+from src.services.workflows.iptu_pagamento.core.models import DadosDividaAtiva
 
 # Configura pytest-asyncio para modo auto
 pytest_plugins = ('pytest_asyncio',)

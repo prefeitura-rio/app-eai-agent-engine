@@ -9,7 +9,7 @@ import re
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 
-from src.services.workflows.iptu_pagamento.models import (
+from src.services.workflows.iptu_pagamento.core.models import (
     DadosGuias,
     Guia,
     Cota,
@@ -19,7 +19,7 @@ from src.services.workflows.iptu_pagamento.models import (
     CotaDarm,
     DadosDividaAtiva,
 )
-from src.services.workflows.iptu_pagamento.exceptions import (
+from src.services.workflows.iptu_pagamento.api.exceptions import (
     APIUnavailableError,
     DataNotFoundError,
     AuthenticationError,

@@ -7,7 +7,7 @@ formatação e lógica reutilizável do workflow.
 
 from typing import Dict, List, Any, Optional, Protocol
 from src.services.core.models import ServiceState
-from src.services.workflows.iptu_pagamento.models import DadosCotas
+from src.services.workflows.iptu_pagamento.core.models import DadosCotas
 
 
 class IPTUAPIProtocol(Protocol):
