@@ -2,7 +2,7 @@
 Modelos Pydantic para validação do workflow IPTU Ano Vigente
 """
 
-from typing import Literal, Optional, List, Dict
+from typing import Literal, Optional, List, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 import re
 
@@ -259,7 +259,8 @@ class EscolhaFormatoDarmPayload(BaseModel):
     """Payload para escolha do formato de geração de boletos (único ou separado)."""
 
     darm_separado: bool = Field(
-        ..., description="True para gerar um boleto para cada cota, False para boleto único com todas as cotas"
+        ...,
+        description="True para gerar um boleto para cada cota, False para boleto único com todas as cotas",
     )
 
 

@@ -5,7 +5,7 @@ Este módulo centraliza todos os textos e mensagens exibidas ao agente
 durante o fluxo de consulta e pagamento de IPTU.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 class IPTUMessageTemplates:

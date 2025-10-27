@@ -960,9 +960,25 @@ class IPTUWorkflow(BaseWorkflow):
         return "informar_inscricao"
 
     def _route_consulta_guias(self, state: ServiceState) -> str:
-        """Roteamento após consulta de guias."""
+        """
+        Roteamento após consulta de guias.
+
+        Lógica de roteamento:
+        1. Se guias foram encontradas → vai para seleção de guias
+        2. Se consulta falhou MAS já tem mensagem de erro definida → END (não sobrescreve)
+        3. Se consulta falhou e não tem ano → volta para seleção de ano
+        4. Se consulta falhou → volta para informar inscrição
+
+        A verificação de agent_response é crítica para evitar sobrescrever mensagens
+        de erro específicas (ex: "nenhuma guia encontrada para o ano X").
+        """
         # Se não tem dados de guias, significa que a consulta falhou
         if "dados_guias" not in state.data:
+            # Se já tem uma mensagem de erro definida, para o fluxo (END)
+            # para não sobrescrever a mensagem de erro específica
+            if state.agent_response is not None:
+                return END
+
             # Se tem inscrição válida mas não tem ano, volta para escolha do ano
             if (
                 "inscricao_imobiliaria" in state.data
@@ -1083,6 +1099,7 @@ class IPTUWorkflow(BaseWorkflow):
                 "usuario_escolhe_guias": "usuario_escolhe_guias",
                 "escolher_ano": "escolher_ano",
                 "informar_inscricao": "informar_inscricao",
+                END: END,
             },
         )
         graph.add_conditional_edges(

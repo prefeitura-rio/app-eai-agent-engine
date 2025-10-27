@@ -98,12 +98,42 @@ class IPTUAPIServiceFake:
         - 44444444444444: IPTU ORDINÁRIA com valor alto (teste desconto à vista)
         - 55555555555555: IPTU ORDINÁRIA com valores baixos
         - 66666666666666: Múltiplas guias EXTRAORDINÁRIAS (01, 02)
+        - 12345678: Nenhuma guia para ano 2024 (lista vazia), tem guias em 2025
         - Qualquer outra: Nenhuma guia encontrada
         """
 
         if exercicio < 2020 or exercicio > 2025:
             # Exercício fora do range válido
             return None
+
+        if inscricao_clean == "12345678":
+            # Cenário específico: Nenhuma guia para 2024, mas tem para 2025
+            if exercicio == 2024:
+                return []  # Lista vazia (sem guias para este ano)
+            else:
+                # Tem guias para outros anos (ex: 2025)
+                return [
+                    {
+                        "Situacao": {"codigo": "01", "descricao": "EM ABERTO"},
+                        "Inscricao": inscricao_clean,
+                        "Exercicio": str(exercicio),
+                        "NGuia": "00",
+                        "Tipo": "ORDINÁRIA",
+                        "ValorIPTUOriginalGuia": "1.200,00",
+                        "DataVenctoDescCotaUnica": "07/02/2025",
+                        "QuantDiasEmAtraso": "0",
+                        "PercentualDescCotaUnica": "00007",
+                        "ValorIPTUDescontoAvista": "84,00",
+                        "ValorParcelas": "37,50",
+                        "CreditoNotaCarioca": "0,00",
+                        "CreditoDECAD": "0,00",
+                        "CreditoIsencao": "0,00",
+                        "CreditoCotaUnica": "84,00",
+                        "ValorQuitado": "0,00",
+                        "DataQuitacao": "",
+                        "Deposito": "N",
+                    }
+                ]
 
         if inscricao_clean == "01234567890123":
             # Cenário padrão: IPTU ORDINÁRIA + EXTRAORDINÁRIA

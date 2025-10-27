@@ -546,6 +546,65 @@ class IPTUAPIService:
                 f"Erro ao comunicar com serviço de dados do imóvel: {str(e)}"
             )
 
+    async def get_divida_ativa_info(self, inscricao: str) -> Optional[Dict]:
+        """
+        Consulta a API de Dívida Ativa para obter informações sobre débitos.
+
+        Args:
+            inscricao (str): Número da inscrição do imóvel.
+
+        Returns:
+            dict: Resposta JSON da API com informações de dívida ativa, ou None se não houver débitos.
+
+        Raises:
+            APIUnavailableError: Quando API está indisponível (timeout, 500, 503, etc.)
+            AuthenticationError: Quando falha autenticação (401)
+        """
+        inscricao_clean = self._limpar_inscricao(inscricao=inscricao)
+
+        logger.info(
+            f"Iniciando consulta de dívida ativa para inscrição: {inscricao_clean}"
+        )
+
+        async with httpx.AsyncClient(timeout=30.0, proxy=self.proxy) as client:
+            auth_response = await client.post(
+                f"{env.DIVIDA_ATIVA_API_URL}/security/token",
+                data={
+                    "verify": False,
+                    "grant_type": "password",
+                    "Consumidor": "consultar-dividas-contribuinte",
+                    "ChaveAcesso": env.DIVIDA_ATIVA_ACCESS_KEY,
+                },
+            )
+            auth_response_json = auth_response.json()
+            if "access_token" not in auth_response_json:
+                logger.error(
+                    f"Falha ao obter token de autenticação da Dívida Ativa:{auth_response.status_code} - {auth_response.text}"
+                )
+                raise Exception("Failed to get PGM access token")
+            token = f'Bearer {auth_response_json["access_token"]}'
+            logger.info("Token de autenticação obtido com sucesso")
+
+            response = await client.post(
+                f"{env.DIVIDA_ATIVA_API_URL}/v2/cdas/dividas-contribuinte",
+                headers={"Authorization": token},
+                data={
+                    "origem_solicitação": 0,
+                    "inscricaoImobiliaria": inscricao_clean,
+                },
+            )
+            if response.status_code == 200:
+                response_data = response.json()
+                logger.info(
+                    f"Consulta de dívida ativa realizada com sucesso: {response_data}"
+                )
+                return response_data
+            else:
+                logger.error(
+                    f"Erro ao consultar dívida ativa. Status: {response.status_code}, Texto: {response.text}"
+                )
+                return None
+
     async def upload_base64_to_gcs(self, base64_content) -> str:
         """
         Faz o upload de um arquivo em base64 para o Google Cloud Storage e retorna uma URL assinada válida por 7 dias.

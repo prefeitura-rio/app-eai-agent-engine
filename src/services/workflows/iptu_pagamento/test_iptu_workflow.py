@@ -1231,6 +1231,79 @@ class TestIPTUWorkflowErrosAPI:
 
         print("✅ TESTE PASSOU: Diferença entre erros está clara")
 
+    def test_nenhuma_guia_para_ano_especifico(self):
+        """
+        Testa que quando não há guias para um ano específico, a mensagem
+        de erro correta é exibida e não é sobrescrita por mensagem genérica.
+
+        Cenário:
+        1. Usuário informa inscrição 12345678
+        2. Tenta ano 2024 (sem guias)
+        3. Deve receber mensagem: "Nenhuma guia encontrada para o ano 2024"
+        4. Pode tentar ano 2025 (com guias) e conseguir continuar
+
+        Este teste valida a correção do bug onde a mensagem de erro
+        era sobrescrita pela mensagem genérica de escolha de ano.
+        """
+        print("\n🧪 Teste: Nenhuma guia para ano específico (bug fix)")
+
+        # Etapa 1: Informar inscrição
+        print("📝 Informando inscrição 12345678...")
+        response1 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"inscricao_imobiliaria": "12345678"}
+        })
+
+        assert response1["error_message"] is None, "Inscrição deve ser aceita"
+        print(f"✅ Inscrição aceita: {response1['description'][:80]}...")
+
+        # Etapa 2: Tentar ano 2024 (sem guias)
+        print("📅 Tentando ano 2024 (sem guias)...")
+        response2 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"ano_exercicio": 2024}
+        })
+
+        # Verificações críticas para o bug fix:
+        # 1. Deve ter mensagem de "nenhuma guia encontrada"
+        print(f"  Response: {response2['description']}")
+        assert "nenhuma guia" in response2["description"].lower() or "não foi encontrada" in response2["description"].lower(), \
+            f"Deve informar que nenhuma guia foi encontrada. Got: {response2['description']}"
+
+        # 2. Deve mencionar o ano 2024 especificamente
+        assert "2024" in response2["description"], \
+            f"Deve mencionar o ano 2024. Got: {response2['description']}"
+
+        # 3. Deve pedir para escolher outro ano
+        assert "outro ano" in response2["description"].lower() or "escolha" in response2["description"].lower(), \
+            f"Deve pedir para escolher outro ano. Got: {response2['description']}"
+
+        # 4. Deve ter schema para permitir nova tentativa
+        assert response2["payload_schema"] is not None, "Deve manter schema para nova tentativa"
+        assert "ano_exercicio" in response2["payload_schema"].get("properties", {}), \
+            "Schema deve pedir ano_exercicio"
+
+        print(f"✅ Mensagem correta exibida: '{response2['description'][:120]}...'")
+
+        # Etapa 3: Tentar ano 2025 (com guias) - deve funcionar
+        print("📅 Tentando ano 2025 (com guias)...")
+        response3 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"ano_exercicio": 2025}
+        })
+
+        # Deve exibir guias disponíveis
+        assert response3["error_message"] is None, "Não deve ter erro para ano 2025"
+        assert "guia" in response3["description"].lower(), \
+            f"Deve exibir guias disponíveis para 2025. Got: {response3['description'][:120]}"
+
+        print(f"✅ Guias encontradas para 2025: {response3['description'][:80]}...")
+
+        print("✅ TESTE PASSOU: Mensagem de erro específica não foi sobrescrita")
+
 
 # Função main para executar todos os testes
 def run_all_tests():
