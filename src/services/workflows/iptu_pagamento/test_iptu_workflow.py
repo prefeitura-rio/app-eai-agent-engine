@@ -1304,6 +1304,147 @@ class TestIPTUWorkflowErrosAPI:
 
         print("✅ TESTE PASSOU: Mensagem de erro específica não foi sobrescrita")
 
+    def test_divida_ativa_parcelamento(self):
+        """
+        Testa cenário onde não há guias de IPTU mas existe dívida ativa com parcelamento.
+
+        Cenário:
+        1. Usuário informa inscrição 10000000
+        2. Tenta ano 2024 (sem guias)
+        3. Sistema consulta dívida ativa
+        4. Encontra parcelamento ativo
+        5. Exibe mensagem específica sobre dívida ativa com detalhes do parcelamento
+        6. Usuário pode tentar outro ano
+        """
+        print("\n🧪 Teste: Dívida ativa com parcelamento encontrado")
+
+        # Etapa 1: Informar inscrição
+        print("📝 Informando inscrição 10000000...")
+        response1 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"inscricao_imobiliaria": "10000000"}
+        })
+
+        assert response1["error_message"] is None, "Inscrição deve ser aceita"
+        print(f"✅ Inscrição aceita: {response1['description'][:80]}...")
+
+        # Etapa 2: Tentar ano 2024 (sem guias, mas tem dívida ativa)
+        print("📅 Tentando ano 2024 (sem guias, mas com dívida ativa)...")
+        response2 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"ano_exercicio": 2024}
+        })
+
+        # Verificações para dívida ativa:
+        print(f"  Response: {response2['description']}")
+
+        # 1. Deve mencionar dívida ativa
+        assert "dívida ativa" in response2["description"].lower() or "divida ativa" in response2["description"].lower(), \
+            f"Deve mencionar dívida ativa. Got: {response2['description']}"
+
+        # 2. Deve mencionar o ano 2024
+        assert "2024" in response2["description"], \
+            f"Deve mencionar o ano 2024. Got: {response2['description']}"
+
+        # 3. Deve incluir o link da dívida ativa
+        assert "daminternet.rio.rj.gov.br/divida" in response2["description"], \
+            f"Deve incluir link da dívida ativa. Got: {response2['description']}"
+
+        # 4. Deve mostrar informações do parcelamento
+        assert "parcelamento" in response2["description"].lower(), \
+            f"Deve mencionar parcelamento. Got: {response2['description']}"
+
+        assert "2024/0256907" in response2["description"], \
+            f"Deve mostrar número do parcelamento. Got: {response2['description']}"
+
+        # 5. Deve ter schema para permitir nova tentativa
+        assert response2["payload_schema"] is not None, "Deve manter schema para nova tentativa"
+        assert "ano_exercicio" in response2["payload_schema"].get("properties", {}), \
+            "Schema deve pedir ano_exercicio"
+
+        print(f"✅ Mensagem de dívida ativa exibida corretamente")
+        print("✅ TESTE PASSOU: Dívida ativa com parcelamento detectada e informada")
+
+    def test_divida_ativa_cdas(self):
+        """
+        Testa cenário onde não há guias de IPTU mas existem CDAs na dívida ativa.
+
+        Cenário:
+        1. Usuário informa inscrição 20000000
+        2. Tenta ano 2024 (sem guias)
+        3. Sistema consulta dívida ativa
+        4. Encontra CDAs não ajuizadas
+        5. Exibe mensagem específica sobre dívida ativa com detalhes das CDAs
+        """
+        print("\n🧪 Teste: Dívida ativa com CDAs encontradas")
+
+        response1 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"inscricao_imobiliaria": "20000000"}
+        })
+
+        assert response1["error_message"] is None
+
+        response2 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"ano_exercicio": 2024}
+        })
+
+        print(f"  Response: {response2['description']}")
+
+        # Verificações
+        assert "dívida ativa" in response2["description"].lower()
+        assert "cda" in response2["description"].lower(), \
+            f"Deve mencionar CDA. Got: {response2['description']}"
+        assert "2024/123456" in response2["description"] or "2023/654321" in response2["description"], \
+            f"Deve mostrar número das CDAs. Got: {response2['description']}"
+        assert "daminternet.rio.rj.gov.br/divida" in response2["description"]
+
+        print("✅ TESTE PASSOU: Dívida ativa com CDAs detectada e informada")
+
+    def test_divida_ativa_efs(self):
+        """
+        Testa cenário onde não há guias de IPTU mas existem EFs na dívida ativa.
+
+        Cenário:
+        1. Usuário informa inscrição 30000000
+        2. Tenta ano 2024 (sem guias)
+        3. Sistema consulta dívida ativa
+        4. Encontra EFs não parceladas
+        5. Exibe mensagem específica sobre dívida ativa com detalhes das EFs
+        """
+        print("\n🧪 Teste: Dívida ativa com EFs encontradas")
+
+        response1 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"inscricao_imobiliaria": "30000000"}
+        })
+
+        assert response1["error_message"] is None
+
+        response2 = multi_step_service.invoke({
+            "service_name": self.service_name,
+            "user_id": self.user_id,
+            "payload": {"ano_exercicio": 2024}
+        })
+
+        print(f"  Response: {response2['description']}")
+
+        # Verificações
+        assert "dívida ativa" in response2["description"].lower()
+        assert "ef" in response2["description"].lower() or "execu" in response2["description"].lower(), \
+            f"Deve mencionar EF. Got: {response2['description']}"
+        assert "2024/789012" in response2["description"], \
+            f"Deve mostrar número da EF. Got: {response2['description']}"
+        assert "daminternet.rio.rj.gov.br/divida" in response2["description"]
+
+        print("✅ TESTE PASSOU: Dívida ativa com EFs detectada e informada")
+
 
 # Função main para executar todos os testes
 def run_all_tests():

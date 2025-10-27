@@ -26,6 +26,7 @@ from src.services.workflows.iptu_pagamento.models import (
     ConfirmacaoDadosPayload,
     DadosGuias,
     DadosCotas,
+    DividaAtivaInfo,
 )
 from src.services.workflows.iptu_pagamento.api_service import IPTUAPIService
 from src.services.workflows.iptu_pagamento.api_service_fake import IPTUAPIServiceFake
@@ -277,7 +278,59 @@ class IPTUWorkflow(BaseWorkflow):
                     state_helpers.reset_completo(state)
                     return state
 
-                # Ainda dentro do limite de tentativas - pede novo ano
+                # Ainda dentro do limite de tentativas - antes de retornar erro,
+                # consulta dívida ativa para verificar se o IPTU foi migrado
+                try:
+                    logger.info(
+                        f"Consultando dívida ativa para inscrição {inscricao} (ano {exercicio} sem guias)"
+                    )
+                    divida_ativa_response = asyncio.run(
+                        self.api_service.get_divida_ativa_info(inscricao)
+                    )
+
+                    if divida_ativa_response:
+                        divida_ativa_info = DividaAtivaInfo.from_api_response(
+                            divida_ativa_response
+                        )
+
+                        # Se encontrou dívida ativa, informa ao usuário
+                        if divida_ativa_info.tem_divida_ativa:
+                            logger.info(
+                                f"Dívida ativa encontrada para inscrição {inscricao}: {len(divida_ativa_info.cdas)} CDAs, {len(divida_ativa_info.efs)} EFs, {len(divida_ativa_info.parcelamentos)} parcelamentos"
+                            )
+                            # Remove dados do ano para permitir nova consulta
+                            state.data.pop("ano_exercicio", None)
+                            state.payload.pop("ano_exercicio", None)
+                            state.internal.pop(STATE_HAS_CONSULTED_GUIAS, None)
+
+                            # Monta mensagem específica sobre dívida ativa
+                            endereco_completo = None
+                            if divida_ativa_info.endereco_imovel:
+                                endereco_completo = divida_ativa_info.endereco_imovel
+                                if divida_ativa_info.bairro_imovel:
+                                    endereco_completo += (
+                                        f", {divida_ativa_info.bairro_imovel}"
+                                    )
+
+                            state.agent_response = AgentResponse(
+                                description=IPTUMessageTemplates.divida_ativa_encontrada(
+                                    inscricao=inscricao,
+                                    ano=exercicio,
+                                    endereco=endereco_completo,
+                                    cdas=divida_ativa_info.cdas,
+                                    efs=divida_ativa_info.efs,
+                                    parcelamentos=divida_ativa_info.parcelamentos,
+                                ),
+                                payload_schema=EscolhaAnoPayload.model_json_schema(),
+                            )
+                            return state
+                except Exception as e:
+                    # Se falhar a consulta de dívida ativa, apenas loga e continua
+                    logger.warning(
+                        f"Falha ao consultar dívida ativa: {str(e)}. Continuando com fluxo normal."
+                    )
+
+                # Se não encontrou dívida ativa ou houve erro, retorna mensagem padrão
                 state.data.pop("ano_exercicio", None)
                 state.payload.pop(
                     "ano_exercicio", None

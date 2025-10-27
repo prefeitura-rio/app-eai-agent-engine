@@ -99,6 +99,9 @@ class IPTUAPIServiceFake:
         - 55555555555555: IPTU ORDINÁRIA com valores baixos
         - 66666666666666: Múltiplas guias EXTRAORDINÁRIAS (01, 02)
         - 12345678: Nenhuma guia para ano 2024 (lista vazia), tem guias em 2025
+        - 10000000: Nenhuma guia (migrado para dívida ativa - parcelamento)
+        - 20000000: Nenhuma guia (migrado para dívida ativa - CDAs)
+        - 30000000: Nenhuma guia (migrado para dívida ativa - EFs)
         - Qualquer outra: Nenhuma guia encontrada
         """
 
@@ -343,6 +346,10 @@ class IPTUAPIServiceFake:
                     "Deposito": "N",
                 },
             ]
+        elif inscricao_clean in ["10000000", "20000000", "30000000"]:
+            # Cenários de dívida ativa: retorna lista vazia (sem guias de IPTU)
+            # Estas inscrições têm débitos na dívida ativa
+            return []
         else:
             # Qualquer outra inscrição: não encontrada
             return None
@@ -824,3 +831,143 @@ class IPTUAPIServiceFake:
             "endereco": "Rua Fake, Bairro Fake, 0000-0000",
             "proprietario": "Fake da Silva",
         }
+
+    async def get_divida_ativa_info(self, inscricao: str):
+        """
+        Consulta a API de Dívida Ativa para obter informações sobre débitos (MOCK).
+
+        Args:
+            inscricao: Número da inscrição do imóvel
+
+        Returns:
+            dict: Resposta JSON da API mockada com informações de dívida ativa
+
+        Cenários de teste baseados na inscrição:
+        - 10000000: Tem parcelamento ativo na dívida ativa
+        - 20000000: Tem CDAs não ajuizadas
+        - 30000000: Tem EFs não parceladas
+        - Outros: Sem débitos na dívida ativa
+        """
+        inscricao_clean = self._limpar_inscricao(inscricao)
+
+        logger.info(
+            f"FAKE API: Consulting dívida ativa for inscription {inscricao_clean}"
+        )
+
+        if inscricao_clean == "10000000":
+            # Cenário: Parcelamento ativo
+            return {
+                "success": True,
+                "data": {
+                    "dataVencimento": "25/11/2025",
+                    "saldoTotalDivida": "R$0,00",
+                    "enderecoImovel": "RUA BARATA RIBEIRO, 264 - APT 902",
+                    "bairroImovel": "COPACABANA",
+                    "pdf": None,
+                    "urlPdf": None,
+                    "debitosNaoParceladosComSaldoTotal": {
+                        "cdasNaoAjuizadasNaoParceladas": [],
+                        "efsNaoParceladas": [],
+                        "saldoTotalNaoParcelado": "R$0,00",
+                    },
+                    "guiasParceladasComSaldoTotal": {
+                        "guiasParceladas": [
+                            {
+                                "qtdeParcelas": "84",
+                                "qtdPagas": "9",
+                                "dataUltimoPagamento": "02/06/2025",
+                                "nomeRequerente": "MAURICEA BATISTA DO CARMO",
+                                "descricaoTipoPagamento": "Parcelamento Compartilhado",
+                                "numero": "2024/0256907",
+                                "descricaoSituacaoGuia": "Concedido",
+                                "valorTotalGuia": "R$15.000,00",
+                            }
+                        ],
+                        "saldoTotalParcelado": "R$0,00",
+                    },
+                },
+            }
+        elif inscricao_clean == "20000000":
+            # Cenário: CDAs não ajuizadas
+            return {
+                "success": True,
+                "data": {
+                    "dataVencimento": "25/11/2025",
+                    "saldoTotalDivida": "R$5.000,00",
+                    "enderecoImovel": "AV ATLÂNTICA, 1000",
+                    "bairroImovel": "COPACABANA",
+                    "pdf": None,
+                    "urlPdf": None,
+                    "debitosNaoParceladosComSaldoTotal": {
+                        "cdasNaoAjuizadasNaoParceladas": [
+                            {
+                                "numero": "2024/123456",
+                                "exercicio": "2024",
+                                "valorOriginal": "R$3.000,00",
+                            },
+                            {
+                                "numero": "2023/654321",
+                                "exercicio": "2023",
+                                "valorOriginal": "R$2.000,00",
+                            },
+                        ],
+                        "efsNaoParceladas": [],
+                        "saldoTotalNaoParcelado": "R$5.000,00",
+                    },
+                    "guiasParceladasComSaldoTotal": {
+                        "guiasParceladas": [],
+                        "saldoTotalParcelado": "R$0,00",
+                    },
+                },
+            }
+        elif inscricao_clean == "30000000":
+            # Cenário: EFs não parceladas
+            return {
+                "success": True,
+                "data": {
+                    "dataVencimento": "25/11/2025",
+                    "saldoTotalDivida": "R$10.000,00",
+                    "enderecoImovel": "RUA VISCONDE DE PIRAJÁ, 500",
+                    "bairroImovel": "IPANEMA",
+                    "pdf": None,
+                    "urlPdf": None,
+                    "debitosNaoParceladosComSaldoTotal": {
+                        "cdasNaoAjuizadasNaoParceladas": [],
+                        "efsNaoParceladas": [
+                            {
+                                "numeroEF": "2024/789012",
+                                "numeroProcesso": "0123456-78.2024.8.19.0001",
+                                "valorOriginal": "R$10.000,00",
+                            }
+                        ],
+                        "saldoTotalNaoParcelado": "R$10.000,00",
+                    },
+                    "guiasParceladasComSaldoTotal": {
+                        "guiasParceladas": [],
+                        "saldoTotalParcelado": "R$0,00",
+                    },
+                },
+            }
+        else:
+            # Cenário: Sem débitos na dívida ativa
+            logger.info(f"FAKE API: No dívida ativa found for inscription {inscricao_clean}")
+            return {
+                "success": True,
+                "data": {
+                    "dataVencimento": None,
+                    "saldoTotalDivida": "R$0,00",
+                    "enderecoImovel": None,
+                    "bairroImovel": None,
+                    "pdf": None,
+                    "urlPdf": None,
+                    "debitosNaoParceladosComSaldoTotal": {
+                        "cdasNaoAjuizadasNaoParceladas": [],
+                        "efsNaoParceladas": [],
+                        "saldoTotalNaoParcelado": "R$0,00",
+                    },
+                    "guiasParceladasComSaldoTotal": {
+                        "guiasParceladas": [],
+                        "saldoTotalParcelado": "R$0,00",
+                    },
+                },
+            }

@@ -273,3 +273,53 @@ class DadosConsulta(BaseModel):
     dados_darm: Optional[DadosDarm] = None
     tipo_cobranca_escolhido: Optional[str] = None
     formato_pagamento_escolhido: Optional[str] = None
+
+
+class DividaAtivaInfo(BaseModel):
+    """Informações sobre dívida ativa retornadas pela API."""
+
+    tem_divida_ativa: bool = False
+    saldo_total_divida: str = "R$0,00"
+    endereco_imovel: Optional[str] = None
+    bairro_imovel: Optional[str] = None
+    cdas: List[Dict[str, Any]] = []
+    efs: List[Dict[str, Any]] = []
+    parcelamentos: List[Dict[str, Any]] = []
+
+    @classmethod
+    def from_api_response(cls, response: Dict[str, Any]) -> "DividaAtivaInfo":
+        """
+        Cria DividaAtivaInfo a partir da resposta da API.
+
+        Args:
+            response: Resposta da API de dívida ativa
+
+        Returns:
+            DividaAtivaInfo com dados processados
+        """
+        if not response or not response.get("success"):
+            return cls(tem_divida_ativa=False)
+
+        data = response.get("data", {})
+
+        # Extrai débitos não parcelados
+        debitos_nao_parcelados = data.get("debitosNaoParceladosComSaldoTotal", {})
+        cdas = debitos_nao_parcelados.get("cdasNaoAjuizadasNaoParceladas", [])
+        efs = debitos_nao_parcelados.get("efsNaoParceladas", [])
+
+        # Extrai parcelamentos
+        guias_parceladas_info = data.get("guiasParceladasComSaldoTotal", {})
+        parcelamentos = guias_parceladas_info.get("guiasParceladas", [])
+
+        # Verifica se tem algum débito
+        tem_divida = bool(cdas or efs or parcelamentos)
+
+        return cls(
+            tem_divida_ativa=tem_divida,
+            saldo_total_divida=data.get("saldoTotalDivida", "R$0,00"),
+            endereco_imovel=data.get("enderecoImovel"),
+            bairro_imovel=data.get("bairroImovel"),
+            cdas=cdas,
+            efs=efs,
+            parcelamentos=parcelamentos,
+        )
