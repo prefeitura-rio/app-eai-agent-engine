@@ -25,7 +25,7 @@ def get_agent():
     )
 
 
-user_id = "hahahahahaha1"
+user_id = "bruno_2025_10_21_01"
 
 
 # Initialize agents
