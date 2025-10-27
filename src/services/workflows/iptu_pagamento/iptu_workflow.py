@@ -298,6 +298,7 @@ class IPTUWorkflow(BaseWorkflow):
                             logger.info(
                                 f"Dívida ativa encontrada para inscrição {inscricao}: {len(divida_ativa_info.cdas)} CDAs, {len(divida_ativa_info.efs)} EFs, {len(divida_ativa_info.parcelamentos)} parcelamentos"
                             )
+                            state.data["divida_ativa_data"] = divida_ativa_response
                             # Remove dados do ano para permitir nova consulta
                             state.data.pop("ano_exercicio", None)
                             state.payload.pop("ano_exercicio", None)

@@ -315,6 +315,8 @@ Para uma nova consulta, informe uma nova inscrição imobiliária."""
 👉 Acesse: https://daminternet.rio.rj.gov.br/divida
 
 ℹ️ O IPTU deste ano foi inscrito na Dívida Ativa Municipal e deve ser consultado e pago através do sistema específico da Dívida Ativa.
+
+Posso te ajudar a consultar o IPTU de outro ano? 
 """
 
         return texto
