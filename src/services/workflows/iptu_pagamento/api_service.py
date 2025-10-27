@@ -559,6 +559,8 @@ class IPTUAPIService:
         Raises:
             APIUnavailableError: Quando API está indisponível (timeout, 500, 503, etc.)
             AuthenticationError: Quando falha autenticação (401)
+        TODO: migrar modelos do pydantic pra essa resposta
+              adicionar tratamento de erros mais específico
         """
         inscricao_clean = self._limpar_inscricao(inscricao=inscricao)
 
