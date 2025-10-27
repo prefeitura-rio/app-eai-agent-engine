@@ -298,29 +298,20 @@ class IPTUWorkflow(BaseWorkflow):
                             logger.info(
                                 f"Dívida ativa encontrada para inscrição {inscricao}: {len(divida_ativa_info.cdas)} CDAs, {len(divida_ativa_info.efs)} EFs, {len(divida_ativa_info.parcelamentos)} parcelamentos"
                             )
+                            # Salva payload completo da API e também o objeto estruturado
                             state.data["divida_ativa_data"] = divida_ativa_response
+                            state.data["divida_ativa_info"] = divida_ativa_info.model_dump()
+
                             # Remove dados do ano para permitir nova consulta
                             state.data.pop("ano_exercicio", None)
                             state.payload.pop("ano_exercicio", None)
                             state.internal.pop(STATE_HAS_CONSULTED_GUIAS, None)
 
-                            # Monta mensagem específica sobre dívida ativa
-                            endereco_completo = None
-                            if divida_ativa_info.endereco_imovel:
-                                endereco_completo = divida_ativa_info.endereco_imovel
-                                if divida_ativa_info.bairro_imovel:
-                                    endereco_completo += (
-                                        f", {divida_ativa_info.bairro_imovel}"
-                                    )
-
                             state.agent_response = AgentResponse(
                                 description=IPTUMessageTemplates.divida_ativa_encontrada(
                                     inscricao=inscricao,
                                     ano=exercicio,
-                                    endereco=endereco_completo,
-                                    cdas=divida_ativa_info.cdas,
-                                    efs=divida_ativa_info.efs,
-                                    parcelamentos=divida_ativa_info.parcelamentos,
+                                    divida_info=divida_ativa_info,
                                 ),
                                 payload_schema=EscolhaAnoPayload.model_json_schema(),
                             )

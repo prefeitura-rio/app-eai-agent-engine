@@ -262,61 +262,75 @@ Para uma nova consulta, informe uma nova inscrição imobiliária."""
     def divida_ativa_encontrada(
         inscricao: str,
         ano: int,
-        endereco: Optional[str] = None,
-        cdas: Optional[List[Dict[str, Any]]] = None,
-        efs: Optional[List[Dict[str, Any]]] = None,
-        parcelamentos: Optional[List[Dict[str, Any]]] = None,
+        divida_info: Any,  # DividaAtivaInfo
     ) -> str:
-        """Mensagem quando a dívida foi migrada para dívida ativa."""
+        """
+        Mensagem quando a dívida foi migrada para dívida ativa.
+
+        Args:
+            inscricao: Número da inscrição imobiliária
+            ano: Ano do exercício consultado
+            divida_info: Objeto DividaAtivaInfo com todos os dados
+        """
         texto = f"""⚠️ **IPTU do ano {ano} inscrito na Dívida Ativa Municipal**
 
 📋 **Inscrição:** {inscricao}
 """
-        if endereco:
+        # Endereço completo
+        if divida_info.endereco_imovel:
+            endereco = divida_info.endereco_imovel
+            if divida_info.bairro_imovel:
+                endereco += f", {divida_info.bairro_imovel}"
             texto += f"📍 **Endereço:** {endereco}\n"
 
         texto += "\n"
         texto += "📄 **Débitos encontrados na Dívida Ativa:**\n\n"
 
         # Lista CDAs (Certidões de Dívida Ativa)
-        if cdas and len(cdas) > 0:
+        if divida_info.cdas and len(divida_info.cdas) > 0:
             texto += "**CDAs (Certidões de Dívida Ativa) não ajuizadas:**\n"
-            for cda in cdas:
-                numero = cda.get("numero", "N/A")
-                exercicio = cda.get("exercicio", "N/A")
-                valor = cda.get("valorOriginal", "N/A")
+            for cda in divida_info.cdas:
+                numero = cda.numero or "N/A"
+                exercicio = cda.exercicio or "N/A"
+                valor = cda.valor_original or "N/A"
                 texto += f"• CDA {numero} - Exercício {exercicio} - Valor: {valor}\n"
             texto += "\n"
 
         # Lista EFs (Execuções Fiscais)
-        if efs and len(efs) > 0:
+        if divida_info.efs and len(divida_info.efs) > 0:
             texto += "**EFs (Execuções Fiscais) não parceladas:**\n"
-            for ef in efs:
-                numero = ef.get("numeroEF", "N/A")
-                processo = ef.get("numeroProcesso", "N/A")
-                valor = ef.get("valorOriginal", "N/A")
+            for ef in divida_info.efs:
+                numero = ef.numero_ef or "N/A"
+                processo = ef.numero_processo or "N/A"
+                valor = ef.valor_original or "N/A"
                 texto += f"• EF {numero} - Processo {processo} - Valor: {valor}\n"
             texto += "\n"
 
         # Lista Parcelamentos ativos
-        if parcelamentos and len(parcelamentos) > 0:
+        if divida_info.parcelamentos and len(divida_info.parcelamentos) > 0:
             texto += "**Parcelamentos ativos:**\n"
-            for parc in parcelamentos:
-                numero = parc.get("numero", "N/A")
-                tipo = parc.get("descricaoTipoPagamento", "N/A")
-                qtd_parcelas = parc.get("qtdeParcelas", "N/A")
-                qtd_pagas = parc.get("qtdPagas", "0")
+            for parc in divida_info.parcelamentos:
+                numero = parc.numero or "N/A"
+                tipo = parc.descricao_tipo_pagamento or "N/A"
+                qtd_parcelas = parc.qtde_parcelas or "N/A"
+                qtd_pagas = parc.qtd_pagas or "0"
                 texto += f"• Parcelamento {numero}\n"
                 texto += f"  Tipo: {tipo}\n"
                 texto += f"  Parcelas: {qtd_pagas}/{qtd_parcelas} pagas\n"
+                if parc.data_ultimo_pagamento:
+                    texto += f"  Último pagamento: {parc.data_ultimo_pagamento}\n"
             texto += "\n"
+
+        # Saldos totais
+        if divida_info.saldo_total_divida and divida_info.saldo_total_divida != "R$0,00":
+            texto += f"💰 **Saldo total da dívida:** {divida_info.saldo_total_divida}\n\n"
 
         texto += """🔗 **Para emitir guias de pagamento da Dívida Ativa:**
 👉 Acesse: https://daminternet.rio.rj.gov.br/divida
 
 ℹ️ O IPTU deste ano foi inscrito na Dívida Ativa Municipal e deve ser consultado e pago através do sistema específico da Dívida Ativa.
 
-Posso te ajudar a consultar o IPTU de outro ano? 
+Posso te ajudar a consultar o IPTU de outro ano?
 """
 
         return texto

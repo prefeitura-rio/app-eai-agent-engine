@@ -275,16 +275,54 @@ class DadosConsulta(BaseModel):
     formato_pagamento_escolhido: Optional[str] = None
 
 
+class CDA(BaseModel):
+    """Certidão de Dívida Ativa."""
+
+    numero: Optional[str] = None
+    exercicio: Optional[str] = None
+    valor_original: Optional[str] = None
+    data_inscricao: Optional[str] = None
+    situacao: Optional[str] = None
+
+
+class EF(BaseModel):
+    """Execução Fiscal."""
+
+    numero_ef: Optional[str] = None
+    numero_processo: Optional[str] = None
+    valor_original: Optional[str] = None
+    data_ajuizamento: Optional[str] = None
+    situacao: Optional[str] = None
+
+
+class Parcelamento(BaseModel):
+    """Parcelamento de dívida ativa."""
+
+    numero: Optional[str] = None
+    qtde_parcelas: Optional[str] = None
+    qtd_pagas: Optional[str] = None
+    data_ultimo_pagamento: Optional[str] = None
+    nome_requerente: Optional[str] = None
+    descricao_tipo_pagamento: Optional[str] = None
+    descricao_situacao_guia: Optional[str] = None
+    valor_total_guia: Optional[str] = None
+
+
 class DividaAtivaInfo(BaseModel):
     """Informações sobre dívida ativa retornadas pela API."""
 
     tem_divida_ativa: bool = False
+    data_vencimento: Optional[str] = None
     saldo_total_divida: str = "R$0,00"
+    saldo_total_nao_parcelado: str = "R$0,00"
+    saldo_total_parcelado: str = "R$0,00"
     endereco_imovel: Optional[str] = None
     bairro_imovel: Optional[str] = None
-    cdas: List[Dict[str, Any]] = []
-    efs: List[Dict[str, Any]] = []
-    parcelamentos: List[Dict[str, Any]] = []
+    pdf: Optional[str] = None
+    url_pdf: Optional[str] = None
+    cdas: List[CDA] = []
+    efs: List[EF] = []
+    parcelamentos: List[Parcelamento] = []
 
     @classmethod
     def from_api_response(cls, response: Dict[str, Any]) -> "DividaAtivaInfo":
@@ -304,21 +342,72 @@ class DividaAtivaInfo(BaseModel):
 
         # Extrai débitos não parcelados
         debitos_nao_parcelados = data.get("debitosNaoParceladosComSaldoTotal", {})
-        cdas = debitos_nao_parcelados.get("cdasNaoAjuizadasNaoParceladas", [])
-        efs = debitos_nao_parcelados.get("efsNaoParceladas", [])
+        cdas_raw = debitos_nao_parcelados.get("cdasNaoAjuizadasNaoParceladas", [])
+        efs_raw = debitos_nao_parcelados.get("efsNaoParceladas", [])
+        saldo_nao_parcelado = debitos_nao_parcelados.get(
+            "saldoTotalNaoParcelado", "R$0,00"
+        )
 
         # Extrai parcelamentos
         guias_parceladas_info = data.get("guiasParceladasComSaldoTotal", {})
-        parcelamentos = guias_parceladas_info.get("guiasParceladas", [])
+        parcelamentos_raw = guias_parceladas_info.get("guiasParceladas", [])
+        saldo_parcelado = guias_parceladas_info.get("saldoTotalParcelado", "R$0,00")
+
+        # Processa CDAs
+        cdas = []
+        for cda_data in cdas_raw:
+            cdas.append(
+                CDA(
+                    numero=cda_data.get("numero"),
+                    exercicio=cda_data.get("exercicio"),
+                    valor_original=cda_data.get("valorOriginal"),
+                    data_inscricao=cda_data.get("dataInscricao"),
+                    situacao=cda_data.get("situacao"),
+                )
+            )
+
+        # Processa EFs
+        efs = []
+        for ef_data in efs_raw:
+            efs.append(
+                EF(
+                    numero_ef=ef_data.get("numeroEF"),
+                    numero_processo=ef_data.get("numeroProcesso"),
+                    valor_original=ef_data.get("valorOriginal"),
+                    data_ajuizamento=ef_data.get("dataAjuizamento"),
+                    situacao=ef_data.get("situacao"),
+                )
+            )
+
+        # Processa Parcelamentos
+        parcelamentos = []
+        for parc_data in parcelamentos_raw:
+            parcelamentos.append(
+                Parcelamento(
+                    numero=parc_data.get("numero"),
+                    qtde_parcelas=parc_data.get("qtdeParcelas"),
+                    qtd_pagas=parc_data.get("qtdPagas"),
+                    data_ultimo_pagamento=parc_data.get("dataUltimoPagamento"),
+                    nome_requerente=parc_data.get("nomeRequerente"),
+                    descricao_tipo_pagamento=parc_data.get("descricaoTipoPagamento"),
+                    descricao_situacao_guia=parc_data.get("descricaoSituacaoGuia"),
+                    valor_total_guia=parc_data.get("valorTotalGuia"),
+                )
+            )
 
         # Verifica se tem algum débito
         tem_divida = bool(cdas or efs or parcelamentos)
 
         return cls(
             tem_divida_ativa=tem_divida,
+            data_vencimento=data.get("dataVencimento"),
             saldo_total_divida=data.get("saldoTotalDivida", "R$0,00"),
+            saldo_total_nao_parcelado=saldo_nao_parcelado,
+            saldo_total_parcelado=saldo_parcelado,
             endereco_imovel=data.get("enderecoImovel"),
             bairro_imovel=data.get("bairroImovel"),
+            pdf=data.get("pdf"),
+            url_pdf=data.get("urlPdf"),
             cdas=cdas,
             efs=efs,
             parcelamentos=parcelamentos,
