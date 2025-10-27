@@ -45,27 +45,27 @@ def main():
     steps = [
         # Step 1: Provide inscricao (padded to 14 digits minimum)
         {
-            "inscricao_imobiliaria": "03999794",  # "18" padded to 14 digits
+            "inscricao_imobiliaria": "00000018",  # "18" padded to 14 digits
         },
         {
             "ano_exercicio": 2024,
         },
         # # Step 2: Choose which guia to pay (IPTU or Taxa de Lixo)
-        # {
-        #     "guia_escolhida": "00",
-        # },
-        # # # Step 4: Choose cotas to pay (for parcelamento)
-        # {
-        #     "cotas_escolhidas": ["01", "02", "03"],
-        # },
-        # # Step 5: Choose payment format (darf or codigo_barras)
-        # {
-        #     "darm_separado": False,
-        # },
-        # # # # Step 6: Do you want to generate more guides for the same property?
-        # {
-        #     "confirmacao": True,
-        # },
+        {
+            "guia_escolhida": "00",
+        },
+        # # Step 4: Choose cotas to pay (for parcelamento)
+        {
+            "cotas_escolhidas": ["01", "02", "03"],
+        },
+        # Step 5: Choose payment format (darf or codigo_barras)
+        {
+            "darm_separado": False,
+        },
+        # # # Step 6: Do you want to generate more guides for the same property?
+        {
+            "confirmacao": True,
+        },
         # # # Step 7: Do you want to generate guides for another property?
         # {
         #     "mais_cotas": False,
