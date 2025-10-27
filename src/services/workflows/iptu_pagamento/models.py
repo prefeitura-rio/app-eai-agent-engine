@@ -21,14 +21,19 @@ class InscricaoImobiliariaPayload(BaseModel):
         """
         Valida e sanitiza a inscrição imobiliária.
 
-        Remove caracteres não numéricos e valida comprimento.
+        Remove caracteres não numéricos, adiciona zeros à esquerda se necessário
+        e valida comprimento máximo.
         """
         # Remove todos os caracteres não numéricos
         clean_inscricao = re.sub(r"[^0-9]", "", v)
 
-        # Valida comprimento
-        if len(clean_inscricao) < 8 or len(clean_inscricao) > 15:
-            raise ValueError("Inscrição imobiliária deve ter entre 8 e 15 dígitos")
+        # Se tiver menos de 8 dígitos, preenche com zeros à esquerda
+        if len(clean_inscricao) < 8:
+            clean_inscricao = clean_inscricao.zfill(8)
+
+        # Valida comprimento máximo
+        if len(clean_inscricao) > 15:
+            raise ValueError("Inscrição imobiliária não pode ter mais de 15 dígitos")
 
         return clean_inscricao
 
@@ -278,21 +283,39 @@ class DadosConsulta(BaseModel):
 class CDA(BaseModel):
     """Certidão de Dívida Ativa."""
 
+    # Campos antigos (mantidos para compatibilidade)
     numero: Optional[str] = None
     exercicio: Optional[str] = None
     valor_original: Optional[str] = None
     data_inscricao: Optional[str] = None
     situacao: Optional[str] = None
 
+    # Campos novos da API
+    cda_id: Optional[str] = None
+    num_exercicio: Optional[str] = None
+    valor_saldo_total: Optional[str] = None
+    valor_saldo_principal: Optional[str] = None
+    situacao_principal: Optional[str] = None
+    natureza_divida: Optional[str] = None
+    fase_cobranca: Optional[str] = None
+    nome_contribuinte: Optional[str] = None
+    cpf_cnpj: Optional[str] = None
+    guia: Optional[str] = None
+
 
 class EF(BaseModel):
     """Execução Fiscal."""
 
+    # Campos antigos (mantidos para compatibilidade)
     numero_ef: Optional[str] = None
     numero_processo: Optional[str] = None
     valor_original: Optional[str] = None
     data_ajuizamento: Optional[str] = None
     situacao: Optional[str] = None
+
+    # Campos novos da API
+    numero_execucao_fiscal: Optional[str] = None
+    saldo_execucao_fiscal_nao_parcelada: Optional[str] = None
 
 
 class Parcelamento(BaseModel):
@@ -318,7 +341,7 @@ class DividaAtivaInfo(BaseModel):
     saldo_total_parcelado: str = "R$0,00"
     endereco_imovel: Optional[str] = None
     bairro_imovel: Optional[str] = None
-    pdf: Optional[str] = None
+    tem_pdf: bool = False  # Mudado de pdf (base64 string) para boolean
     url_pdf: Optional[str] = None
     cdas: List[CDA] = []
     efs: List[EF] = []
@@ -356,26 +379,51 @@ class DividaAtivaInfo(BaseModel):
         # Processa CDAs
         cdas = []
         for cda_data in cdas_raw:
+            # Tenta primeiro o formato novo, depois fallback para o antigo
             cdas.append(
                 CDA(
-                    numero=cda_data.get("numero"),
-                    exercicio=cda_data.get("exercicio"),
-                    valor_original=cda_data.get("valorOriginal"),
+                    # Formato antigo (compatibilidade)
+                    numero=cda_data.get("numero") or cda_data.get("cdaId"),
+                    exercicio=cda_data.get("exercicio") or cda_data.get("numExercicio"),
+                    valor_original=cda_data.get("valorOriginal")
+                    or cda_data.get("valorSaldoTotal"),
                     data_inscricao=cda_data.get("dataInscricao"),
-                    situacao=cda_data.get("situacao"),
+                    situacao=cda_data.get("situacao")
+                    or cda_data.get("situacaoPrincipal"),
+                    # Formato novo
+                    cda_id=cda_data.get("cdaId"),
+                    num_exercicio=cda_data.get("numExercicio"),
+                    valor_saldo_total=cda_data.get("valorSaldoTotal"),
+                    valor_saldo_principal=cda_data.get("valorSaldoPrincipal"),
+                    situacao_principal=cda_data.get("situacaoPrincipal"),
+                    natureza_divida=cda_data.get("naturezaDivida"),
+                    fase_cobranca=cda_data.get("faseCobranca"),
+                    nome_contribuinte=cda_data.get("nomeContribuinte"),
+                    cpf_cnpj=cda_data.get("cpf_Cnpj"),
+                    guia=cda_data.get("guia"),
                 )
             )
 
         # Processa EFs
         efs = []
         for ef_data in efs_raw:
+            # Tenta primeiro o formato novo, depois fallback para o antigo
             efs.append(
                 EF(
-                    numero_ef=ef_data.get("numeroEF"),
-                    numero_processo=ef_data.get("numeroProcesso"),
-                    valor_original=ef_data.get("valorOriginal"),
+                    # Formato antigo (compatibilidade)
+                    numero_ef=ef_data.get("numeroEF")
+                    or ef_data.get("numeroExecucaoFiscal"),
+                    numero_processo=ef_data.get("numeroProcesso")
+                    or ef_data.get("numeroExecucaoFiscal"),
+                    valor_original=ef_data.get("valorOriginal")
+                    or ef_data.get("saldoExecucaoFiscalNaoParcelada"),
                     data_ajuizamento=ef_data.get("dataAjuizamento"),
                     situacao=ef_data.get("situacao"),
+                    # Formato novo
+                    numero_execucao_fiscal=ef_data.get("numeroExecucaoFiscal"),
+                    saldo_execucao_fiscal_nao_parcelada=ef_data.get(
+                        "saldoExecucaoFiscalNaoParcelada"
+                    ),
                 )
             )
 
@@ -398,6 +446,10 @@ class DividaAtivaInfo(BaseModel):
         # Verifica se tem algum débito
         tem_divida = bool(cdas or efs or parcelamentos)
 
+        # Verifica se tem PDF disponível (boolean)
+        pdf_base64 = data.get("pdf")
+        tem_pdf = bool(pdf_base64 and len(pdf_base64) > 0)
+
         return cls(
             tem_divida_ativa=tem_divida,
             data_vencimento=data.get("dataVencimento"),
@@ -406,7 +458,7 @@ class DividaAtivaInfo(BaseModel):
             saldo_total_parcelado=saldo_parcelado,
             endereco_imovel=data.get("enderecoImovel"),
             bairro_imovel=data.get("bairroImovel"),
-            pdf=data.get("pdf"),
+            tem_pdf=tem_pdf,
             url_pdf=data.get("urlPdf"),
             cdas=cdas,
             efs=efs,

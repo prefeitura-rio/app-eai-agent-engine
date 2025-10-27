@@ -299,8 +299,9 @@ class IPTUWorkflow(BaseWorkflow):
                                 f"Dívida ativa encontrada para inscrição {inscricao}: {len(divida_ativa_info.cdas)} CDAs, {len(divida_ativa_info.efs)} EFs, {len(divida_ativa_info.parcelamentos)} parcelamentos"
                             )
                             # Salva payload completo da API e também o objeto estruturado
-                            state.data["divida_ativa_data"] = divida_ativa_response
-                            state.data["divida_ativa_info"] = divida_ativa_info.model_dump()
+                            state.data["divida_ativa_data"] = (
+                                divida_ativa_info.model_dump()
+                            )
 
                             # Remove dados do ano para permitir nova consulta
                             state.data.pop("ano_exercicio", None)
