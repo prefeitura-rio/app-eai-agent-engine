@@ -26,7 +26,7 @@ from src.services.workflows.iptu_pagamento.models import (
     ConfirmacaoDadosPayload,
     DadosGuias,
     DadosCotas,
-    DividaAtivaInfo,
+    DadosDividaAtiva,
 )
 from src.services.workflows.iptu_pagamento.api_service import IPTUAPIService
 from src.services.workflows.iptu_pagamento.api_service_fake import IPTUAPIServiceFake
@@ -284,41 +284,39 @@ class IPTUWorkflow(BaseWorkflow):
                     logger.info(
                         f"Consultando dívida ativa para inscrição {inscricao} (ano {exercicio} sem guias)"
                     )
-                    divida_ativa_response = asyncio.run(
+                    divida_ativa_info = asyncio.run(
                         self.api_service.get_divida_ativa_info(inscricao)
                     )
 
-                    if divida_ativa_response:
-                        divida_ativa_info = DividaAtivaInfo.from_api_response(
-                            divida_ativa_response
+                    # Se encontrou dívida ativa, informa ao usuário
+                    if divida_ativa_info and divida_ativa_info.tem_divida_ativa:
+                        logger.info(
+                            f"Dívida ativa encontrada para inscrição {inscricao}: {len(divida_ativa_info.cdas)} CDAs, {len(divida_ativa_info.efs)} EFs, {len(divida_ativa_info.parcelamentos)} parcelamentos"
                         )
+                        # Salva dados da dívida ativa
+                        state.data["divida_ativa_data"] = divida_ativa_info.model_dump()
 
-                        # Se encontrou dívida ativa, informa ao usuário
-                        if divida_ativa_info.tem_divida_ativa:
-                            logger.info(
-                                f"Dívida ativa encontrada para inscrição {inscricao}: {len(divida_ativa_info.cdas)} CDAs, {len(divida_ativa_info.efs)} EFs, {len(divida_ativa_info.parcelamentos)} parcelamentos"
-                            )
-                            # Salva payload completo da API e também o objeto estruturado
-                            state.data["divida_ativa_data"] = (
-                                divida_ativa_info.model_dump()
-                            )
+                        # Remove dados do ano para permitir nova consulta
+                        state.data.pop("ano_exercicio", None)
+                        state.payload.pop("ano_exercicio", None)
+                        state.internal.pop(STATE_HAS_CONSULTED_GUIAS, None)
 
-                            # Remove dados do ano para permitir nova consulta
-                            state.data.pop("ano_exercicio", None)
-                            state.payload.pop("ano_exercicio", None)
-                            state.internal.pop(STATE_HAS_CONSULTED_GUIAS, None)
-
-                            state.agent_response = AgentResponse(
-                                description=IPTUMessageTemplates.divida_ativa_encontrada(
-                                    inscricao=inscricao,
-                                    ano=exercicio,
-                                    divida_info=divida_ativa_info,
-                                ),
-                                payload_schema=EscolhaAnoPayload.model_json_schema(),
-                            )
-                            return state
+                        state.agent_response = AgentResponse(
+                            description=IPTUMessageTemplates.divida_ativa_encontrada(
+                                inscricao=inscricao,
+                                ano=exercicio,
+                                divida_info=divida_ativa_info,
+                            ),
+                            payload_schema=EscolhaAnoPayload.model_json_schema(),
+                        )
+                        return state
+                except (APIUnavailableError, AuthenticationError) as e:
+                    # Se falhar a consulta de dívida ativa por erro de API, apenas loga e continua
+                    logger.warning(
+                        f"Falha ao consultar dívida ativa (API): {str(e)}. Continuando com fluxo normal."
+                    )
                 except Exception as e:
-                    # Se falhar a consulta de dívida ativa, apenas loga e continua
+                    # Se falhar a consulta de dívida ativa por outro erro, apenas loga e continua
                     logger.warning(
                         f"Falha ao consultar dívida ativa: {str(e)}. Continuando com fluxo normal."
                     )

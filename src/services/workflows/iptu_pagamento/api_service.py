@@ -28,6 +28,7 @@ from src.services.workflows.iptu_pagamento.models import (
     DadosCotas,
     Darm,
     DadosDarm,
+    DadosDividaAtiva,
 )
 from src.services.workflows.iptu_pagamento.exceptions import (
     APIUnavailableError,
@@ -546,7 +547,7 @@ class IPTUAPIService:
                 f"Erro ao comunicar com serviço de dados do imóvel: {str(e)}"
             )
 
-    async def get_divida_ativa_info(self, inscricao: str) -> Optional[Dict]:
+    async def get_divida_ativa_info(self, inscricao: str) -> Optional[DadosDividaAtiva]:
         """
         Consulta a API de Dívida Ativa para obter informações sobre débitos.
 
@@ -554,13 +555,11 @@ class IPTUAPIService:
             inscricao (str): Número da inscrição do imóvel.
 
         Returns:
-            dict: Resposta JSON da API com informações de dívida ativa, ou None se não houver débitos.
+            DadosDividaAtiva com informações processadas de dívida ativa, ou None se não houver débitos.
 
         Raises:
             APIUnavailableError: Quando API está indisponível (timeout, 500, 503, etc.)
             AuthenticationError: Quando falha autenticação (401)
-        TODO: migrar modelos do pydantic pra essa resposta
-              adicionar tratamento de erros mais específico
         """
         inscricao_clean = self._limpar_inscricao(inscricao=inscricao)
 
@@ -568,44 +567,99 @@ class IPTUAPIService:
             f"Iniciando consulta de dívida ativa para inscrição: {inscricao_clean}"
         )
 
-        async with httpx.AsyncClient(timeout=30.0, proxy=self.proxy) as client:
-            auth_response = await client.post(
-                f"{env.DIVIDA_ATIVA_API_URL}/security/token",
-                data={
-                    "verify": False,
-                    "grant_type": "password",
-                    "Consumidor": "consultar-dividas-contribuinte",
-                    "ChaveAcesso": env.DIVIDA_ATIVA_ACCESS_KEY,
-                },
-            )
-            auth_response_json = auth_response.json()
-            if "access_token" not in auth_response_json:
-                logger.error(
-                    f"Falha ao obter token de autenticação da Dívida Ativa:{auth_response.status_code} - {auth_response.text}"
-                )
-                raise Exception("Failed to get PGM access token")
-            token = f'Bearer {auth_response_json["access_token"]}'
-            logger.info("Token de autenticação obtido com sucesso")
+        try:
+            async with httpx.AsyncClient(timeout=30.0, proxy=self.proxy) as client:
+                # Autenticação
+                try:
+                    auth_response = await client.post(
+                        f"{env.DIVIDA_ATIVA_API_URL}/security/token",
+                        data={
+                            "verify": False,
+                            "grant_type": "password",
+                            "Consumidor": "consultar-dividas-contribuinte",
+                            "ChaveAcesso": env.DIVIDA_ATIVA_ACCESS_KEY,
+                        },
+                    )
 
-            response = await client.post(
-                f"{env.DIVIDA_ATIVA_API_URL}/v2/cdas/dividas-contribuinte",
-                headers={"Authorization": token},
-                data={
-                    "origem_solicitação": 0,
-                    "inscricaoImobiliaria": inscricao_clean,
-                },
+                    if auth_response.status_code == 401:
+                        logger.error("Falha na autenticação da Dívida Ativa")
+                        raise AuthenticationError("Falha na autenticação do serviço de Dívida Ativa")
+                    elif auth_response.status_code in [500, 503]:
+                        logger.error(f"Erro de servidor na autenticação da Dívida Ativa: {auth_response.status_code}")
+                        raise APIUnavailableError(
+                            f"Serviço de Dívida Ativa temporariamente indisponível (HTTP {auth_response.status_code})"
+                        )
+
+                    auth_response_json = auth_response.json()
+                    if "access_token" not in auth_response_json:
+                        logger.error(
+                            f"Token não encontrado na resposta de autenticação: {auth_response.status_code} - {auth_response.text}"
+                        )
+                        raise AuthenticationError("Falha ao obter token de autenticação da Dívida Ativa")
+
+                    token = f'Bearer {auth_response_json["access_token"]}'
+                    logger.info("Token de autenticação obtido com sucesso")
+
+                except httpx.TimeoutException:
+                    logger.error("Timeout ao autenticar na Dívida Ativa")
+                    raise APIUnavailableError(
+                        "Serviço de Dívida Ativa não respondeu no tempo esperado (autenticação)"
+                    )
+
+                # Consulta de dívidas
+                try:
+                    response = await client.post(
+                        f"{env.DIVIDA_ATIVA_API_URL}/v2/cdas/dividas-contribuinte",
+                        headers={"Authorization": token},
+                        data={
+                            "origem_solicitação": 0,
+                            "inscricaoImobiliaria": inscricao_clean,
+                        },
+                    )
+
+                    if response.status_code == 200:
+                        response_data = response.json()
+                        logger.info(
+                            f"Consulta de dívida ativa realizada com sucesso"
+                        )
+                        # Usa o método from_api_response do modelo para processar os dados
+                        return DadosDividaAtiva.from_api_response(response_data)
+                    elif response.status_code == 404:
+                        # Não encontrou débitos - retorna None
+                        logger.info(f"Nenhuma dívida ativa encontrada para inscrição {inscricao_clean}")
+                        return None
+                    elif response.status_code == 401:
+                        logger.error("Erro de autenticação ao consultar dívidas")
+                        raise AuthenticationError("Falha na autenticação ao consultar dívidas")
+                    elif response.status_code in [500, 503]:
+                        logger.error(
+                            f"Erro de servidor ao consultar dívidas. Status: {response.status_code}"
+                        )
+                        raise APIUnavailableError(
+                            f"Serviço de Dívida Ativa temporariamente indisponível (HTTP {response.status_code})"
+                        )
+                    else:
+                        logger.error(
+                            f"Erro ao consultar dívida ativa. Status: {response.status_code}, Texto: {response.text}"
+                        )
+                        raise APIUnavailableError(
+                            f"Erro ao comunicar com serviço de Dívida Ativa (HTTP {response.status_code})"
+                        )
+
+                except httpx.TimeoutException:
+                    logger.error("Timeout ao consultar dívidas")
+                    raise APIUnavailableError(
+                        "Serviço de Dívida Ativa não respondeu no tempo esperado"
+                    )
+
+        except (APIUnavailableError, AuthenticationError):
+            # Re-lança exceções customizadas
+            raise
+        except Exception as e:
+            logger.error(f"Erro ao consultar dívida ativa: {str(e)}")
+            raise APIUnavailableError(
+                f"Erro ao comunicar com serviço de Dívida Ativa: {str(e)}"
             )
-            if response.status_code == 200:
-                response_data = response.json()
-                logger.info(
-                    f"Consulta de dívida ativa realizada com sucesso: {response_data}"
-                )
-                return response_data
-            else:
-                logger.error(
-                    f"Erro ao consultar dívida ativa. Status: {response.status_code}, Texto: {response.text}"
-                )
-                return None
 
     async def upload_base64_to_gcs(self, base64_content) -> str:
         """

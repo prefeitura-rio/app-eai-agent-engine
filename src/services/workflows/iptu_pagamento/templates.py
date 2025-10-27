@@ -262,7 +262,7 @@ Para uma nova consulta, informe uma nova inscrição imobiliária."""
     def divida_ativa_encontrada(
         inscricao: str,
         ano: int,
-        divida_info: Any,  # DividaAtivaInfo
+        divida_info: Any,  # DadosDividaAtiva
     ) -> str:
         """
         Mensagem quando a dívida foi migrada para dívida ativa.
@@ -270,7 +270,7 @@ Para uma nova consulta, informe uma nova inscrição imobiliária."""
         Args:
             inscricao: Número da inscrição imobiliária
             ano: Ano do exercício consultado
-            divida_info: Objeto DividaAtivaInfo com todos os dados
+            divida_info: Objeto DadosDividaAtiva com todos os dados
         """
         texto = f"""⚠️ **IPTU do ano {ano} inscrito na Dívida Ativa Municipal**
 

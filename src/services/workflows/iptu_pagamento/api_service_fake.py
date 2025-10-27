@@ -17,6 +17,7 @@ from src.services.workflows.iptu_pagamento.models import (
     Darm,
     DadosDarm,
     CotaDarm,
+    DadosDividaAtiva,
 )
 from src.services.workflows.iptu_pagamento.exceptions import (
     APIUnavailableError,
@@ -832,7 +833,7 @@ class IPTUAPIServiceFake:
             "proprietario": "Fake da Silva",
         }
 
-    async def get_divida_ativa_info(self, inscricao: str):
+    async def get_divida_ativa_info(self, inscricao: str) -> Optional[DadosDividaAtiva]:
         """
         Consulta a API de Dívida Ativa para obter informações sobre débitos (MOCK).
 
@@ -840,7 +841,7 @@ class IPTUAPIServiceFake:
             inscricao: Número da inscrição do imóvel
 
         Returns:
-            dict: Resposta JSON da API mockada com informações de dívida ativa
+            DadosDividaAtiva com informações processadas de dívida ativa, ou None se não houver débitos
 
         Cenários de teste baseados na inscrição:
         - 10000000: Tem parcelamento ativo na dívida ativa
@@ -854,9 +855,12 @@ class IPTUAPIServiceFake:
             f"FAKE API: Consulting dívida ativa for inscription {inscricao_clean}"
         )
 
+        # Cria o mock response baseado na inscrição
+        mock_response = None
+
         if inscricao_clean == "10000000":
             # Cenário: Parcelamento ativo
-            return {
+            mock_response = {
                 "success": True,
                 "data": {
                     "dataVencimento": "25/11/2025",
@@ -889,7 +893,7 @@ class IPTUAPIServiceFake:
             }
         elif inscricao_clean == "20000000":
             # Cenário: CDAs não ajuizadas
-            return {
+            mock_response = {
                 "success": True,
                 "data": {
                     "dataVencimento": "25/11/2025",
@@ -922,7 +926,7 @@ class IPTUAPIServiceFake:
             }
         elif inscricao_clean == "30000000":
             # Cenário: EFs não parceladas
-            return {
+            mock_response = {
                 "success": True,
                 "data": {
                     "dataVencimento": "25/11/2025",
@@ -951,23 +955,7 @@ class IPTUAPIServiceFake:
         else:
             # Cenário: Sem débitos na dívida ativa
             logger.info(f"FAKE API: No dívida ativa found for inscription {inscricao_clean}")
-            return {
-                "success": True,
-                "data": {
-                    "dataVencimento": None,
-                    "saldoTotalDivida": "R$0,00",
-                    "enderecoImovel": None,
-                    "bairroImovel": None,
-                    "pdf": None,
-                    "urlPdf": None,
-                    "debitosNaoParceladosComSaldoTotal": {
-                        "cdasNaoAjuizadasNaoParceladas": [],
-                        "efsNaoParceladas": [],
-                        "saldoTotalNaoParcelado": "R$0,00",
-                    },
-                    "guiasParceladasComSaldoTotal": {
-                        "guiasParceladas": [],
-                        "saldoTotalParcelado": "R$0,00",
-                    },
-                },
-            }
+            return None
+
+        # Usa o método from_api_response do modelo para processar os dados mockados
+        return DadosDividaAtiva.from_api_response(mock_response)

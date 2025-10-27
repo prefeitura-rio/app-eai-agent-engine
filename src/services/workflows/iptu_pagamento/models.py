@@ -21,15 +21,14 @@ class InscricaoImobiliariaPayload(BaseModel):
         """
         Valida e sanitiza a inscrição imobiliária.
 
-        Remove caracteres não numéricos, adiciona zeros à esquerda se necessário
-        e valida comprimento máximo.
+        Remove caracteres não numéricos e valida comprimento (8-15 dígitos).
         """
         # Remove todos os caracteres não numéricos
         clean_inscricao = re.sub(r"[^0-9]", "", v)
 
-        # Se tiver menos de 8 dígitos, preenche com zeros à esquerda
+        # Valida comprimento mínimo
         if len(clean_inscricao) < 8:
-            clean_inscricao = clean_inscricao.zfill(8)
+            raise ValueError("Inscrição imobiliária deve ter no mínimo 8 dígitos")
 
         # Valida comprimento máximo
         if len(clean_inscricao) > 15:
@@ -331,7 +330,7 @@ class Parcelamento(BaseModel):
     valor_total_guia: Optional[str] = None
 
 
-class DividaAtivaInfo(BaseModel):
+class DadosDividaAtiva(BaseModel):
     """Informações sobre dívida ativa retornadas pela API."""
 
     tem_divida_ativa: bool = False
@@ -348,15 +347,15 @@ class DividaAtivaInfo(BaseModel):
     parcelamentos: List[Parcelamento] = []
 
     @classmethod
-    def from_api_response(cls, response: Dict[str, Any]) -> "DividaAtivaInfo":
+    def from_api_response(cls, response: Dict[str, Any]) -> "DadosDividaAtiva":
         """
-        Cria DividaAtivaInfo a partir da resposta da API.
+        Cria DadosDividaAtiva a partir da resposta da API.
 
         Args:
             response: Resposta da API de dívida ativa
 
         Returns:
-            DividaAtivaInfo com dados processados
+            DadosDividaAtiva com dados processados
         """
         if not response or not response.get("success"):
             return cls(tem_divida_ativa=False)
