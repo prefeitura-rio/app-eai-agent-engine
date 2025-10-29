@@ -5,13 +5,11 @@ Contém funções utilitárias para validação e reset de dados no ServiceState
 """
 
 from typing import Optional, List, Dict
-from src.services.core.models import ServiceState
-from src.services.workflows.iptu_pagamento.helpers import utils
+from src.tools.multi_step_service.core.models import ServiceState
+from src.tools.multi_step_service.workflows.iptu_pagamento.helpers import utils
 
 
-def validar_dados_obrigatorios(
-    state: ServiceState, campos: List[str]
-) -> Optional[str]:
+def validar_dados_obrigatorios(state: ServiceState, campos: List[str]) -> Optional[str]:
     """
     Valida se campos obrigatórios existem no state.data.
 

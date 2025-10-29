@@ -1,7 +1,11 @@
 from typing import Dict, Type, Optional
-from src.services.core.models import ServiceRequest, ServiceState, AgentResponse
-from src.services.core.state import StateManager, StateMode
-from src.services.workflows import workflows
+from src.tools.multi_step_service.core.models import (
+    ServiceRequest,
+    ServiceState,
+    AgentResponse,
+)
+from src.tools.multi_step_service.core.state import StateManager, StateMode
+from src.tools.multi_step_service.workflows import workflows
 
 
 class Orchestrator:
@@ -16,9 +20,9 @@ class Orchestrator:
 
     def __init__(
         self,
-        backend_mode: StateMode = StateMode.BOTH,
+        backend_mode: StateMode = StateMode.JSON,
         redis_url: Optional[str] = None,
-        data_dir: str = "src/services/data",
+        data_dir: str = "src/tools/multi_step_service/data",
     ):
         """
         Inicializa o Orchestrator.

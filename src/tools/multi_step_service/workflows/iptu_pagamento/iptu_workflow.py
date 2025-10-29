@@ -9,10 +9,10 @@ import os
 from langgraph.graph import StateGraph, END
 from loguru import logger
 
-from src.services.core.base_workflow import BaseWorkflow, handle_errors
-from src.services.core.models import ServiceState, AgentResponse
+from src.tools.multi_step_service.core.base_workflow import BaseWorkflow, handle_errors
+from src.tools.multi_step_service.core.models import ServiceState, AgentResponse
 
-from src.services.workflows.iptu_pagamento.core.models import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.core.models import (
     InscricaoImobiliariaPayload,
     EscolhaAnoPayload,
     EscolhaGuiasIPTUPayload,
@@ -24,18 +24,22 @@ from src.services.workflows.iptu_pagamento.core.models import (
     ConfirmacaoDadosPayload,
     DadosCotas,
 )
-from src.services.workflows.iptu_pagamento.api.api_service import IPTUAPIService
-from src.services.workflows.iptu_pagamento.api.api_service_fake import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.api.api_service import (
+    IPTUAPIService,
+)
+from src.tools.multi_step_service.workflows.iptu_pagamento.api.api_service_fake import (
     IPTUAPIServiceFake,
 )
-from src.services.workflows.iptu_pagamento.api.exceptions import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.api.exceptions import (
     APIUnavailableError,
     AuthenticationError,
 )
-from src.services.workflows.iptu_pagamento.templates import IPTUMessageTemplates
-from src.services.workflows.iptu_pagamento.helpers import utils
-from src.services.workflows.iptu_pagamento.helpers import state_helpers
-from src.services.workflows.iptu_pagamento.core.constants import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.templates import (
+    IPTUMessageTemplates,
+)
+from src.tools.multi_step_service.workflows.iptu_pagamento.helpers import utils
+from src.tools.multi_step_service.workflows.iptu_pagamento.helpers import state_helpers
+from src.tools.multi_step_service.workflows.iptu_pagamento.core.constants import (
     FAKE_API_ENV_VAR,
     MAX_TENTATIVAS_ANO,
     ERROR_INSCRICAO_AUSENTE,

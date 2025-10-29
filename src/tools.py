@@ -5,7 +5,7 @@ import asyncio
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from src.config import env
-from src.services.tool import multi_step_service
+from src.tools.multi_step_service.tool import multi_step_service
 
 
 async def get_mcp_tools(

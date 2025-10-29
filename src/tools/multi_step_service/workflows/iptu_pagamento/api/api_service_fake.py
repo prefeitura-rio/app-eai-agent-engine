@@ -9,7 +9,7 @@ import re
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 
-from src.services.workflows.iptu_pagamento.core.models import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.core.models import (
     DadosGuias,
     Guia,
     Cota,
@@ -19,7 +19,7 @@ from src.services.workflows.iptu_pagamento.core.models import (
     CotaDarm,
     DadosDividaAtiva,
 )
-from src.services.workflows.iptu_pagamento.api.exceptions import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.api.exceptions import (
     APIUnavailableError,
     DataNotFoundError,
     AuthenticationError,
@@ -539,15 +539,21 @@ class IPTUAPIServiceFake:
         # Simulação de erros baseada em inscrições especiais
         if inscricao_clean == "77777777777777":
             logger.error("FAKE API: Simulating APIUnavailableError (generic)")
-            raise APIUnavailableError("Serviço IPTU temporariamente indisponível (erro simulado)")
+            raise APIUnavailableError(
+                "Serviço IPTU temporariamente indisponível (erro simulado)"
+            )
 
         if inscricao_clean == "88888888888888":
             logger.error("FAKE API: Simulating AuthenticationError")
-            raise AuthenticationError("Falha na autenticação do serviço IPTU (erro simulado)")
+            raise AuthenticationError(
+                "Falha na autenticação do serviço IPTU (erro simulado)"
+            )
 
         if inscricao_clean == "99999999990000":
             logger.error("FAKE API: Simulating APIUnavailableError (timeout)")
-            raise APIUnavailableError("Serviço IPTU não respondeu no tempo esperado. Por favor, tente novamente. (erro simulado)")
+            raise APIUnavailableError(
+                "Serviço IPTU não respondeu no tempo esperado. Por favor, tente novamente. (erro simulado)"
+            )
 
         # Busca dados mockados
         guias_response = self._get_mock_guias_data(inscricao_clean, exercicio)
@@ -637,8 +643,12 @@ class IPTUAPIServiceFake:
 
         # Simulação de erro 500 na consulta de cotas
         if inscricao_clean == "99999999990001":
-            logger.error("FAKE API: Simulating APIUnavailableError (500) on obter_cotas")
-            raise APIUnavailableError("Serviço IPTU temporariamente indisponível (HTTP 500) (erro simulado)")
+            logger.error(
+                "FAKE API: Simulating APIUnavailableError (500) on obter_cotas"
+            )
+            raise APIUnavailableError(
+                "Serviço IPTU temporariamente indisponível (HTTP 500) (erro simulado)"
+            )
 
         # Consulta cotas disponíveis para esta guia
         cotas_response = self._get_mock_cotas_data(
@@ -732,8 +742,12 @@ class IPTUAPIServiceFake:
 
         # Simulação de erro 503 na geração de DARM
         if inscricao_clean == "99999999990002":
-            logger.error("FAKE API: Simulating APIUnavailableError (503) on consultar_darm")
-            raise APIUnavailableError("Serviço IPTU temporariamente indisponível (HTTP 503) (erro simulado)")
+            logger.error(
+                "FAKE API: Simulating APIUnavailableError (503) on consultar_darm"
+            )
+            raise APIUnavailableError(
+                "Serviço IPTU temporariamente indisponível (HTTP 503) (erro simulado)"
+            )
 
         # Faz consulta mockada
         darm_response = self._get_mock_darm_data(
@@ -954,7 +968,9 @@ class IPTUAPIServiceFake:
             }
         else:
             # Cenário: Sem débitos na dívida ativa
-            logger.info(f"FAKE API: No dívida ativa found for inscription {inscricao_clean}")
+            logger.info(
+                f"FAKE API: No dívida ativa found for inscription {inscricao_clean}"
+            )
             return None
 
         # Usa o método from_api_response do modelo para processar os dados mockados

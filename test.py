@@ -16,9 +16,15 @@ nao remova as logicas de reset pois elas sao importantes para o fluxo funcionar 
 
 import json
 import time
-from src.services.tool import multi_step_service, save_single_workflow_graph
-from src.services.workflows.iptu_pagamento.api.api_service import IPTUAPIService
+from src.tools.multi_step_service.tool import (
+    multi_step_service,
+    save_single_workflow_graph,
+)
+from src.tools.multi_step_service.workflows.iptu_pagamento.api.api_service import (
+    IPTUAPIService,
+)
 import asyncio
+from src.tools.multi_step_service.tool import _get_workflow_descriptions
 
 
 async def main():
@@ -111,3 +117,4 @@ if __name__ == "__main__":
     # Run main test with full workflow
     asyncio.run(main())
     # test_redis()
+    # print(_get_workflow_descriptions())

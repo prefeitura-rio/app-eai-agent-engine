@@ -6,7 +6,7 @@ Contém funções utilitárias para validação e extração de dados dos payloa
 
 from typing import Optional, Any, Type, TypeVar
 from pydantic import BaseModel
-from src.services.core.models import ServiceState
+from src.tools.multi_step_service.core.models import ServiceState
 
 # Type variable for generic Pydantic models
 T = TypeVar("T", bound=BaseModel)
@@ -29,7 +29,7 @@ def extrair_payload_validado(
         Objeto validado do modelo Pydantic, ou None se campo não existe ou validação falha
 
     Examples:
-        >>> from src.services.workflows.iptu_pagamento.models import EscolhaAnoPayload
+        >>> from src.tools.multi_step_service.workflows.iptu_pagamento.models import EscolhaAnoPayload
         >>> state = ServiceState(payload={"ano_exercicio": 2024})
         >>> resultado = extrair_payload_validado(state, "ano_exercicio", EscolhaAnoPayload)
         >>> resultado.ano_exercicio
@@ -121,7 +121,7 @@ def processar_payload_simples(
         True se processou com sucesso, False caso contrário
 
     Examples:
-        >>> from src.services.workflows.iptu_pagamento.models import EscolhaAnoPayload
+        >>> from src.tools.multi_step_service.workflows.iptu_pagamento.models import EscolhaAnoPayload
         >>> state = ServiceState(payload={"ano_exercicio": 2024})
         >>> processar_payload_simples(state, "ano_exercicio", "ano_exercicio", EscolhaAnoPayload)
         True
@@ -144,7 +144,9 @@ def processar_payload_simples(
     return True
 
 
-def campo_ja_existe(state: ServiceState, campo: str, usar_internal: bool = False) -> bool:
+def campo_ja_existe(
+    state: ServiceState, campo: str, usar_internal: bool = False
+) -> bool:
     """
     Verifica se um campo já existe em state.data ou state.internal.
 

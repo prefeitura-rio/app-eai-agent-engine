@@ -6,8 +6,8 @@ formatação e lógica reutilizável do workflow.
 """
 
 from typing import Dict, List, Any, Optional, Protocol
-from src.services.core.models import ServiceState
-from src.services.workflows.iptu_pagamento.core.models import DadosCotas
+from src.tools.multi_step_service.core.models import ServiceState
+from src.tools.multi_step_service.workflows.iptu_pagamento.core.models import DadosCotas
 
 
 class IPTUAPIProtocol(Protocol):
@@ -19,8 +19,7 @@ class IPTUAPIProtocol(Protocol):
 
 
 def preparar_dados_guias_para_template(
-    dados_guias: Dict[str, Any],
-    api_service: IPTUAPIProtocol
+    dados_guias: Dict[str, Any], api_service: IPTUAPIProtocol
 ) -> List[Dict[str, Any]]:
     """
     Prepara dados das guias no formato esperado pelo template.
@@ -33,7 +32,7 @@ def preparar_dados_guias_para_template(
         Lista de dicionários com dados formatados das guias
 
     Examples:
-        >>> from src.services.workflows.iptu_pagamento.api_service import IPTUAPIService
+        >>> from src.tools.multi_step_service.workflows.iptu_pagamento.api_service import IPTUAPIService
         >>> dados = {"guias": [{"numero_guia": "00", "tipo": "IPTU", "valor_iptu_original_guia": "1.234,56", "situacao": {"descricao": "EM ABERTO"}}]}
         >>> api = IPTUAPIService()
         >>> result = preparar_dados_guias_para_template(dados, api)
@@ -49,12 +48,14 @@ def preparar_dados_guias_para_template(
         )
         situacao = guia.get("situacao", {}).get("descricao", "EM ABERTO")
 
-        guias_formatadas.append({
-            "numero_guia": guia.get("numero_guia", "N/A"),
-            "tipo": guia.get("tipo", "IPTU").upper(),
-            "valor_original": valor_original,
-            "situacao": situacao,
-        })
+        guias_formatadas.append(
+            {
+                "numero_guia": guia.get("numero_guia", "N/A"),
+                "tipo": guia.get("tipo", "IPTU").upper(),
+                "valor_original": valor_original,
+                "situacao": situacao,
+            }
+        )
 
     return guias_formatadas
 
@@ -73,7 +74,7 @@ def preparar_dados_cotas_para_template(dados_cotas: DadosCotas) -> List[Dict[str
         Lista de dicionários com dados formatados das cotas em aberto
 
     Examples:
-        >>> from src.services.workflows.iptu_pagamento.models import DadosCotas, Cota
+        >>> from src.tools.multi_step_service.workflows.iptu_pagamento.models import DadosCotas, Cota
         >>> cota = Cota(situacao={"codigo": "02"}, numero_cota="01", valor_cota="100,00",
         ...             data_vencimento="01/01/2025", valor_pago="0,00",
         ...             data_pagamento="", quantidade_dias_atraso="0")
@@ -89,19 +90,21 @@ def preparar_dados_cotas_para_template(dados_cotas: DadosCotas) -> List[Dict[str
     cotas_em_aberto = [c for c in dados_cotas.cotas if not c.esta_paga]
 
     for cota in cotas_em_aberto:
-        cotas_formatadas.append({
-            "numero_cota": cota.numero_cota,
-            "data_vencimento": cota.data_vencimento,
-            "valor_cota": cota.valor_cota,
-            "esta_vencida": cota.esta_vencida,
-            "valor_numerico": cota.valor_numerico or 0.0,
-        })
+        cotas_formatadas.append(
+            {
+                "numero_cota": cota.numero_cota,
+                "data_vencimento": cota.data_vencimento,
+                "valor_cota": cota.valor_cota,
+                "esta_vencida": cota.esta_vencida,
+                "valor_numerico": cota.valor_numerico or 0.0,
+            }
+        )
 
     return cotas_formatadas
 
 
 def preparar_dados_boletos_para_template(
-    guias_geradas: List[Dict[str, Any]]
+    guias_geradas: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """
     Prepara dados dos boletos gerados no formato esperado pelo template.
@@ -134,7 +137,7 @@ def tem_mais_cotas_disponiveis(state: ServiceState) -> bool:
         True se ainda há cotas não selecionadas, False caso contrário
 
     Examples:
-        >>> from src.services.core.models import ServiceState
+        >>> from src.tools.multi_step_service.core.models import ServiceState
         >>> state = ServiceState()
         >>> state.data["dados_cotas"] = {"cotas": [{"id": 1}, {"id": 2}, {"id": 3}]}
         >>> state.data["cotas_escolhidas"] = ["1", "2"]

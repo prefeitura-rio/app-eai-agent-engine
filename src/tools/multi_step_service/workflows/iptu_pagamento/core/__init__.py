@@ -4,7 +4,7 @@ Core components do workflow IPTU.
 Contém modelos, validadores e constantes.
 """
 
-from src.services.workflows.iptu_pagamento.core.models import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.core.models import (
     InscricaoImobiliariaPayload,
     EscolhaAnoPayload,
     EscolhaGuiasIPTUPayload,
@@ -27,7 +27,7 @@ from src.services.workflows.iptu_pagamento.core.models import (
     Parcelamento,
 )
 
-from src.services.workflows.iptu_pagamento.core.constants import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.core.constants import (
     MAX_TENTATIVAS_ANO,
     STATE_FAILED_ATTEMPTS_PREFIX,
     STATE_HAS_CONSULTED_GUIAS,

@@ -8,15 +8,19 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 import httpx
 
-from src.services.workflows.iptu_pagamento.api.api_service import IPTUAPIService
-from src.services.workflows.iptu_pagamento.api.exceptions import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.api.api_service import (
+    IPTUAPIService,
+)
+from src.tools.multi_step_service.workflows.iptu_pagamento.api.exceptions import (
     APIUnavailableError,
     AuthenticationError,
 )
-from src.services.workflows.iptu_pagamento.core.models import DadosDividaAtiva
+from src.tools.multi_step_service.workflows.iptu_pagamento.core.models import (
+    DadosDividaAtiva,
+)
 
 # Configura pytest-asyncio para modo auto
-pytest_plugins = ('pytest_asyncio',)
+pytest_plugins = ("pytest_asyncio",)
 
 
 class TestGetDividaAtivaInfoErrorHandling:
@@ -147,6 +151,7 @@ class TestGetDividaAtivaInfoErrorHandling:
 
             # Configura post para retornar auth response primeiro, depois timeout
             call_count = 0
+
             def post_side_effect(*args, **kwargs):
                 nonlocal call_count
                 call_count += 1
@@ -184,7 +189,9 @@ class TestGetDividaAtivaInfoErrorHandling:
             mock_consulta_response.status_code = 404
             mock_consulta_response.text = "Not Found"
 
-            mock_client.post = AsyncMock(side_effect=[mock_auth_response, mock_consulta_response])
+            mock_client.post = AsyncMock(
+                side_effect=[mock_auth_response, mock_consulta_response]
+            )
 
             result = await api_service.get_divida_ativa_info("12345678")
 
@@ -210,7 +217,9 @@ class TestGetDividaAtivaInfoErrorHandling:
             mock_consulta_response.status_code = 401
             mock_consulta_response.text = "Unauthorized"
 
-            mock_client.post = AsyncMock(side_effect=[mock_auth_response, mock_consulta_response])
+            mock_client.post = AsyncMock(
+                side_effect=[mock_auth_response, mock_consulta_response]
+            )
 
             with pytest.raises(AuthenticationError) as exc_info:
                 await api_service.get_divida_ativa_info("12345678")
@@ -237,7 +246,9 @@ class TestGetDividaAtivaInfoErrorHandling:
             mock_consulta_response.status_code = 500
             mock_consulta_response.text = "Internal Server Error"
 
-            mock_client.post = AsyncMock(side_effect=[mock_auth_response, mock_consulta_response])
+            mock_client.post = AsyncMock(
+                side_effect=[mock_auth_response, mock_consulta_response]
+            )
 
             with pytest.raises(APIUnavailableError) as exc_info:
                 await api_service.get_divida_ativa_info("12345678")
@@ -265,7 +276,9 @@ class TestGetDividaAtivaInfoErrorHandling:
             mock_consulta_response.status_code = 503
             mock_consulta_response.text = "Service Unavailable"
 
-            mock_client.post = AsyncMock(side_effect=[mock_auth_response, mock_consulta_response])
+            mock_client.post = AsyncMock(
+                side_effect=[mock_auth_response, mock_consulta_response]
+            )
 
             with pytest.raises(APIUnavailableError) as exc_info:
                 await api_service.get_divida_ativa_info("12345678")
@@ -318,7 +331,9 @@ class TestGetDividaAtivaInfoErrorHandling:
                 },
             }
 
-            mock_client.post = AsyncMock(side_effect=[mock_auth_response, mock_consulta_response])
+            mock_client.post = AsyncMock(
+                side_effect=[mock_auth_response, mock_consulta_response]
+            )
 
             result = await api_service.get_divida_ativa_info("12345678")
 
@@ -460,7 +475,7 @@ class TestGetImovelInfoErrorHandling:
                 "complEndereco": "APT 101",
                 "bairro": "CENTRO",
                 "cep": "20000-000",
-                "proprietarioPrincipal": "JOÃO DA SILVA"
+                "proprietarioPrincipal": "JOÃO DA SILVA",
             }
             mock_client.get = AsyncMock(return_value=mock_response)
 

@@ -21,7 +21,7 @@ from google.cloud import storage
 from google.oauth2 import service_account
 
 from src.config import env
-from src.services.workflows.iptu_pagamento.core.models import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.core.models import (
     DadosGuias,
     Guia,
     Cota,
@@ -30,7 +30,7 @@ from src.services.workflows.iptu_pagamento.core.models import (
     DadosDarm,
     DadosDividaAtiva,
 )
-from src.services.workflows.iptu_pagamento.api.exceptions import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.api.exceptions import (
     APIUnavailableError,
     DataNotFoundError,
     AuthenticationError,

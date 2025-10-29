@@ -7,7 +7,7 @@ import inspect
 
 from langgraph.graph import StateGraph
 
-from src.services.core.models import ServiceState, AgentResponse
+from src.tools.multi_step_service.core.models import ServiceState, AgentResponse
 
 from loguru import logger
 
@@ -33,7 +33,9 @@ class BaseWorkflow(ABC):
         """
         pass
 
-    async def execute(self, state: ServiceState, payload: Dict[str, Any]) -> ServiceState:
+    async def execute(
+        self, state: ServiceState, payload: Dict[str, Any]
+    ) -> ServiceState:
         """
         Executa o workflow de forma assíncrona com o estado e payload fornecidos.
 
@@ -65,10 +67,10 @@ class BaseWorkflow(ABC):
             final_state = final_state_result
         else:
             # Se retornar dict, convertemos de volta para ServiceState preservando campos obrigatórios
-            if 'user_id' not in final_state_result:
-                final_state_result['user_id'] = state.user_id
-            if 'service_name' not in final_state_result:
-                final_state_result['service_name'] = state.service_name
+            if "user_id" not in final_state_result:
+                final_state_result["user_id"] = state.user_id
+            if "service_name" not in final_state_result:
+                final_state_result["service_name"] = state.service_name
 
             final_state = ServiceState(**final_state_result)
 

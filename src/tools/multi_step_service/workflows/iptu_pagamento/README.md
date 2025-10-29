@@ -36,7 +36,7 @@ iptu_pagamento/
 ### Uso Básico
 
 ```python
-from src.services.tool import multi_step_service
+from src.tools.multi_step_service.tool import multi_step_service
 
 # Iniciar workflow
 response = multi_step_service.invoke({
@@ -122,11 +122,13 @@ Os testes cobrem:
 ### Adicionar Nova Validação
 
 1. Adicione a constante em `constants.py`:
+
 ```python
 NOVO_LIMITE = 100
 ```
 
 2. Crie a função de validação em `validators.py`:
+
 ```python
 def validar_novo_campo(valor: int) -> int:
     if valor > NOVO_LIMITE:
@@ -135,8 +137,9 @@ def validar_novo_campo(valor: int) -> int:
 ```
 
 3. Use no Pydantic model em `models.py`:
+
 ```python
-from src.services.workflows.iptu_pagamento.validators import validar_novo_campo
+from src.tools.multi_step_service.workflows.iptu_pagamento.validators import validar_novo_campo
 
 class NovoPayload(BaseModel):
     campo: int
@@ -150,6 +153,7 @@ class NovoPayload(BaseModel):
 ### Adicionar Novo Nó ao Workflow
 
 1. Crie o método do nó em `iptu_workflow.py`:
+
 ```python
 @handle_errors
 def _meu_novo_no(self, state: ServiceState) -> ServiceState:
@@ -159,11 +163,13 @@ def _meu_novo_no(self, state: ServiceState) -> ServiceState:
 ```
 
 2. Adicione ao grafo em `build_graph()`:
+
 ```python
 graph.add_node("meu_novo_no", self._meu_novo_no)
 ```
 
 3. Conecte com edges:
+
 ```python
 graph.add_edge("no_anterior", "meu_novo_no")
 graph.add_edge("meu_novo_no", "proximo_no")
@@ -214,7 +220,7 @@ STATE_IS_SINGLE_QUOTA_FLOW = "is_single_quota_flow"
 ### State Helpers
 
 ```python
-from src.services.workflows.iptu_pagamento import state_helpers
+from src.tools.multi_step_service.workflows.iptu_pagamento import state_helpers
 
 # Validar dados obrigatórios
 campo_faltante = state_helpers.validar_dados_obrigatorios(
@@ -232,7 +238,7 @@ state_helpers.reset_para_selecao_cotas(state)
 ### Payload Helpers
 
 ```python
-from src.services.workflows.iptu_pagamento import payload_helpers
+from src.tools.multi_step_service.workflows.iptu_pagamento import payload_helpers
 
 # Processar payload simples
 sucesso = payload_helpers.processar_payload_simples(
@@ -247,7 +253,7 @@ sucesso = payload_helpers.processar_payload_simples(
 ### Test Helpers
 
 ```python
-from src.services.workflows.iptu_pagamento.test_helpers import *
+from src.tools.multi_step_service.workflows.iptu_pagamento.test_helpers import *
 
 # Setup/Teardown
 setup_fake_api()
@@ -298,6 +304,7 @@ logger.debug(f"State.payload: {state.payload}")
 Ao contribuir para este workflow:
 
 1. **Siga as convenções de nomenclatura**:
+
    - Constantes: `UPPER_SNAKE_CASE`
    - Funções/métodos: `snake_case`
    - Classes: `PascalCase`
@@ -306,6 +313,7 @@ Ao contribuir para este workflow:
 2. **Adicione testes** para qualquer novo código
 
 3. **Documente** usando docstrings com:
+
    - Descrição do que faz
    - Args com tipos
    - Returns com tipo

@@ -5,7 +5,7 @@ from enum import Enum
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
-from src.services.core.models import ServiceState, ServiceMetadata
+from src.tools.multi_step_service.core.models import ServiceState, ServiceMetadata
 from src.config import env
 
 try:
@@ -57,7 +57,7 @@ class JsonBackend(StorageBackend):
     Armazena em: {data_dir}/{user_id}.json
     """
 
-    def __init__(self, data_dir: str = "src/services/data"):
+    def __init__(self, data_dir: str = "src/tools/multi_step_service/data"):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(exist_ok=True)
 
@@ -278,7 +278,7 @@ class StateManager:
     def __init__(
         self,
         user_id: str = "agent",
-        data_dir: str = "src/services/data",
+        data_dir: str = "src/tools/multi_step_service/data",
         backend_mode: StateMode = StateMode.JSON,
         redis_url: Optional[str] = None,
         redis_ttl_seconds: Optional[int] = None,

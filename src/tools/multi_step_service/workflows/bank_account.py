@@ -4,8 +4,8 @@ from pydantic import BaseModel, Field
 
 from langgraph.graph import StateGraph, END
 
-from src.services.core.base_workflow import BaseWorkflow, handle_errors
-from src.services.core.models import ServiceState, AgentResponse
+from src.tools.multi_step_service.core.base_workflow import BaseWorkflow, handle_errors
+from src.tools.multi_step_service.core.models import ServiceState, AgentResponse
 
 
 class UserInfoData(BaseModel):

@@ -42,8 +42,6 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS = getenv_or_action(
 # IPTU API Configuration
 IPTU_API_URL = getenv_or_action("IPTU_API_URL")
 IPTU_API_TOKEN = getenv_or_action("IPTU_API_TOKEN")
-IPTU_API_NOTIFICA_URL = getenv_or_action("IPTU_API_NOTIFICA_URL")
-IPTU_API_NOTIFICA_TOKEN = getenv_or_action("IPTU_API_NOTIFICA_TOKEN")
 
 SHORT_API_URL = getenv_or_action("SHORT_API_URL")
 SHORT_API_TOKEN = getenv_or_action("SHORT_API_TOKEN")

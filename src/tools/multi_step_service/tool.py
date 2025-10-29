@@ -1,15 +1,10 @@
 from typing import Any, Dict, Optional
 from langchain_core.tools import tool
 
-from src.services.core.orchestrator import Orchestrator
-from src.services.core.models import ServiceRequest
+from src.tools.multi_step_service.core.orchestrator import Orchestrator
+from src.tools.multi_step_service.core.models import ServiceRequest
 
-
-@tool
-async def multi_step_service(
-    service_name: str, user_id: str, payload: Optional[Dict[str, Any]] = None
-) -> dict:
-    """
+DESCRIPTION = """
     Sistema de serviços multi-step com schema dinâmico e estado transparente.
 
     Args:
@@ -37,17 +32,6 @@ async def multi_step_service(
 
         __replace__available_services__
     """
-    # Cria request agnóstico
-    request = ServiceRequest(
-        service_name=service_name, user_id=user_id, payload=payload or {}
-    )
-
-    # Executa via orquestrador agnóstico (async)
-    orchestrator = Orchestrator()
-    response = await orchestrator.execute_workflow(request)
-
-    # Retorna resposta já formatada
-    return response.model_dump()
 
 
 def _get_workflow_descriptions():
@@ -62,13 +46,30 @@ def _get_workflow_descriptions():
     for service_name, description in workflow_dict.items():
         descriptions.append(f"- {service_name}: {description}")
 
-    return "\n".join(descriptions)
+    description_replacer = "\n        ".join(descriptions)
+
+    return DESCRIPTION.replace("__replace__available_services__", description_replacer)
+
+
+@tool(description=_get_workflow_descriptions())
+async def multi_step_service(
+    service_name: str, user_id: str, payload: Optional[Dict[str, Any]] = None
+) -> dict:
+
+    # Cria request agnóstico
+    request = ServiceRequest(
+        service_name=service_name, user_id=user_id, payload=payload or {}
+    )
+
+    # Executa via orquestrador agnóstico (async)
+    orchestrator = Orchestrator()
+    response = await orchestrator.execute_workflow(request)
+
+    # Retorna resposta já formatada
+    return response.model_dump()
 
 
 # Update tool description with available workflows
-multi_step_service.description = multi_step_service.description.replace(
-    "__replace__available_services__", _get_workflow_descriptions()
-)
 
 
 def save_workflow_graphs():

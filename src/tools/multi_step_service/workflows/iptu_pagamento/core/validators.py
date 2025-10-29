@@ -7,7 +7,7 @@ quanto diretamente no código do workflow.
 
 import re
 from typing import Optional
-from src.services.workflows.iptu_pagamento.core.constants import (
+from src.tools.multi_step_service.workflows.iptu_pagamento.core.constants import (
     ANO_MIN_VALIDO,
     ANO_MAX_VALIDO,
     INSCRICAO_MIN_LENGTH,
