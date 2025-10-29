@@ -38,7 +38,7 @@ class BankAccountWorkflow(BaseWorkflow):
 
     # --- Nós do Grafo ---
     @handle_errors
-    def _collect_user_info(self, state: ServiceState) -> ServiceState:
+    async def _collect_user_info(self, state: ServiceState) -> ServiceState:
         if "user_info" in state.data:
             return state
 
@@ -56,7 +56,7 @@ class BankAccountWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _collect_account_type(self, state: ServiceState) -> ServiceState:
+    async def _collect_account_type(self, state: ServiceState) -> ServiceState:
         if "account_type" in state.data:
             return state
 
@@ -79,7 +79,7 @@ class BankAccountWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _ask_action(self, state: ServiceState) -> ServiceState:
+    async def _ask_action(self, state: ServiceState) -> ServiceState:
         # Só ativar ask_action quando pending_action é None
         if state.internal.get("pending_action") is not None:
             return state
@@ -100,7 +100,7 @@ class BankAccountWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _get_balance(self, state: ServiceState) -> ServiceState:
+    async def _get_balance(self, state: ServiceState) -> ServiceState:
         # Exibir saldo e limpar pending_action
         balance = state.data.get("balance", 0.0)
         state.agent_response = AgentResponse(
@@ -113,7 +113,7 @@ class BankAccountWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _collect_deposit_amount(self, state: ServiceState) -> ServiceState:
+    async def _collect_deposit_amount(self, state: ServiceState) -> ServiceState:
         if "deposit_amount" in state.data:
             return state
 
@@ -129,7 +129,7 @@ class BankAccountWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _make_deposit(self, state: ServiceState) -> ServiceState:
+    async def _make_deposit(self, state: ServiceState) -> ServiceState:
         amount = state.data.get("deposit_amount", 0)
         current_balance = state.data.get("balance", 0)
         new_balance = current_balance + amount

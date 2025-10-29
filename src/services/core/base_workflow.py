@@ -3,6 +3,7 @@ from typing import Dict, Any, Callable
 import os
 from functools import wraps
 import traceback
+import inspect
 
 from langgraph.graph import StateGraph
 
@@ -32,15 +33,20 @@ class BaseWorkflow(ABC):
         """
         pass
 
-    def execute(self, state: ServiceState, payload: Dict[str, Any]) -> ServiceState:
+    async def execute(self, state: ServiceState, payload: Dict[str, Any]) -> ServiceState:
         """
-        Executa o workflow com o estado e payload fornecidos.
+        Executa o workflow de forma assíncrona com o estado e payload fornecidos.
 
         Este método orquestra a execução do grafo LangGraph:
         1. Injeta payload no state (fonte única da verdade)
         2. Compila o grafo.
-        3. Invoca o grafo, que executa em cascata até pausar ou terminar.
+        3. Invoca o grafo de forma assíncrona, executando em cascata até pausar ou terminar.
         4. Retorna o ServiceState atualizado.
+
+        Benefícios da versão async:
+        - Elimina overhead de múltiplos asyncio.run()
+        - Permite paralelização de operações I/O nos nós
+        - Nós do workflow podem usar await diretamente
         """
 
         # 1. Injeta payload no state - fonte única da verdade
@@ -50,8 +56,8 @@ class BaseWorkflow(ABC):
         graph = self.build_graph()
         compiled_graph = graph.compile()
 
-        # 3. Invoca o grafo diretamente com ServiceState
-        final_state_result = compiled_graph.invoke(state)
+        # 3. Invoca o grafo de forma assíncrona
+        final_state_result = await compiled_graph.ainvoke(state)
 
         # O LangGraph pode retornar o ServiceState diretamente ou como dict
         # Vamos garantir que sempre trabalhamos com ServiceState
@@ -59,17 +65,15 @@ class BaseWorkflow(ABC):
             final_state = final_state_result
         else:
             # Se retornar dict, convertemos de volta para ServiceState preservando campos obrigatórios
-            # Garantir que campos obrigatórios estão presentes
             if 'user_id' not in final_state_result:
                 final_state_result['user_id'] = state.user_id
             if 'service_name' not in final_state_result:
                 final_state_result['service_name'] = state.service_name
-            
+
             final_state = ServiceState(**final_state_result)
 
         # Se o grafo terminou sem uma resposta explícita, significa que o serviço foi concluído.
         if final_state.agent_response is None:
-
             final_state.status = "completed"
             final_state.agent_response = AgentResponse(
                 service_name=self.service_name,
@@ -132,15 +136,22 @@ class BaseWorkflow(ABC):
 
 def handle_errors(node_func: Callable) -> Callable:
     """
-    Decorator para envolver nós do grafo com tratamento de exceções.
-    Ele preserva a AgentResponse preparada pelo nó mesmo em caso de erro.
+    Decorator para envolver nós assíncronos do grafo com tratamento de exceções.
+    Preserva a AgentResponse preparada pelo nó mesmo em caso de erro.
+
+    Nota: Atualmente suporta apenas funções assíncronas (async def).
     """
 
+    if not inspect.iscoroutinefunction(node_func):
+        raise TypeError(
+            f"handle_errors decorator requer função assíncrona. "
+            f"'{node_func.__name__}' não é async def."
+        )
+
     @wraps(node_func)
-    def wrapper(instance, state: ServiceState) -> ServiceState:
+    async def wrapper(instance, state: ServiceState) -> ServiceState:
         try:
-            # Chama a função original do nó
-            return node_func(instance, state)
+            return await node_func(instance, state)
         except Exception as e:
             traceback_str = traceback.format_exc()
             logger.error(

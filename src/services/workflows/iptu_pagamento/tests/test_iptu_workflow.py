@@ -11,6 +11,8 @@ Cobre todos os cenários possíveis:
 
 import os
 import time
+import asyncio
+import pytest
 from src.services.tool import multi_step_service
 
 
@@ -44,7 +46,8 @@ class TestIPTUWorkflowHappyPath:
         """Cleanup executado após cada teste."""
         teardown_fake_api()
 
-    def test_fluxo_completo_cota_unica(self):
+    @pytest.mark.asyncio
+    async def test_fluxo_completo_cota_unica(self):
         """
         Testa fluxo completo: inscrição → ano → guias → cota única → boleto.
 
@@ -61,7 +64,7 @@ class TestIPTUWorkflowHappyPath:
 
         # Etapa 1: Informar inscrição
         print("📝 Etapa 1: Informando inscrição imobiliária...")
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
@@ -73,7 +76,7 @@ class TestIPTUWorkflowHappyPath:
 
         # Etapa 2: Escolher ano
         print("📅 Etapa 2: Escolhendo ano de exercício...")
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
@@ -84,7 +87,7 @@ class TestIPTUWorkflowHappyPath:
 
         # Etapa 3: Escolher guia
         print("💳 Etapa 3: Escolhendo guia...")
-        response3 = multi_step_service.invoke({
+        response3 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"guia_escolhida": "00"}
@@ -95,7 +98,7 @@ class TestIPTUWorkflowHappyPath:
         # Etapa 4: Selecionar cotas (se necessário)
         if response3["payload_schema"] and "cotas_escolhidas" in response3["payload_schema"].get("properties", {}):
             print("📋 Etapa 4a: Selecionando cotas...")
-            response4a = multi_step_service.invoke({
+            response4a = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": self.user_id,
                 "payload": {"cotas_escolhidas": ["01"]}
@@ -105,7 +108,7 @@ class TestIPTUWorkflowHappyPath:
             # Se precisa escolher formato de boleto
             if response4a["payload_schema"] and "darm_separado" in response4a["payload_schema"].get("properties", {}):
                 print("🎯 Etapa 4b: Escolhendo formato de boleto...")
-                response4b = multi_step_service.invoke({
+                response4b = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"darm_separado": False}
@@ -120,7 +123,7 @@ class TestIPTUWorkflowHappyPath:
         # Etapa 5: Confirmar dados
         if response_atual["payload_schema"] and "confirmacao" in response_atual["payload_schema"].get("properties", {}):
             print("✅ Etapa 5: Confirmando dados...")
-            response5 = multi_step_service.invoke({
+            response5 = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": self.user_id,
                 "payload": {"confirmacao": True}
@@ -133,7 +136,7 @@ class TestIPTUWorkflowHappyPath:
         # Etapa 6: Não quer mais cotas
         if response_atual["payload_schema"] and "mais_cotas" in response_atual["payload_schema"].get("properties", {}):
             print("🚫 Etapa 6: Não quer mais cotas...")
-            response6 = multi_step_service.invoke({
+            response6 = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": self.user_id,
                 "payload": {"mais_cotas": False}
@@ -144,7 +147,7 @@ class TestIPTUWorkflowHappyPath:
         # Etapa 7: Não quer outra guia
         if response_atual["payload_schema"] and "outra_guia" in response_atual["payload_schema"].get("properties", {}):
             print("🚫 Etapa 7: Não quer outra guia...")
-            response7 = multi_step_service.invoke({
+            response7 = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": self.user_id,
                 "payload": {"outra_guia": False}
@@ -155,7 +158,7 @@ class TestIPTUWorkflowHappyPath:
         # Etapa 8: Não quer outro imóvel
         if response_atual["payload_schema"] and "outro_imovel" in response_atual["payload_schema"].get("properties", {}):
             print("🚫 Etapa 8: Não quer outro imóvel...")
-            response8 = multi_step_service.invoke({
+            response8 = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": self.user_id,
                 "payload": {"outro_imovel": False}
@@ -166,7 +169,8 @@ class TestIPTUWorkflowHappyPath:
 
         print("✅ TESTE PASSOU: Fluxo completo com cota única")
 
-    def test_fluxo_completo_cotas_parceladas_boleto_unico(self):
+    @pytest.mark.asyncio
+    async def test_fluxo_completo_cotas_parceladas_boleto_unico(self):
         """
         Testa fluxo: inscrição → ano → guias → múltiplas cotas → boleto único.
 
@@ -178,7 +182,7 @@ class TestIPTUWorkflowHappyPath:
         print("\n🧪 Teste: Fluxo com múltiplas cotas (boleto único)")
 
         # Etapa 1: Inscrição
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
@@ -186,7 +190,7 @@ class TestIPTUWorkflowHappyPath:
         assert response1["error_message"] is None
 
         # Etapa 2: Ano
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
@@ -194,7 +198,7 @@ class TestIPTUWorkflowHappyPath:
         assert response2["error_message"] is None
 
         # Etapa 3: Guia
-        response3 = multi_step_service.invoke({
+        response3 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"guia_escolhida": "00"}
@@ -203,7 +207,7 @@ class TestIPTUWorkflowHappyPath:
         # Etapa 4: Múltiplas cotas
         if response3["payload_schema"] and "cotas_escolhidas" in response3["payload_schema"].get("properties", {}):
             print("📋 Selecionando múltiplas cotas...")
-            response4 = multi_step_service.invoke({
+            response4 = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": self.user_id,
                 "payload": {"cotas_escolhidas": ["01", "02", "03"]}
@@ -212,7 +216,7 @@ class TestIPTUWorkflowHappyPath:
             # Etapa 5: Boleto único
             if response4["payload_schema"] and "darm_separado" in response4["payload_schema"].get("properties", {}):
                 print("🎯 Escolhendo boleto único...")
-                response5 = multi_step_service.invoke({
+                response5 = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"darm_separado": False}
@@ -220,7 +224,7 @@ class TestIPTUWorkflowHappyPath:
 
                 # Confirmar
                 if response5["payload_schema"] and "confirmacao" in response5["payload_schema"].get("properties", {}):
-                    response6 = multi_step_service.invoke({
+                    response6 = await multi_step_service.ainvoke({
                         "service_name": self.service_name,
                         "user_id": self.user_id,
                         "payload": {"confirmacao": True}
@@ -229,7 +233,8 @@ class TestIPTUWorkflowHappyPath:
 
         print("✅ TESTE PASSOU: Múltiplas cotas com boleto único")
 
-    def test_fluxo_completo_boletos_separados(self):
+    @pytest.mark.asyncio
+    async def test_fluxo_completo_boletos_separados(self):
         """
         Testa fluxo com boletos separados: uma guia para cada cota.
 
@@ -241,20 +246,20 @@ class TestIPTUWorkflowHappyPath:
         print("\n🧪 Teste: Fluxo com boletos separados")
 
         # Setup: Inscrição e ano
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
         })
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
         })
 
         # Guia
-        response3 = multi_step_service.invoke({
+        response3 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"guia_escolhida": "00"}
@@ -262,7 +267,7 @@ class TestIPTUWorkflowHappyPath:
 
         # Múltiplas cotas
         if response3["payload_schema"] and "cotas_escolhidas" in response3["payload_schema"].get("properties", {}):
-            response4 = multi_step_service.invoke({
+            response4 = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": self.user_id,
                 "payload": {"cotas_escolhidas": ["01", "02"]}
@@ -271,7 +276,7 @@ class TestIPTUWorkflowHappyPath:
             # Boletos separados
             if response4["payload_schema"] and "darm_separado" in response4["payload_schema"].get("properties", {}):
                 print("🎯 Escolhendo boletos separados...")
-                response5 = multi_step_service.invoke({
+                response5 = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"darm_separado": True}
@@ -279,7 +284,7 @@ class TestIPTUWorkflowHappyPath:
 
                 # Confirmar
                 if response5["payload_schema"] and "confirmacao" in response5["payload_schema"].get("properties", {}):
-                    response6 = multi_step_service.invoke({
+                    response6 = await multi_step_service.ainvoke({
                         "service_name": self.service_name,
                         "user_id": self.user_id,
                         "payload": {"confirmacao": True}
@@ -289,7 +294,8 @@ class TestIPTUWorkflowHappyPath:
 
         print("✅ TESTE PASSOU: Boletos separados")
 
-    def test_fluxo_completo_todas_inscricoes(self):
+    @pytest.mark.asyncio
+    async def test_fluxo_completo_todas_inscricoes(self):
         """
         Testa que todas as inscrições da API fake retornam dados corretos.
 
@@ -316,7 +322,7 @@ class TestIPTUWorkflowHappyPath:
             print(f"\n  ➡️ Testando inscrição: {inscricao}")
 
             # Etapa 1: Inscrição
-            response = multi_step_service.invoke({
+            response = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": f"{self.user_id}_{inscricao}",
                 "payload": {"inscricao_imobiliaria": inscricao}
@@ -326,7 +332,7 @@ class TestIPTUWorkflowHappyPath:
                 f"Deve pedir ano para inscrição {inscricao}"
 
             # Etapa 2: Ano
-            response2 = multi_step_service.invoke({
+            response2 = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": f"{self.user_id}_{inscricao}",
                 "payload": {"ano_exercicio": 2025}
@@ -337,7 +343,8 @@ class TestIPTUWorkflowHappyPath:
 
         print("✅ TESTE PASSOU: Todas as inscrições funcionam corretamente")
 
-    def test_fluxo_escolher_outra_guia_mesmo_imovel(self):
+    @pytest.mark.asyncio
+    async def test_fluxo_escolher_outra_guia_mesmo_imovel(self):
         """
         Testa fluxo completo onde usuário:
         1. Gera boleto para primeira guia
@@ -352,20 +359,20 @@ class TestIPTUWorkflowHappyPath:
         inscricao = "01234567890123"  # Tem ORDINÁRIA (00) e EXTRAORDINÁRIA (01)
 
         # Etapa 1-3: Setup até escolher primeira guia
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": inscricao}
         })
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
         })
 
         # Escolhe primeira guia (00 - ORDINÁRIA)
-        response3 = multi_step_service.invoke({
+        response3 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"guia_escolhida": "00"}
@@ -381,26 +388,26 @@ class TestIPTUWorkflowHappyPath:
             props = response_atual["payload_schema"].get("properties", {})
 
             if "cotas_escolhidas" in props:
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"cotas_escolhidas": ["01"]}
                 })
             elif "darm_separado" in props:
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"darm_separado": False}
                 })
             elif "confirmacao" in props:
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"confirmacao": True}
                 })
             elif "mais_cotas" in props:
                 # NÃO quer mais cotas desta guia
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"mais_cotas": False}
@@ -408,7 +415,7 @@ class TestIPTUWorkflowHappyPath:
             elif "outra_guia" in props:
                 # QUER outra guia do mesmo imóvel
                 print("  ➡️ Escolhendo outra guia do mesmo imóvel")
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"outra_guia": True}
@@ -418,7 +425,7 @@ class TestIPTUWorkflowHappyPath:
                     "Deve mostrar guias disponíveis novamente"
 
                 # Escolhe segunda guia (01 - EXTRAORDINÁRIA)
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"guia_escolhida": "01"}
@@ -429,7 +436,8 @@ class TestIPTUWorkflowHappyPath:
 
         print("✅ TESTE PASSOU: Fluxo de outra guia do mesmo imóvel")
 
-    def test_fluxo_escolher_outro_imovel(self):
+    @pytest.mark.asyncio
+    async def test_fluxo_escolher_outro_imovel(self):
         """
         Testa fluxo onde usuário:
         1. Gera boleto para um imóvel
@@ -441,19 +449,19 @@ class TestIPTUWorkflowHappyPath:
         print("\n🧪 Teste: Escolher outro imóvel")
 
         # Primeiro imóvel
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "11111111111111"}
         })
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
         })
 
-        response3 = multi_step_service.invoke({
+        response3 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"guia_escolhida": "00"}
@@ -469,38 +477,38 @@ class TestIPTUWorkflowHappyPath:
             props = response_atual["payload_schema"].get("properties", {})
 
             if "cotas_escolhidas" in props:
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"cotas_escolhidas": ["01"]}
                 })
             elif "darm_separado" in props:
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"darm_separado": False}
                 })
             elif "confirmacao" in props:
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"confirmacao": True}
                 })
             elif "mais_cotas" in props:
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"mais_cotas": False}
                 })
             elif "outra_guia" in props:
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"outra_guia": False}
                 })
             elif "outro_imovel" in props:
                 print("  ➡️ Escolhendo consultar outro imóvel")
-                response_atual = multi_step_service.invoke({
+                response_atual = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"outro_imovel": True}
@@ -510,7 +518,7 @@ class TestIPTUWorkflowHappyPath:
                     "Deve pedir nova inscrição imobiliária"
 
                 # Testa com segundo imóvel
-                response_novo = multi_step_service.invoke({
+                response_novo = await multi_step_service.ainvoke({
                     "service_name": self.service_name,
                     "user_id": self.user_id,
                     "payload": {"inscricao_imobiliaria": "22222222222222"}
@@ -537,11 +545,12 @@ class TestIPTUWorkflowValidacoes:
         """Cleanup executado após cada teste."""
         teardown_fake_api()
 
-    def test_inscricao_muito_curta(self):
+    @pytest.mark.asyncio
+    async def test_inscricao_muito_curta(self):
         """Testa que inscrição com menos de 8 dígitos é rejeitada."""
         print("\n🧪 Teste: Inscrição muito curta")
 
-        response = multi_step_service.invoke({
+        response = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "123"}
@@ -552,11 +561,12 @@ class TestIPTUWorkflowValidacoes:
         assert response["error_message"] is not None, "Deve rejeitar inscrição curta"
         print("✅ TESTE PASSOU: Inscrição curta rejeitada")
 
-    def test_inscricao_muito_longa(self):
+    @pytest.mark.asyncio
+    async def test_inscricao_muito_longa(self):
         """Testa que inscrição com mais de 15 dígitos é rejeitada."""
         print("\n🧪 Teste: Inscrição muito longa")
 
-        response = multi_step_service.invoke({
+        response = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "1234567890123456"}  # 16 dígitos
@@ -565,11 +575,12 @@ class TestIPTUWorkflowValidacoes:
         assert response["error_message"] is not None, "Deve rejeitar inscrição longa"
         print("✅ TESTE PASSOU: Inscrição longa rejeitada")
 
-    def test_inscricao_valida_com_formatacao(self):
+    @pytest.mark.asyncio
+    async def test_inscricao_valida_com_formatacao(self):
         """Testa que inscrição com formatação é sanitizada corretamente."""
         print("\n🧪 Teste: Inscrição com formatação")
 
-        response = multi_step_service.invoke({
+        response = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "123.456.78-90"}
@@ -579,12 +590,13 @@ class TestIPTUWorkflowValidacoes:
         assert response["error_message"] is None, "Deve aceitar e sanitizar formatação"
         print("✅ TESTE PASSOU: Formatação removida corretamente")
 
-    def test_inscricao_inexistente(self):
+    @pytest.mark.asyncio
+    async def test_inscricao_inexistente(self):
         """Testa que inscrição não cadastrada na API fake é tratada corretamente."""
         print("\n🧪 Teste: Inscrição inexistente")
 
         # Etapa 1: Inscrição inexistente
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "99999999999999"}  # Não existe na fake API
@@ -594,7 +606,7 @@ class TestIPTUWorkflowValidacoes:
         assert response1["error_message"] is None
 
         # Etapa 2: Tentar buscar ano - API fake não retorna guias
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
@@ -606,19 +618,20 @@ class TestIPTUWorkflowValidacoes:
 
         print("✅ TESTE PASSOU: Inscrição inexistente tratada")
 
-    def test_guias_quitadas(self):
+    @pytest.mark.asyncio
+    async def test_guias_quitadas(self):
         """Testa comportamento quando todas as guias estão quitadas."""
         print("\n🧪 Teste: Guias quitadas")
 
         # Inscrição 33333333333333 tem todas as guias quitadas
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "33333333333333"}
         })
         assert response1["error_message"] is None
 
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
@@ -629,19 +642,20 @@ class TestIPTUWorkflowValidacoes:
 
         print("✅ TESTE PASSOU: Guias quitadas tratadas")
 
-    def test_ano_invalido_fora_range(self):
+    @pytest.mark.asyncio
+    async def test_ano_invalido_fora_range(self):
         """Testa que ano fora do range válido (2020-2025) é rejeitado."""
         print("\n🧪 Teste: Ano fora do range válido")
 
         # Setup
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
         })
 
         # Tenta ano inválido (antes de 2020)
-        response_old = multi_step_service.invoke({
+        response_old = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2019}
@@ -650,13 +664,13 @@ class TestIPTUWorkflowValidacoes:
         print(f"  Response para ano 2019: {response_old.get('error_message') or response_old['description'][:100]}")
 
         # Tenta ano inválido (depois de 2025)
-        response_future = multi_step_service.invoke({
+        response_future = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": f"{self.user_id}_2",
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
         })
 
-        response_future = multi_step_service.invoke({
+        response_future = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": f"{self.user_id}_2",
             "payload": {"ano_exercicio": 2026}
@@ -666,23 +680,24 @@ class TestIPTUWorkflowValidacoes:
 
         print("✅ TESTE PASSOU: Anos fora do range tratados")
 
-    def test_multiplas_cotas_selecionadas(self):
+    @pytest.mark.asyncio
+    async def test_multiplas_cotas_selecionadas(self):
         """Testa seleção de múltiplas cotas (3+)."""
         print("\n🧪 Teste: Seleção de múltiplas cotas")
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
         })
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
         })
 
-        response3 = multi_step_service.invoke({
+        response3 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"guia_escolhida": "00"}
@@ -690,7 +705,7 @@ class TestIPTUWorkflowValidacoes:
 
         # Seleciona múltiplas cotas (se disponível)
         if response3.get("payload_schema") and "cotas_escolhidas" in response3["payload_schema"].get("properties", {}):
-            response4 = multi_step_service.invoke({
+            response4 = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": self.user_id,
                 "payload": {"cotas_escolhidas": ["01", "02", "03", "04", "05"]}  # 5 cotas
@@ -715,7 +730,8 @@ class TestIPTUWorkflowFluxosContinuidade:
         """Cleanup executado após cada teste."""
         teardown_fake_api()
 
-    def test_usuario_quer_mais_cotas(self):
+    @pytest.mark.asyncio
+    async def test_usuario_quer_mais_cotas(self):
         """
         Testa fluxo onde usuário quer pagar mais cotas da mesma guia.
 
@@ -727,19 +743,19 @@ class TestIPTUWorkflowFluxosContinuidade:
         print("\n🧪 Teste: Usuário quer mais cotas")
 
         # Setup inicial até gerar primeiro boleto
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
         })
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
         })
 
-        response = multi_step_service.invoke({
+        response = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"guia_escolhida": "00"}
@@ -750,7 +766,8 @@ class TestIPTUWorkflowFluxosContinuidade:
 
         print("✅ TESTE PASSOU: Fluxo de mais cotas")
 
-    def test_nao_quer_continuidade(self):
+    @pytest.mark.asyncio
+    async def test_nao_quer_continuidade(self):
         """
         Testa que workflow finaliza quando usuário não quer continuar.
         """
@@ -761,7 +778,8 @@ class TestIPTUWorkflowFluxosContinuidade:
 
         print("✅ TESTE PASSOU: Sistema finaliza corretamente")
 
-    def test_usuario_quer_mais_cotas_multiplas_vezes(self):
+    @pytest.mark.asyncio
+    async def test_usuario_quer_mais_cotas_multiplas_vezes(self):
         """
         Testa que usuário pode querer pagar mais cotas múltiplas vezes.
 
@@ -773,19 +791,19 @@ class TestIPTUWorkflowFluxosContinuidade:
         """
         print("\n🧪 Teste: Múltiplas rodadas de mais cotas")
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
         })
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
         })
 
-        response = multi_step_service.invoke({
+        response = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"guia_escolhida": "00"}
@@ -796,7 +814,8 @@ class TestIPTUWorkflowFluxosContinuidade:
 
         print("✅ TESTE PASSOU: Múltiplas rodadas funcionam")
 
-    def test_fluxo_multiplas_guias_extraordinarias(self):
+    @pytest.mark.asyncio
+    async def test_fluxo_multiplas_guias_extraordinarias(self):
         """
         Testa inscrição com múltiplas guias extraordinárias (66666666666666).
 
@@ -808,13 +827,13 @@ class TestIPTUWorkflowFluxosContinuidade:
         print("\n🧪 Teste: Múltiplas guias extraordinárias")
 
         # Inscrição 66666666666666 tem guias 01 e 02
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "66666666666666"}
         })
 
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
@@ -825,7 +844,7 @@ class TestIPTUWorkflowFluxosContinuidade:
         print(f"  Guias disponíveis: {response2['description'][:200]}")
 
         # Escolhe primeira guia
-        response3 = multi_step_service.invoke({
+        response3 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"guia_escolhida": "01"}
@@ -849,20 +868,21 @@ class TestIPTUWorkflowResetEstado:
         """Cleanup executado após cada teste."""
         teardown_fake_api()
 
-    def test_confirmacao_negada(self):
+    @pytest.mark.asyncio
+    async def test_confirmacao_negada(self):
         """
         Testa que quando usuário nega confirmação, volta para seleção de cotas.
         """
         print("\n🧪 Teste: Confirmação negada")
 
         # Setup até confirmação
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
         })
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
@@ -873,7 +893,8 @@ class TestIPTUWorkflowResetEstado:
 
         print("✅ TESTE PASSOU: Reset após confirmação negada")
 
-    def test_reset_ao_trocar_inscricao(self):
+    @pytest.mark.asyncio
+    async def test_reset_ao_trocar_inscricao(self):
         """
         Testa que ao trocar inscrição imobiliária, state é resetado.
         """
@@ -881,7 +902,7 @@ class TestIPTUWorkflowResetEstado:
 
         # Primeira inscrição
         print("📝 Informando primeira inscrição...")
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
@@ -889,7 +910,7 @@ class TestIPTUWorkflowResetEstado:
 
         # Segunda inscrição diferente (outra válida na API fake)
         print("📝 Trocando para segunda inscrição...")
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "11111111111111"}  # Outra inscrição válida
@@ -914,7 +935,8 @@ class TestIPTUWorkflowCasosEspeciais:
         """Cleanup executado após cada teste."""
         teardown_fake_api()
 
-    def test_apenas_uma_cota_nao_pergunta_formato_boleto(self):
+    @pytest.mark.asyncio
+    async def test_apenas_uma_cota_nao_pergunta_formato_boleto(self):
         """
         Testa que quando há apenas uma cota, não pergunta formato de boleto.
 
@@ -925,19 +947,19 @@ class TestIPTUWorkflowCasosEspeciais:
         """
         print("\n🧪 Teste: Uma cota não pergunta formato")
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
         })
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
         })
 
-        response3 = multi_step_service.invoke({
+        response3 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"guia_escolhida": "00"}
@@ -945,7 +967,7 @@ class TestIPTUWorkflowCasosEspeciais:
 
         if response3.get("payload_schema") and "cotas_escolhidas" in response3["payload_schema"].get("properties", {}):
             # Seleciona apenas 1 cota
-            response4 = multi_step_service.invoke({
+            response4 = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": self.user_id,
                 "payload": {"cotas_escolhidas": ["01"]}
@@ -959,7 +981,8 @@ class TestIPTUWorkflowCasosEspeciais:
 
         print("✅ TESTE PASSOU: Uma cota não pergunta formato")
 
-    def test_valores_monetarios_formatados_corretamente(self):
+    @pytest.mark.asyncio
+    async def test_valores_monetarios_formatados_corretamente(self):
         """
         Testa que valores monetários são exibidos corretamente.
 
@@ -970,13 +993,13 @@ class TestIPTUWorkflowCasosEspeciais:
         """
         print("\n🧪 Teste: Formatação de valores monetários")
 
-        multi_step_service.invoke({
+        await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": self.inscricao_valida}
         })
 
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
@@ -988,7 +1011,8 @@ class TestIPTUWorkflowCasosEspeciais:
 
         print("✅ TESTE PASSOU: Valores formatados corretamente")
 
-    def test_diferentes_tipos_guias(self):
+    @pytest.mark.asyncio
+    async def test_diferentes_tipos_guias(self):
         """
         Testa todos os tipos de guias disponíveis.
 
@@ -1010,13 +1034,13 @@ class TestIPTUWorkflowCasosEspeciais:
 
             user_id_teste = f"{self.user_id}_{inscricao}_{numero_guia}"
 
-            multi_step_service.invoke({
+            await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": user_id_teste,
                 "payload": {"inscricao_imobiliaria": inscricao}
             })
 
-            response2 = multi_step_service.invoke({
+            response2 = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": user_id_teste,
                 "payload": {"ano_exercicio": 2025}
@@ -1028,7 +1052,7 @@ class TestIPTUWorkflowCasosEspeciais:
                    f"Deve mostrar guia {tipo_esperado}"
 
             # Tenta selecionar a guia
-            response3 = multi_step_service.invoke({
+            response3 = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": user_id_teste,
                 "payload": {"guia_escolhida": numero_guia}
@@ -1053,7 +1077,8 @@ class TestIPTUWorkflowErrosAPI:
         """Cleanup executado após cada teste."""
         teardown_fake_api()
 
-    def test_api_indisponivel_consultar_guias(self):
+    @pytest.mark.asyncio
+    async def test_api_indisponivel_consultar_guias(self):
         """
         Testa que APIUnavailableError é tratado corretamente ao consultar guias.
 
@@ -1067,7 +1092,7 @@ class TestIPTUWorkflowErrosAPI:
 
         # Etapa 1: Informar inscrição que simula erro
         print("📝 Informando inscrição que simula API indisponível...")
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "77777777777777"}
@@ -1079,7 +1104,7 @@ class TestIPTUWorkflowErrosAPI:
 
         # Etapa 2: Escolher ano - API vai falhar aqui
         print("📅 Tentando escolher ano (API vai falhar)...")
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
@@ -1096,7 +1121,8 @@ class TestIPTUWorkflowErrosAPI:
 
         print("✅ TESTE PASSOU: API indisponível tratada corretamente")
 
-    def test_erro_autenticacao(self):
+    @pytest.mark.asyncio
+    async def test_erro_autenticacao(self):
         """
         Testa que AuthenticationError é tratado corretamente.
 
@@ -1108,7 +1134,7 @@ class TestIPTUWorkflowErrosAPI:
         print("\n🧪 Teste: Erro de autenticação")
 
         # Etapa 1: Informar inscrição
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "88888888888888"}
@@ -1118,7 +1144,7 @@ class TestIPTUWorkflowErrosAPI:
 
         # Etapa 2: Escolher ano - erro de autenticação
         print("📅 Tentando escolher ano (erro de autenticação)...")
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
@@ -1133,7 +1159,8 @@ class TestIPTUWorkflowErrosAPI:
 
         print("✅ TESTE PASSOU: Erro de autenticação tratado corretamente")
 
-    def test_timeout_consultar_guias(self):
+    @pytest.mark.asyncio
+    async def test_timeout_consultar_guias(self):
         """
         Testa que timeout é tratado como APIUnavailableError.
 
@@ -1143,7 +1170,7 @@ class TestIPTUWorkflowErrosAPI:
         """
         print("\n🧪 Teste: Timeout ao consultar guias")
 
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "99999999990000"}
@@ -1152,7 +1179,7 @@ class TestIPTUWorkflowErrosAPI:
         assert response1["error_message"] is None
 
         # Escolher ano - timeout
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
@@ -1165,7 +1192,8 @@ class TestIPTUWorkflowErrosAPI:
         print(f"✅ Timeout tratado: {response2['description'][:100]}...")
         print("✅ TESTE PASSOU: Timeout tratado corretamente")
 
-    def test_inscricao_nao_existente_vs_api_indisponivel(self):
+    @pytest.mark.asyncio
+    async def test_inscricao_nao_existente_vs_api_indisponivel(self):
         """
         Testa diferença entre inscrição não existente e API indisponível.
 
@@ -1183,7 +1211,7 @@ class TestIPTUWorkflowErrosAPI:
         print("\n  📌 Cenário 1: Inscrição não existente (após 3 tentativas)")
         user_id_1 = f"{self.user_id}_inexistente"
 
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": user_id_1,
             "payload": {"inscricao_imobiliaria": "99999999999999"}  # Não existe na fake API
@@ -1192,7 +1220,7 @@ class TestIPTUWorkflowErrosAPI:
         # Tenta 3 anos diferentes (MAX_TENTATIVAS_ANO = 3)
         for i, ano in enumerate([2025, 2024, 2023], 1):
             print(f"  Tentativa {i} com ano {ano}...")
-            response = multi_step_service.invoke({
+            response = await multi_step_service.ainvoke({
                 "service_name": self.service_name,
                 "user_id": user_id_1,
                 "payload": {"ano_exercicio": ano}
@@ -1211,13 +1239,13 @@ class TestIPTUWorkflowErrosAPI:
         print("\n  📌 Cenário 2: API indisponível")
         user_id_2 = f"{self.user_id}_indisponivel"
 
-        response3 = multi_step_service.invoke({
+        response3 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": user_id_2,
             "payload": {"inscricao_imobiliaria": "77777777777777"}
         })
 
-        response4 = multi_step_service.invoke({
+        response4 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": user_id_2,
             "payload": {"ano_exercicio": 2025}
@@ -1231,7 +1259,8 @@ class TestIPTUWorkflowErrosAPI:
 
         print("✅ TESTE PASSOU: Diferença entre erros está clara")
 
-    def test_nenhuma_guia_para_ano_especifico(self):
+    @pytest.mark.asyncio
+    async def test_nenhuma_guia_para_ano_especifico(self):
         """
         Testa que quando não há guias para um ano específico, a mensagem
         de erro correta é exibida e não é sobrescrita por mensagem genérica.
@@ -1249,7 +1278,7 @@ class TestIPTUWorkflowErrosAPI:
 
         # Etapa 1: Informar inscrição
         print("📝 Informando inscrição 12345678...")
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "12345678"}
@@ -1260,7 +1289,7 @@ class TestIPTUWorkflowErrosAPI:
 
         # Etapa 2: Tentar ano 2024 (sem guias)
         print("📅 Tentando ano 2024 (sem guias)...")
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2024}
@@ -1289,7 +1318,7 @@ class TestIPTUWorkflowErrosAPI:
 
         # Etapa 3: Tentar ano 2025 (com guias) - deve funcionar
         print("📅 Tentando ano 2025 (com guias)...")
-        response3 = multi_step_service.invoke({
+        response3 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2025}
@@ -1304,7 +1333,8 @@ class TestIPTUWorkflowErrosAPI:
 
         print("✅ TESTE PASSOU: Mensagem de erro específica não foi sobrescrita")
 
-    def test_divida_ativa_parcelamento(self):
+    @pytest.mark.asyncio
+    async def test_divida_ativa_parcelamento(self):
         """
         Testa cenário onde não há guias de IPTU mas existe dívida ativa com parcelamento.
 
@@ -1320,7 +1350,7 @@ class TestIPTUWorkflowErrosAPI:
 
         # Etapa 1: Informar inscrição
         print("📝 Informando inscrição 10000000...")
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "10000000"}
@@ -1331,7 +1361,7 @@ class TestIPTUWorkflowErrosAPI:
 
         # Etapa 2: Tentar ano 2024 (sem guias, mas tem dívida ativa)
         print("📅 Tentando ano 2024 (sem guias, mas com dívida ativa)...")
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2024}
@@ -1367,7 +1397,8 @@ class TestIPTUWorkflowErrosAPI:
         print(f"✅ Mensagem de dívida ativa exibida corretamente")
         print("✅ TESTE PASSOU: Dívida ativa com parcelamento detectada e informada")
 
-    def test_divida_ativa_cdas(self):
+    @pytest.mark.asyncio
+    async def test_divida_ativa_cdas(self):
         """
         Testa cenário onde não há guias de IPTU mas existem CDAs na dívida ativa.
 
@@ -1380,7 +1411,7 @@ class TestIPTUWorkflowErrosAPI:
         """
         print("\n🧪 Teste: Dívida ativa com CDAs encontradas")
 
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "20000000"}
@@ -1388,7 +1419,7 @@ class TestIPTUWorkflowErrosAPI:
 
         assert response1["error_message"] is None
 
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2024}
@@ -1406,7 +1437,8 @@ class TestIPTUWorkflowErrosAPI:
 
         print("✅ TESTE PASSOU: Dívida ativa com CDAs detectada e informada")
 
-    def test_divida_ativa_efs(self):
+    @pytest.mark.asyncio
+    async def test_divida_ativa_efs(self):
         """
         Testa cenário onde não há guias de IPTU mas existem EFs na dívida ativa.
 
@@ -1419,7 +1451,7 @@ class TestIPTUWorkflowErrosAPI:
         """
         print("\n🧪 Teste: Dívida ativa com EFs encontradas")
 
-        response1 = multi_step_service.invoke({
+        response1 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"inscricao_imobiliaria": "30000000"}
@@ -1427,7 +1459,7 @@ class TestIPTUWorkflowErrosAPI:
 
         assert response1["error_message"] is None
 
-        response2 = multi_step_service.invoke({
+        response2 = await multi_step_service.ainvoke({
             "service_name": self.service_name,
             "user_id": self.user_id,
             "payload": {"ano_exercicio": 2024}
@@ -1447,7 +1479,7 @@ class TestIPTUWorkflowErrosAPI:
 
 
 # Função main para executar todos os testes
-def run_all_tests():
+async def run_all_tests():
     """
     Executa todos os testes e exibe resumo.
     """
@@ -1487,12 +1519,15 @@ def run_all_tests():
             try:
                 print(f"\n🧪 Teste: {method_name.replace('_', ' ').title()}")
                 method = getattr(test_instance, method_name)
-                method()
+                # Executa método async diretamente (await) - todos no mesmo event loop
+                await method()
                 passed_tests += 1
             except Exception as e:
                 failed_tests += 1
                 print(f"💥 ERRO: {method_name}")
                 print(f"   Exceção: {str(e)}")
+            finally:
+                test_instance.teardown_method()
 
     # Resumo final
     print(f"\n{'='*80}")
@@ -1506,4 +1541,5 @@ def run_all_tests():
 
 
 if __name__ == "__main__":
-    run_all_tests()
+    # Executa todos os testes em um único event loop
+    asyncio.run(run_all_tests())

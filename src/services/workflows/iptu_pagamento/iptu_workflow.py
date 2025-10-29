@@ -5,9 +5,7 @@ Implementa o fluxo completo de consulta e emissão de guias de IPTU
 seguindo o fluxograma oficial da Prefeitura do Rio.
 """
 
-import asyncio
 import os
-from typing import Optional, Dict, List
 from langgraph.graph import StateGraph, END
 from loguru import logger
 
@@ -24,16 +22,15 @@ from src.services.workflows.iptu_pagamento.core.models import (
     EscolhaOutroImovelPayload,
     EscolhaFormatoDarmPayload,
     ConfirmacaoDadosPayload,
-    DadosGuias,
     DadosCotas,
-    DadosDividaAtiva,
 )
 from src.services.workflows.iptu_pagamento.api.api_service import IPTUAPIService
-from src.services.workflows.iptu_pagamento.api.api_service_fake import IPTUAPIServiceFake
+from src.services.workflows.iptu_pagamento.api.api_service_fake import (
+    IPTUAPIServiceFake,
+)
 from src.services.workflows.iptu_pagamento.api.exceptions import (
     APIUnavailableError,
     AuthenticationError,
-    DataNotFoundError,
 )
 from src.services.workflows.iptu_pagamento.templates import IPTUMessageTemplates
 from src.services.workflows.iptu_pagamento.helpers import utils
@@ -43,15 +40,12 @@ from src.services.workflows.iptu_pagamento.core.constants import (
     MAX_TENTATIVAS_ANO,
     ERROR_INSCRICAO_AUSENTE,
     ERROR_ANO_AUSENTE,
-    ERROR_DADOS_COTAS_AUSENTES,
-    ERROR_CAMPO_OBRIGATORIO,
     STATE_IS_DATA_CONFIRMED,
     STATE_WANTS_MORE_QUOTAS,
     STATE_WANTS_OTHER_GUIAS,
     STATE_WANTS_OTHER_PROPERTY,
     STATE_HAS_CONSULTED_GUIAS,
     STATE_USE_SEPARATE_DARM,
-    STATE_IS_SINGLE_QUOTA_FLOW,
     STATE_NEXT_QUESTION_TYPE,
     QUESTION_TYPE_MORE_QUOTAS,
     QUESTION_TYPE_OTHER_GUIAS,
@@ -101,7 +95,9 @@ class IPTUWorkflow(BaseWorkflow):
     # --- Nós do Grafo ---
 
     @handle_errors
-    def _informar_inscricao_imobiliaria(self, state: ServiceState) -> ServiceState:
+    async def _informar_inscricao_imobiliaria(
+        self, state: ServiceState
+    ) -> ServiceState:
         """Coleta a inscrição imobiliária do usuário."""
         # Verifica se há uma nova inscrição no payload (diferente da atual)
         if "inscricao_imobiliaria" in state.payload:
@@ -125,8 +121,8 @@ class IPTUWorkflow(BaseWorkflow):
                     f"🔍 Buscando dados do imóvel para inscrição: {nova_inscricao}"
                 )
                 try:
-                    dados_imovel = asyncio.run(
-                        self.api_service.get_imovel_info(inscricao=nova_inscricao)
+                    dados_imovel = await self.api_service.get_imovel_info(
+                        inscricao=nova_inscricao
                     )
 
                     if dados_imovel:
@@ -170,7 +166,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _escolher_ano_exercicio(self, state: ServiceState) -> ServiceState:
+    async def _escolher_ano_exercicio(self, state: ServiceState) -> ServiceState:
         """Coleta o ano de exercício para consulta do IPTU."""
         inscricao = state.data.get("inscricao_imobiliaria", "N/A")
         endereco = state.data.get("endereco", "N/A")
@@ -209,7 +205,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _consultar_guias_disponiveis(self, state: ServiceState) -> ServiceState:
+    async def _consultar_guias_disponiveis(self, state: ServiceState) -> ServiceState:
         """Consulta as guias disponíveis para pagamento."""
         # Verifica se a consulta de guias já foi realizada para evitar chamadas duplicadas à API
         if (
@@ -237,11 +233,9 @@ class IPTUWorkflow(BaseWorkflow):
             )
             return state
 
-        # Consulta guias via API (usa asyncio.run para executar código async)
+        # Consulta guias via API
         try:
-            dados_guias = asyncio.run(
-                self.api_service.consultar_guias(inscricao, exercicio)
-            )
+            dados_guias = await self.api_service.consultar_guias(inscricao, exercicio)
         except APIUnavailableError as e:
             # API indisponível - não limpa dados, permite retry
             state.agent_response = AgentResponse(
@@ -284,8 +278,8 @@ class IPTUWorkflow(BaseWorkflow):
                     logger.info(
                         f"Consultando dívida ativa para inscrição {inscricao} (ano {exercicio} sem guias)"
                     )
-                    divida_ativa_info = asyncio.run(
-                        self.api_service.get_divida_ativa_info(inscricao)
+                    divida_ativa_info = await self.api_service.get_divida_ativa_info(
+                        inscricao
                     )
 
                     # Se encontrou dívida ativa, informa ao usuário
@@ -359,7 +353,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _usuario_escolhe_guias_iptu(self, state: ServiceState) -> ServiceState:
+    async def _usuario_escolhe_guias_iptu(self, state: ServiceState) -> ServiceState:
         """Usuário escolhe qual guia de IPTU quer pagar (por número da guia)."""
         if "guia_escolhida" in state.payload:
             try:
@@ -438,7 +432,7 @@ class IPTUWorkflow(BaseWorkflow):
         )
 
     @handle_errors
-    def _consultar_cotas(self, state: ServiceState) -> ServiceState:
+    async def _consultar_cotas(self, state: ServiceState) -> ServiceState:
         """Consulta as cotas disponíveis para a guia selecionada via API."""
         # Se já temos dados de cotas, pula a consulta
         if "dados_cotas" in state.data:
@@ -458,10 +452,8 @@ class IPTUWorkflow(BaseWorkflow):
 
         # Faz consulta via API
         try:
-            dados_cotas = asyncio.run(
-                self.api_service.obter_cotas(
-                    str(inscricao), int(exercicio or 2025), str(guia_escolhida)
-                )
+            dados_cotas = await self.api_service.obter_cotas(
+                str(inscricao), int(exercicio or 2025), str(guia_escolhida)
             )
         except APIUnavailableError as e:
             # API indisponível - volta para seleção de guias
@@ -522,7 +514,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _usuario_escolhe_cotas_iptu(self, state: ServiceState) -> ServiceState:
+    async def _usuario_escolhe_cotas_iptu(self, state: ServiceState) -> ServiceState:
         """Permite ao usuário escolher as cotas a pagar."""
         # Se já temos cotas escolhidas, não precisa escolher novamente
         if "cotas_escolhidas" in state.data:
@@ -563,7 +555,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _perguntar_formato_darm(self, state: ServiceState) -> ServiceState:
+    async def _perguntar_formato_darm(self, state: ServiceState) -> ServiceState:
         """Pergunta se o usuário quer um boleto único ou separado para as cotas selecionadas."""
         if STATE_USE_SEPARATE_DARM in state.internal:
             return state
@@ -594,7 +586,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _confirmacao_dados_pagamento(self, state: ServiceState) -> ServiceState:
+    async def _confirmacao_dados_pagamento(self, state: ServiceState) -> ServiceState:
         """Confirma os dados coletados para gerar o pagamento."""
         if state.internal.get(STATE_IS_DATA_CONFIRMED, False):
             return state
@@ -655,7 +647,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _gerar_darm(self, state: ServiceState) -> ServiceState:
+    async def _gerar_darm(self, state: ServiceState) -> ServiceState:
         """Gera DARM(s) após confirmação dos dados."""
         if "guias_geradas" in state.data:
             return state
@@ -696,13 +688,11 @@ class IPTUWorkflow(BaseWorkflow):
 
         for cotas_para_darm in cotas_a_processar:
             try:
-                dados_darm = asyncio.run(
-                    self.api_service.consultar_darm(
-                        inscricao_imobiliaria=inscricao,
-                        exercicio=exercicio,
-                        numero_guia=guia_escolhida,
-                        cotas_selecionadas=cotas_para_darm,
-                    )
+                dados_darm = await self.api_service.consultar_darm(
+                    inscricao_imobiliaria=inscricao,
+                    exercicio=exercicio,
+                    numero_guia=guia_escolhida,
+                    cotas_selecionadas=cotas_para_darm,
                 )
 
                 if not dados_darm or not dados_darm.darm:
@@ -719,13 +709,11 @@ class IPTUWorkflow(BaseWorkflow):
 
                 # Tenta baixar o PDF, mas continua mesmo se falhar
                 try:
-                    urls = asyncio.run(
-                        self.api_service.download_pdf_darm(
-                            inscricao_imobiliaria=inscricao,
-                            exercicio=exercicio,
-                            numero_guia=guia_escolhida,
-                            cotas_selecionadas=cotas_para_darm,
-                        )
+                    urls = await self.api_service.download_pdf_darm(
+                        inscricao_imobiliaria=inscricao,
+                        exercicio=exercicio,
+                        numero_guia=guia_escolhida,
+                        cotas_selecionadas=cotas_para_darm,
                     )
                 except (APIUnavailableError, AuthenticationError) as e:
                     # Se falhar download do PDF, continua sem o PDF
@@ -799,7 +787,7 @@ class IPTUWorkflow(BaseWorkflow):
         return utils.tem_outras_guias_disponiveis(state)
 
     @handle_errors
-    def _pergunta_mesma_guia(self, state: ServiceState) -> ServiceState:
+    async def _pergunta_mesma_guia(self, state: ServiceState) -> ServiceState:
         """
         Roteador condicional inteligente pós-geração de boletos:
         1. Se há mais cotas disponíveis da mesma guia → redireciona para pergunta_mais_cotas
@@ -823,7 +811,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _pergunta_mais_cotas(self, state: ServiceState) -> ServiceState:
+    async def _pergunta_mais_cotas(self, state: ServiceState) -> ServiceState:
         """Pergunta se quer pagar mais cotas da mesma guia."""
         # Se já foi respondido, não pergunta novamente
         if STATE_WANTS_MORE_QUOTAS in state.internal:
@@ -848,7 +836,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _pergunta_outras_guias(self, state: ServiceState) -> ServiceState:
+    async def _pergunta_outras_guias(self, state: ServiceState) -> ServiceState:
         """Pergunta se quer pagar outras guias do mesmo imóvel."""
         # Se já foi respondido, não pergunta novamente
         if STATE_WANTS_OTHER_GUIAS in state.internal:
@@ -883,7 +871,7 @@ class IPTUWorkflow(BaseWorkflow):
         return IPTUMessageTemplates.boletos_gerados(boletos_formatados, inscricao)
 
     @handle_errors
-    def _pergunta_outro_imovel(self, state: ServiceState) -> ServiceState:
+    async def _pergunta_outro_imovel(self, state: ServiceState) -> ServiceState:
         """Pergunta se quer gerar guia para outro imóvel."""
         # Se já foi respondido, não pergunta novamente
         if STATE_WANTS_OTHER_PROPERTY in state.internal:
@@ -905,7 +893,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _reset_para_mais_cotas(self, state: ServiceState) -> ServiceState:
+    async def _reset_para_mais_cotas(self, state: ServiceState) -> ServiceState:
         """Reset seletivo para pagar mais cotas da mesma guia."""
         # Reset apenas dos campos relacionados à seleção de cotas e posteriores
         fields_to_reset = {
@@ -924,7 +912,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _reset_para_outras_guias(self, state: ServiceState) -> ServiceState:
+    async def _reset_para_outras_guias(self, state: ServiceState) -> ServiceState:
         """Reset seletivo para pagar outras guias do mesmo imóvel."""
         # Reset dos campos relacionados à seleção de guia e posteriores
         fields_to_reset = {
@@ -949,7 +937,7 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _reset_para_mesma_guia(self, state: ServiceState) -> ServiceState:
+    async def _reset_para_mesma_guia(self, state: ServiceState) -> ServiceState:
         """Reset dados para gerar nova guia do mesmo imóvel."""
         # Reset completo mantendo inscrição e dados das guias consultadas
         inscricao = state.data.get("inscricao_imobiliaria")
@@ -967,14 +955,14 @@ class IPTUWorkflow(BaseWorkflow):
         return state
 
     @handle_errors
-    def _reset_para_outro_imovel(self, state: ServiceState) -> ServiceState:
+    async def _reset_para_outro_imovel(self, state: ServiceState) -> ServiceState:
         """Reset completo para outro imóvel."""
         # Reset completo de tudo
         state_helpers.reset_completo(state)
         return state
 
     @handle_errors
-    def _finalizar_interacao(self, state: ServiceState) -> ServiceState:
+    async def _finalizar_interacao(self, state: ServiceState) -> ServiceState:
         """Finaliza a interação e faz reset automático dos dados."""
         # Mensagem de finalização
         response = AgentResponse(

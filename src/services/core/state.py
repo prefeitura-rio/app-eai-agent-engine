@@ -9,9 +9,14 @@ from src.services.core.models import ServiceState, ServiceMetadata
 from src.config.env import REDIS_URL
 
 try:
-    import redis
+    import redis.asyncio as redis
 except ImportError:
     redis = None
+
+try:
+    import aiofiles
+except ImportError:
+    aiofiles = None
 
 
 class StateMode(Enum):
@@ -23,32 +28,32 @@ class StateMode(Enum):
 
 
 class StorageBackend(ABC):
-    """Interface abstrata para backends de persistência."""
+    """Interface abstrata para backends de persistência (async)."""
 
     @abstractmethod
-    def load_user_data(self, user_id: str) -> Dict[str, Any]:
+    async def load_user_data(self, user_id: str) -> Dict[str, Any]:
         """Carrega todos os dados de um usuário."""
         pass
 
     @abstractmethod
-    def save_user_data(self, user_id: str, data: Dict[str, Any]) -> None:
+    async def save_user_data(self, user_id: str, data: Dict[str, Any]) -> None:
         """Salva todos os dados de um usuário."""
         pass
 
     @abstractmethod
-    def remove_user_data(self, user_id: str) -> bool:
+    async def remove_user_data(self, user_id: str) -> bool:
         """Remove todos os dados de um usuário."""
         pass
 
     @abstractmethod
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         """Verifica se o backend está acessível."""
         pass
 
 
 class JsonBackend(StorageBackend):
     """
-    Backend de persistência usando arquivos JSON locais.
+    Backend de persistência usando arquivos JSON locais (async).
     Armazena em: {data_dir}/{user_id}.json
     """
 
@@ -59,26 +64,39 @@ class JsonBackend(StorageBackend):
     def _get_file_path(self, user_id: str) -> Path:
         return self.data_dir / f"{user_id}.json"
 
-    def load_user_data(self, user_id: str) -> Dict[str, Any]:
+    async def load_user_data(self, user_id: str) -> Dict[str, Any]:
         file_path = self._get_file_path(user_id)
         if file_path.exists():
-            with open(file_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+            if aiofiles:
+                async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+                    content = await f.read()
+                    return json.loads(content)
+            else:
+                # Fallback para I/O síncrono se aiofiles não disponível
+                with open(file_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
         return {}
 
-    def save_user_data(self, user_id: str, data: Dict[str, Any]) -> None:
+    async def save_user_data(self, user_id: str, data: Dict[str, Any]) -> None:
         file_path = self._get_file_path(user_id)
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        content = json.dumps(data, ensure_ascii=False, indent=2)
 
-    def remove_user_data(self, user_id: str) -> bool:
+        if aiofiles:
+            async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+                await f.write(content)
+        else:
+            # Fallback para I/O síncrono se aiofiles não disponível
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+    async def remove_user_data(self, user_id: str) -> bool:
         file_path = self._get_file_path(user_id)
         if file_path.exists():
             os.remove(file_path)
             return True
         return False
 
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         try:
             return self.data_dir.exists() and os.access(self.data_dir, os.W_OK)
         except Exception:
@@ -87,14 +105,14 @@ class JsonBackend(StorageBackend):
 
 class RedisBackend(StorageBackend):
     """
-    Backend de persistência usando Redis.
+    Backend de persistência usando Redis (async).
     Suporta URLs no formato: redis://:password@host:port/db
-    Chaves: user:{user_id}
+    Chaves: user_id
     """
 
     def __init__(self, redis_url: str):
         """
-        Inicializa backend Redis a partir de uma URL.
+        Inicializa backend Redis a partir de uma URL (async).
 
         Args:
             redis_url: URL no formato redis://:password@host:port/db
@@ -105,14 +123,13 @@ class RedisBackend(StorageBackend):
 
         Raises:
             ImportError: Se biblioteca redis não estiver instalada
-            redis.ConnectionError: Se não conseguir conectar
         """
         if redis is None:
             raise ImportError(
                 "Biblioteca 'redis' não instalada. Instale com: uv add redis"
             )
 
-        # Usa from_url do redis que já faz todo o parsing
+        # Usa from_url do redis.asyncio que já faz todo o parsing
         self.client = redis.Redis.from_url(
             redis_url,
             decode_responses=True,
@@ -120,102 +137,129 @@ class RedisBackend(StorageBackend):
             socket_timeout=5,
         )
 
-        # Testa conexão
-        if not self.health_check():
-            raise redis.ConnectionError(f"Não foi possível conectar ao Redis")
-
     def _get_key(self, user_id: str) -> str:
         return user_id
 
-    def load_user_data(self, user_id: str) -> Dict[str, Any]:
+    async def load_user_data(self, user_id: str) -> Dict[str, Any]:
         key = self._get_key(user_id)
-        data = self.client.get(key)  # type: ignore[arg-type]
+        data = await self.client.get(key)  # type: ignore[arg-type]
         if data:
             return json.loads(data)  # type: ignore[arg-type]
         return {}
 
-    def save_user_data(self, user_id: str, data: Dict[str, Any]) -> None:
+    async def save_user_data(self, user_id: str, data: Dict[str, Any]) -> None:
         key = self._get_key(user_id)
         serialized = json.dumps(data, ensure_ascii=False)
-        self.client.set(key, serialized)
+        await self.client.set(key, serialized)
 
-    def remove_user_data(self, user_id: str) -> bool:
+    async def remove_user_data(self, user_id: str) -> bool:
         key = self._get_key(user_id)
-        deleted = self.client.delete(key)
+        deleted = await self.client.delete(key)
         return deleted > 0  # type: ignore[operator]
 
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         try:
-            result = self.client.ping()  # type: ignore[misc]
+            result = await self.client.ping()  # type: ignore[misc]
             return bool(result)
         except Exception:
             return False
 
+    async def close(self):
+        """Fecha a conexão com o Redis."""
+        await self.client.aclose()  # type: ignore[attr-defined]
+
 
 class CompositeBackend(StorageBackend):
     """
-    Backend composto que usa múltiplos backends simultaneamente.
+    Backend composto que usa múltiplos backends simultaneamente (async).
 
     Estratégia:
     - Leitura: Tenta Redis primeiro, fallback para JSON
-    - Escrita: Salva em ambos
-    - Remoção: Remove de ambos
+    - Escrita: Salva em ambos (paralelo com asyncio.gather)
+    - Remoção: Remove de ambos (paralelo com asyncio.gather)
     """
 
     def __init__(self, redis_backend: RedisBackend, json_backend: JsonBackend):
         self.redis = redis_backend
         self.json = json_backend
 
-    def load_user_data(self, user_id: str) -> Dict[str, Any]:
+    async def load_user_data(self, user_id: str) -> Dict[str, Any]:
         # Tenta Redis primeiro (mais rápido)
         try:
-            if self.redis.health_check():
-                data = self.redis.load_user_data(user_id)
+            if await self.redis.health_check():
+                data = await self.redis.load_user_data(user_id)
                 if data:
                     return data
         except Exception:
             pass
 
         # Fallback para JSON
-        return self.json.load_user_data(user_id)
+        return await self.json.load_user_data(user_id)
 
-    def save_user_data(self, user_id: str, data: Dict[str, Any]) -> None:
-        # Salva em ambos
+    async def save_user_data(self, user_id: str, data: Dict[str, Any]) -> None:
+        # Salva em ambos em paralelo usando asyncio.gather
+        import asyncio
+
         errors = []
 
-        try:
-            self.json.save_user_data(user_id, data)
-        except Exception as e:
-            errors.append(f"JSON: {e}")
+        # Salvar em JSON
+        async def save_json():
+            try:
+                await self.json.save_user_data(user_id, data)
+            except Exception as e:
+                errors.append(f"JSON: {e}")
 
-        try:
-            self.redis.save_user_data(user_id, data)
-        except Exception as e:
-            errors.append(f"Redis: {e}")
+        # Salvar em Redis
+        async def save_redis():
+            try:
+                await self.redis.save_user_data(user_id, data)
+            except Exception as e:
+                errors.append(f"Redis: {e}")
+
+        # Executa ambos em paralelo
+        await asyncio.gather(save_json(), save_redis(), return_exceptions=True)
 
         # Se ambos falharam, levanta erro
         if len(errors) == 2:
             raise Exception(f"Falha ao salvar em ambos backends: {', '.join(errors)}")
 
-    def remove_user_data(self, user_id: str) -> bool:
+    async def remove_user_data(self, user_id: str) -> bool:
+        import asyncio
+
         json_removed = False
         redis_removed = False
 
-        try:
-            json_removed = self.json.remove_user_data(user_id)
-        except Exception:
-            pass
+        # Remover de JSON
+        async def remove_json():
+            nonlocal json_removed
+            try:
+                json_removed = await self.json.remove_user_data(user_id)
+            except Exception:
+                pass
 
-        try:
-            redis_removed = self.redis.remove_user_data(user_id)
-        except Exception:
-            pass
+        # Remover de Redis
+        async def remove_redis():
+            nonlocal redis_removed
+            try:
+                redis_removed = await self.redis.remove_user_data(user_id)
+            except Exception:
+                pass
+
+        # Executa ambos em paralelo
+        await asyncio.gather(remove_json(), remove_redis(), return_exceptions=True)
 
         return json_removed or redis_removed
 
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         # Pelo menos um deve estar saudável
-        return self.json.health_check() or self.redis.health_check()
+        import asyncio
+
+        results = await asyncio.gather(
+            self.json.health_check(),
+            self.redis.health_check(),
+            return_exceptions=True,
+        )
+        return any(r for r in results if isinstance(r, bool) and r)
 
 
 class StateManager:
@@ -286,17 +330,17 @@ class StateManager:
         else:
             raise ValueError(f"StateMode inválido: {mode}")
 
-    def _load_user_data(self) -> Dict[str, Any]:
-        """Carrega todos os dados do usuário usando o backend configurado."""
-        return self.backend.load_user_data(self.user_id)
+    async def _load_user_data(self) -> Dict[str, Any]:
+        """Carrega todos os dados do usuário usando o backend configurado (async)."""
+        return await self.backend.load_user_data(self.user_id)
 
-    def _save_user_data(self, data: Dict[str, Any]) -> None:
-        """Salva todos os dados do usuário usando o backend configurado."""
-        self.backend.save_user_data(self.user_id, data)
+    async def _save_user_data(self, data: Dict[str, Any]) -> None:
+        """Salva todos os dados do usuário usando o backend configurado (async)."""
+        await self.backend.save_user_data(self.user_id, data)
 
-    def load_service_state(self, service_name: str) -> Optional[ServiceState]:
-        """Carrega o estado de um serviço específico."""
-        user_data = self._load_user_data()
+    async def load_service_state(self, service_name: str) -> Optional[ServiceState]:
+        """Carrega o estado de um serviço específico (async)."""
+        user_data = await self._load_user_data()
         service_data = user_data.get(service_name)
 
         if service_data:
@@ -309,12 +353,12 @@ class StateManager:
             )
         return None
 
-    def save_service_state(self, state: ServiceState) -> None:
-        """Salva o estado de um serviço."""
+    async def save_service_state(self, state: ServiceState) -> None:
+        """Salva o estado de um serviço (async)."""
         # Auto-atualiza o timestamp de updated_at antes de salvar
         state.metadata.update_timestamp()
 
-        user_data = self._load_user_data()
+        user_data = await self._load_user_data()
 
         # Atualiza apenas os dados do serviço específico
         user_data[state.service_name] = {
@@ -324,11 +368,13 @@ class StateManager:
             "metadata": state.metadata.model_dump(mode="json"),
         }
 
-        self._save_user_data(user_data)
+        await self._save_user_data(user_data)
 
-    def update_service_state(self, service_name: str, updates: Dict[str, Any]) -> None:
-        """Atualiza campos específicos do estado de um serviço."""
-        state = self.load_service_state(service_name)
+    async def update_service_state(
+        self, service_name: str, updates: Dict[str, Any]
+    ) -> None:
+        """Atualiza campos específicos do estado de um serviço (async)."""
+        state = await self.load_service_state(service_name)
 
         if state is None:
             # Criar novo estado se não existir
@@ -339,18 +385,18 @@ class StateManager:
             if hasattr(state, key):
                 setattr(state, key, value)
 
-        self.save_service_state(state)
+        await self.save_service_state(state)
 
-    def remove_service_state(self, service_name: str) -> bool:
-        """Remove o estado de um serviço específico."""
-        user_data = self._load_user_data()
+    async def remove_service_state(self, service_name: str) -> bool:
+        """Remove o estado de um serviço específico (async)."""
+        user_data = await self._load_user_data()
 
         if service_name in user_data:
             del user_data[service_name]
-            self._save_user_data(user_data)
+            await self._save_user_data(user_data)
             return True
         return False
 
-    def remove_user_data(self) -> bool:
-        """Remove todos os dados do usuário usando o backend configurado."""
-        return self.backend.remove_user_data(self.user_id)
+    async def remove_user_data(self) -> bool:
+        """Remove todos os dados do usuário usando o backend configurado (async)."""
+        return await self.backend.remove_user_data(self.user_id)

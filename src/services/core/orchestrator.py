@@ -107,7 +107,7 @@ class Orchestrator:
 
         return results
 
-    def execute_workflow(self, request: ServiceRequest) -> AgentResponse:
+    async def execute_workflow(self, request: ServiceRequest) -> AgentResponse:
         """
         Executa um workflow com base na requisição do agente.
 
@@ -140,8 +140,8 @@ class Orchestrator:
             data_dir=self.data_dir,
         )
 
-        # Carrega ou cria state do serviço
-        state = state_manager.load_service_state(request.service_name)
+        # Carrega ou cria state do serviço (async)
+        state = await state_manager.load_service_state(request.service_name)
 
         if state is None:
             # Cria novo state se não existir
@@ -157,13 +157,13 @@ class Orchestrator:
         workflow = workflow_class()
 
         try:
-            # Executa workflow passando state e payload
+            # Executa workflow passando state e payload (async)
             # O workflow retorna ServiceState com agent_response integrado
-            final_state = workflow.execute(state, request.payload)
+            final_state = await workflow.execute(state, request.payload)
 
-            # Salva state atualizado APÓS execução do workflow
+            # Salva state atualizado APÓS execução do workflow (async)
             # O state foi modificado durante a execução
-            state_manager.save_service_state(final_state)
+            await state_manager.save_service_state(final_state)
 
             # Retorna a resposta do agente que está integrada no ServiceState
             return final_state.agent_response

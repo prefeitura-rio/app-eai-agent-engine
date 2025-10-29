@@ -6,7 +6,7 @@ from src.services.core.models import ServiceRequest
 
 
 @tool
-def multi_step_service(
+async def multi_step_service(
     service_name: str, user_id: str, payload: Optional[Dict[str, Any]] = None
 ) -> dict:
     """
@@ -42,9 +42,9 @@ def multi_step_service(
         service_name=service_name, user_id=user_id, payload=payload or {}
     )
 
-    # Executa via orquestrador agnóstico
+    # Executa via orquestrador agnóstico (async)
     orchestrator = Orchestrator()
-    response = orchestrator.execute_workflow(request)
+    response = await orchestrator.execute_workflow(request)
 
     # Retorna resposta já formatada
     return response.model_dump()
