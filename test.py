@@ -1,42 +1,120 @@
+"""
+
+
+o fluxo esta meio confuso com etapas desnecessarias
+
+nao é necessario uma verificar_tipo_cotas,
+
+queremos o seguinte fluxo
+
+informa inscricao --> escolhe ano --> consulta guias (exibe pro usuario escolher) ---> apartir da guia escolhida consulta cotas (exibe para o usuario escolher) -> pergunta se o usuario quer um boleto para cada cota ou boleto unico para N cotas selecionadas (caso selecionou so uma nao é necessario perguntar) --> confirma dados ---> gerar darm (usar informacao de darm_separado para fazer um for em cada cota, se for unico passar tudo junto para gerar um unico pdf/boleto) -> no node do pertuntar mesma_guia exibe as informacoes geradas pelo darm
+
+
+nao remova as logicas de reset pois elas sao importantes para o fluxo funcionar corretamente
+
+"""
+
 import json
-import os
-import shutil
-from typing import List, Tuple
-
-from src.services import multi_step_service
-from src.services.state import get_or_create_service
-from src.services.tests import run_complete_tests
-from src.services.base_service import build_service_registry
-from src.services.repository import DataCollectionService, BankAccountService
-from uuid import uuid4
-
-# Service Registry - automatically generated from service classes
-SERVICE_REGISTRY = build_service_registry(
-    DataCollectionService,
-    BankAccountService,
+import time
+from src.tools.multi_step_service.tool import (
+    multi_step_service,
+    save_single_workflow_graph,
 )
+from src.tools.multi_step_service.workflows.iptu_pagamento.api.api_service import (
+    IPTUAPIService,
+)
+import asyncio
+from src.tools.multi_step_service.tool import _get_workflow_descriptions
 
-if "__main__" == __name__:
-    # Build the service registry
-    # print(multi_step_service.description)
-    # Load or create service instance
-    service_name = "bank_account_advanced"
-    user_id = str(uuid4())
-    # user_id = "dep_bug_test"
-    r = multi_step_service.invoke(
+
+async def main():
+    """
+    Main function to test IPTU workflow with real API integration.
+    """
+
+    user_id = f"test_user_iptu_{int(time.time())}"  # Unique user for each test
+    service_name = "iptu_pagamento"
+
+    print("=" * 80)
+    print("TESTING IPTU WORKFLOW WITH REAL API INTEGRATION")
+    print("=" * 80)
+
+    # Save workflow graph for visualization
+    # print("\n📊 Saving workflow graph...")
+    # save_single_workflow_graph(service_name=service_name)
+    # print("✅ Graph saved!")
+
+    # Test steps with real inscricao that works in production API
+    # Note: API accepts short inscricoes like "18", but Pydantic model requires 14-16 digits
+    # So we pad with zeros: "18" -> "00000000000018"
+    steps = [
+        {},
+        # Step 1: Provide inscricao (padded to 14 digits minimum)
         {
-            "user_id": user_id,
-            "service_name": service_name,
-            "payload": {
-                # "name": "João",
-                # "document_type": "CPF",
-                # "document_number": "12345678901",
-                # "email": "test@example.com",
-            },
+            "inscricao_imobiliaria": "00000018",  # "18" padded to 14 digits
         },
-    )
-    print(json.dumps(r, indent=2, ensure_ascii=False))
+        {
+            "ano_exercicio": 2025,
+        },
+        # Step 2: Choose which guia to pay (IPTU or Taxa de Lixo)
+        {
+            "guia_escolhida": "00",
+        },
+        # # Step 4: Choose cotas to pay (for parcelamento)
+        {
+            "cotas_escolhidas": ["01", "02", "03"],
+        },
+        # Step 5: Choose payment format (darf or codigo_barras)
+        {
+            "darm_separado": False,
+        },
+        # # # Step 6: Do you want to generate more guides for the same property?
+        {
+            "confirmacao": True,
+        },
+        # # # Step 7: Do you want to generate guides for another property?
+        # {
+        #     "mais_cotas": False,
+        # },
+        # {
+        #     "outro_imovel": False,
+        # },
+    ]
 
-    print(r["visual_schematic"])
-    print("\n\n")
-    run_complete_tests()
+    for i, payload in enumerate(steps, 1):
+        print(f"\n{'='*80}")
+        print(f"STEP {i}/{len(steps)}")
+        print(f"{'='*80}")
+        print(f"📤 Payload: {json.dumps(payload, indent=2, ensure_ascii=False)}")
+
+        response = await multi_step_service.ainvoke(
+            {
+                "service_name": service_name,
+                "user_id": user_id,
+                "payload": payload,
+            }
+        )
+
+        print(f"\n📥 Response:")
+        print(json.dumps(response, indent=2, ensure_ascii=False))
+
+
+def test_redis():
+    import redis
+    from src.config import env
+
+    r = redis.Redis.from_url(env.REDIS_URL, decode_responses=True)
+    # print all possible keys from redis
+    keys = r.keys("*")
+
+    print(f"Keys in Redis:{keys}")
+    for key in keys:
+        p = json.dumps(json.loads(str(r.get(key))), indent=2, ensure_ascii=False)
+        # print(p)
+
+
+if __name__ == "__main__":
+    # Run main test with full workflow
+    asyncio.run(main())
+    # test_redis()
+    # print(_get_workflow_descriptions())

@@ -20,6 +20,9 @@ dependencies = [
     "opentelemetry-sdk>=1.36.0",
     "pip>=25.2",
     "pydantic>=2.11.7",
+    "jmespath>=1.0.1",
+    "google-cloud-storage>=2.19.0",
+    "redis>=7.0.1",
 ]
 
 

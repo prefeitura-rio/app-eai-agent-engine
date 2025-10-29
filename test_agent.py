@@ -8,20 +8,11 @@ import json
 import traceback
 from datetime import datetime, timezone
 
-import vertexai
-from vertexai import agent_engines
 
 from src.config import env
 from src.prompt import prompt_data
 from engine.agent import Agent
 from src.tools import mcp_tools
-
-# Initialize Vertex AI
-vertexai.init(
-    project=env.PROJECT_ID,
-    location=env.LOCATION,
-    staging_bucket=env.GCS_BUCKET,
-)
 
 # User ID for testing
 from uuid import uuid4
@@ -68,8 +59,6 @@ async def test_agent_with_message(message_text: str):
 
     try:
         start_time = datetime.now(timezone.utc)
-        print(f"⏰ Start time: {start_time}")
-
         # Query the agent
         result = await local_agent.async_query(input=data, config=config)
 
@@ -101,7 +90,9 @@ async def test_agent_with_message(message_text: str):
                         or "additionalproperties" in tool_content.lower()
                     ):
                         print(f"      ⚠️  Schema content detected!")
-                        print(f"      📄 Content: {tool_content}")
+                        print(
+                            f"      📄 Content: {json.dumps(tool_content, indent=2, ensure_ascii=False)}"
+                        )
 
                     # Try to parse as JSON to see schema structure
                     try:
@@ -151,14 +142,18 @@ async def run_agent_tests():
     print("Verificando erro 'additionalProperties' no schema")
     print("=" * 80)
 
-    # Predefined test messages
+    # Predefined test messages for testing the refactored bank_account workflow
     test_messages = [
         "preciso abrir uma conta bancária",
-        "quero cadastrar cpf, conta corrente",
-        "12332112312, 100000",
+        "meu nome é João Silva e email joao@test.com",
+        "quero conta corrente",
+        "quero fazer um depósito",
+        "500 reais",
+        "quero ver meu saldo",
     ]
 
     results = []
+    start_time = datetime.now(timezone.utc)
 
     for i, message in enumerate(test_messages, 1):
         print(f"\n🧪 TEST {i}/{len(test_messages)}")
@@ -188,6 +183,9 @@ async def run_agent_tests():
     print(
         f"\n🎯 Final Status: {'All tests passed!' if successful_tests == total_tests else 'Some tests failed'}"
     )
+    end_time = datetime.now(timezone.utc)
+    execution_time = (end_time - start_time).total_seconds()
+    print(f"\n⏱️  Total execution time: {execution_time:.3f}s")
 
 
 if __name__ == "__main__":

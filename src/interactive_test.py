@@ -11,6 +11,7 @@ from src.config import env
 from src.prompt import prompt_data
 from engine.agent import Agent
 from src.tools import mcp_tools
+from uuid import uuid4
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -25,7 +26,8 @@ def get_agent():
     )
 
 
-user_id = "hahahahahaha5"
+# user_id = "hahaha010101234asd4"
+user_id = str(uuid4())
 
 
 # Initialize agents
@@ -259,7 +261,7 @@ async def interactive_chat(use_local=False):
                     result = await local_agent.async_query(input=data, config=config)
                 else:
                     result = await remote_agent.async_query(input=data, config=config)
-                print(result)
+                # print(result)
                 # Parse and display the result
                 parse_agent_response(result, is_local=use_local, start_time=start_time)
 

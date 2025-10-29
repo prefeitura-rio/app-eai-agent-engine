@@ -38,3 +38,21 @@ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = getenv_or_action(
 OTEL_EXPORTER_OTLP_TRACES_HEADERS = getenv_or_action(
     "OTEL_EXPORTER_OTLP_TRACES_HEADERS"
 )
+
+# IPTU API Configuration
+IPTU_API_URL = getenv_or_action("IPTU_API_URL")
+IPTU_API_TOKEN = getenv_or_action("IPTU_API_TOKEN")
+
+SHORT_API_URL = getenv_or_action("SHORT_API_URL")
+SHORT_API_TOKEN = getenv_or_action("SHORT_API_TOKEN")
+
+WA_IPTU_URL = getenv_or_action("WA_IPTU_URL")
+WA_IPTU_TOKEN = getenv_or_action("WA_IPTU_TOKEN")
+WA_IPTU_PUBLIC_KEY = getenv_or_action("WA_IPTU_PUBLIC_KEY")
+
+WORKFLOWS_GCP_SERVICE_ACCOUNT = getenv_or_action("WORKFLOWS_GCP_SERVICE_ACCOUNT")
+
+DIVIDA_ATIVA_API_URL = getenv_or_action("DIVIDA_ATIVA_API_URL")
+DIVIDA_ATIVA_ACCESS_KEY = getenv_or_action("DIVIDA_ATIVA_ACCESS_KEY")
+REDIS_URL = getenv_or_action("REDIS_URL")
+REDIS_TTL_SECONDS = int(getenv_or_action("REDIS_TTL_SECONDS"))
