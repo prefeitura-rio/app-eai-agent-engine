@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
 from src.services.core.models import ServiceState, ServiceMetadata
-from src.config.env import REDIS_URL
+from src.config import env
 
 try:
     import redis.asyncio as redis
@@ -110,7 +110,7 @@ class RedisBackend(StorageBackend):
     Chaves: user_id
     """
 
-    def __init__(self, redis_url: str):
+    def __init__(self, redis_url: str, ttl_seconds: Optional[int] = None):
         """
         Inicializa backend Redis a partir de uma URL (async).
 
@@ -130,6 +130,7 @@ class RedisBackend(StorageBackend):
             )
 
         # Usa from_url do redis.asyncio que já faz todo o parsing
+        self.ttl_seconds = ttl_seconds
         self.client = redis.Redis.from_url(
             redis_url,
             decode_responses=True,
@@ -150,7 +151,7 @@ class RedisBackend(StorageBackend):
     async def save_user_data(self, user_id: str, data: Dict[str, Any]) -> None:
         key = self._get_key(user_id)
         serialized = json.dumps(data, ensure_ascii=False)
-        await self.client.set(key, serialized)
+        await self.client.set(name=key, value=serialized, ex=self.ttl_seconds)
 
     async def remove_user_data(self, user_id: str) -> bool:
         key = self._get_key(user_id)
@@ -280,6 +281,7 @@ class StateManager:
         data_dir: str = "src/services/data",
         backend_mode: StateMode = StateMode.JSON,
         redis_url: Optional[str] = None,
+        redis_ttl_seconds: Optional[int] = None,
     ):
         """
         Inicializa o StateManager.
@@ -296,13 +298,16 @@ class StateManager:
         """
         self.user_id = user_id
         self.backend_mode = backend_mode
-        self.backend = self._create_backend(data_dir, backend_mode, redis_url)
+        self.backend = self._create_backend(
+            data_dir, backend_mode, redis_url, redis_ttl_seconds
+        )
 
     def _create_backend(
         self,
         data_dir: str,
         mode: StateMode,
         redis_url: Optional[str],
+        redis_ttl_seconds: Optional[int],
     ) -> StorageBackend:
         """Cria o backend apropriado baseado no modo."""
 
@@ -310,21 +315,23 @@ class StateManager:
             return JsonBackend(data_dir=data_dir)
 
         elif mode == StateMode.REDIS:
-            url = redis_url or REDIS_URL
+            url = redis_url or env.REDIS_URL
+            ttl_seconds = redis_ttl_seconds or env.REDIS_TTL_SECONDS
             if not url:
                 raise ValueError(
                     "StateMode.REDIS requer redis_url ou REDIS_URL configurado"
                 )
-            return RedisBackend(redis_url=url)
+            return RedisBackend(redis_url=url, ttl_seconds=ttl_seconds)
 
         elif mode == StateMode.BOTH:
-            url = redis_url or REDIS_URL
+            url = redis_url or env.REDIS_URL
+            ttl_seconds = redis_ttl_seconds or env.REDIS_TTL_SECONDS
             if not url:
                 raise ValueError(
                     "StateMode.BOTH requer redis_url ou REDIS_URL configurado"
                 )
             json_backend = JsonBackend(data_dir=data_dir)
-            redis_backend = RedisBackend(redis_url=url)
+            redis_backend = RedisBackend(redis_url=url, ttl_seconds=ttl_seconds)
             return CompositeBackend(redis_backend, json_backend)
 
         else:
