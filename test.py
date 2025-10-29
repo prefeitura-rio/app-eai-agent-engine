@@ -17,7 +17,7 @@ nao remova as logicas de reset pois elas sao importantes para o fluxo funcionar 
 import json
 import time
 from src.services.tool import multi_step_service, save_single_workflow_graph
-from src.services.workflows.iptu_pagamento.api_service import IPTUAPIService
+from src.services.workflows.iptu_pagamento.api.api_service import IPTUAPIService
 import asyncio
 
 
@@ -42,13 +42,14 @@ def main():
     # Note: API accepts short inscricoes like "18", but Pydantic model requires 14-16 digits
     # So we pad with zeros: "18" -> "00000000000018"
     steps = [
+        {},
         # Step 1: Provide inscricao (padded to 14 digits minimum)
         {
-            "inscricao_imobiliaria": "00000018",  # "18" padded to 14 digits
+            "inscricao_imobiliaria": "12312312312300000018",  # "18" padded to 14 digits
         },
-        {
-            "ano_exercicio": 2024,
-        },
+        # {
+        #     "ano_exercicio": 2024,
+        # },
         # # Step 2: Choose which guia to pay (IPTU or Taxa de Lixo)
         # {
         #     "guia_escolhida": "00",
