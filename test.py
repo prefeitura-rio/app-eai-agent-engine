@@ -45,11 +45,11 @@ def main():
         {},
         # Step 1: Provide inscricao (padded to 14 digits minimum)
         {
-            "inscricao_imobiliaria": "12312312312300000018",  # "18" padded to 14 digits
+            "inscricao_imobiliaria": "00000018",  # "18" padded to 14 digits
         },
-        # {
-        #     "ano_exercicio": 2024,
-        # },
+        {
+            "ano_exercicio": 2024,
+        },
         # # Step 2: Choose which guia to pay (IPTU or Taxa de Lixo)
         # {
         #     "guia_escolhida": "00",
@@ -93,6 +93,18 @@ def main():
         print(json.dumps(response, indent=2, ensure_ascii=False))
 
 
+def test_redis():
+    import redis
+    from src.config import env
+
+    r = redis.Redis.from_url(env.REDIS_URL, decode_responses=True)
+    # print all possible keys from redis
+    keys = r.keys("*")
+    print(f"Keys in Redis:{keys}")
+    print(r.get("test_user_iptu_1761717311"))
+
+
 if __name__ == "__main__":
     # Run main test with full workflow
-    main()
+    # main()
+    test_redis()

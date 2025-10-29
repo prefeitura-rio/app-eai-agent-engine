@@ -1,6 +1,6 @@
-from typing import Dict, Type
+from typing import Dict, Type, Optional
 from src.services.core.models import ServiceRequest, ServiceState, AgentResponse
-from src.services.core.state import StateManager
+from src.services.core.state import StateManager, StateMode
 from src.services.workflows import workflows
 
 
@@ -10,10 +10,28 @@ class Orchestrator:
     - Listar workflows existentes
     - Executar workflows
     - Auto-inicializa com state manager e workflows
+
+    Permite configurar modo de persistência (JSON, REDIS, BOTH).
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        backend_mode: StateMode = StateMode.BOTH,
+        redis_url: Optional[str] = None,
+        data_dir: str = "src/services/data",
+    ):
+        """
+        Inicializa o Orchestrator.
+
+        Args:
+            backend_mode: Modo de persistência (padrão: StateMode.JSON)
+            redis_url: URL Redis (opcional, usa REDIS_URL da env se None)
+            data_dir: Diretório para arquivos JSON
+        """
         self.workflows: Dict[str, Type] = {}
+        self.backend_mode = backend_mode
+        self.redis_url = redis_url
+        self.data_dir = data_dir
 
         # Importa workflows automaticamente usando service_name
         for workflow_class in workflows:
@@ -114,8 +132,13 @@ class Orchestrator:
                 data={},
             )
 
-        # Cria StateManager específico para este user_id
-        state_manager = StateManager(user_id=request.user_id)
+        # Cria StateManager específico para este user_id com configurações do Orchestrator
+        state_manager = StateManager(
+            user_id=request.user_id,
+            backend_mode=self.backend_mode,
+            redis_url=self.redis_url,
+            data_dir=self.data_dir,
+        )
 
         # Carrega ou cria state do serviço
         state = state_manager.load_service_state(request.service_name)
