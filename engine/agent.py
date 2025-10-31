@@ -2,6 +2,7 @@ from typing import Any, Iterator, List, Optional, AsyncIterable
 from langchain.load.dump import dumpd
 from datetime import datetime, timezone
 import json
+from langchain_core.messages import trim_messages
 
 # from langgraph.prebuilt import create_react_agent
 # use custom graph without _validate_chat_history
@@ -188,6 +189,116 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return {"messages": messages}
 
+    def _filter_short_term_memory(self, state):
+        """Filter messages based on time and token limits for short-term memory.
+        
+        This method implements short-term memory by:
+        1. Filtering out messages older than SHORT_MEMORY_TIME_LIMIT
+        2. Applying token limit using trimMessages
+        3. Always preserving system messages
+        
+        NOTE: PostgresCheckpointer loads ALL messages from the database for the thread.
+        This filter reduces what goes to the LLM (saves tokens/improves performance),
+        but the full history remains in the database.
+        
+        Args:
+            state: The current state containing messages (full history from database)
+            
+        Returns:
+            dict: Updated state with filtered messages (only recent messages)
+        """
+        from src.config.env import SHORT_MEMORY_TIME_LIMIT, SHORT_MEMORY_TOKEN_LIMIT
+        from langchain_core.messages import SystemMessage, AIMessage, ToolMessage
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        messages = state.get("messages", [])
+        
+        if not messages:
+            return {"messages": []}
+        
+        # Log the initial message count (retrieved from database)
+        logger.info(f"[Short-Term Memory] Loaded {len(messages)} messages from database")
+        
+        # Separate system messages (always kept)
+        system_messages = [msg for msg in messages if isinstance(msg, SystemMessage)]
+        non_system_messages = [msg for msg in messages if not isinstance(msg, SystemMessage)]
+        
+        logger.info(f"[Short-Term Memory] System messages: {len(system_messages)}, Non-system messages: {len(non_system_messages)}")
+        
+        if not non_system_messages:
+            return {"messages": system_messages}
+        
+        # Step 1: Time filtering - remove messages older than time limit
+        current_time = datetime.now(timezone.utc)
+        time_filtered_messages = []
+        
+        for message in non_system_messages:
+            timestamp_str = message.additional_kwargs.get("timestamp") if hasattr(message, "additional_kwargs") else None
+            
+            if timestamp_str:
+                try:
+                    message_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    age_seconds = (current_time - message_time).total_seconds()
+                    
+                    if age_seconds <= SHORT_MEMORY_TIME_LIMIT:
+                        time_filtered_messages.append(message)
+                except (ValueError, AttributeError) as e:
+                    logger.warning(f"Invalid timestamp format in message: {timestamp_str}, error: {e}")
+                    # Keep messages with invalid timestamps
+                    time_filtered_messages.append(message)
+            else:
+                # Keep messages without timestamps (e.g., new messages)
+                time_filtered_messages.append(message)
+        
+        if not time_filtered_messages:
+            # If all messages are filtered out, keep at least the last message
+            logger.warning(f"[Short-Term Memory] All messages filtered by time limit, keeping last message")
+            time_filtered_messages = [non_system_messages[-1]]
+        else:
+            messages_filtered_by_time = len(non_system_messages) - len(time_filtered_messages)
+            if messages_filtered_by_time > 0:
+                logger.info(f"[Short-Term Memory] Filtered out {messages_filtered_by_time} messages older than {SHORT_MEMORY_TIME_LIMIT / 86400:.1f} days")
+        
+        # Step 2: Apply token limiting using trimMessages
+        try:
+            # Use trimMessages to limit tokens
+            token_filtered_messages = trim_messages(
+                time_filtered_messages,
+                max_tokens=SHORT_MEMORY_TOKEN_LIMIT,
+                strategy="last",
+                token_counter=lambda msgs: sum(len(str(m.content)) // 4 for m in msgs),  # Rough token estimation
+                start_on="human",
+                end_on=["human", "tool"],
+            )
+            
+            messages_filtered_by_tokens = len(time_filtered_messages) - len(token_filtered_messages)
+            if messages_filtered_by_tokens > 0:
+                logger.info(f"[Short-Term Memory] Filtered out {messages_filtered_by_tokens} messages due to {SHORT_MEMORY_TOKEN_LIMIT} token limit")
+            
+            # If trim_messages returns empty or if the most recent message alone exceeds the limit
+            if not token_filtered_messages:
+                logger.error(
+                    f"[Short-Term Memory] The most recent message exceeds token limit ({SHORT_MEMORY_TOKEN_LIMIT} tokens). "
+                    "Proceeding with just the last message."
+                )
+                token_filtered_messages = [time_filtered_messages[-1]]
+                
+        except Exception as e:
+            logger.error(f"[Short-Term Memory] Error applying token limit: {e}. Using time filtered messages.")
+            token_filtered_messages = time_filtered_messages
+        
+        # Step 3: Combine system messages with filtered messages
+        filtered_messages = system_messages + token_filtered_messages
+        
+        logger.info(
+            f"[Short-Term Memory] Final result: {len(filtered_messages)} messages "
+            f"({len(system_messages)} system + {len(token_filtered_messages)} conversation) "
+            f"sent to LLM out of {len(messages)} total in database"
+        )
+        
+        return {"messages": filtered_messages}
+
     def _inject_thread_id_in_user_id_params(self, state, config=None):
         """Hook para injetar thread_id em qualquer parâmetro user_id de tool calls.
 
@@ -238,7 +349,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         return {"messages": messages}
 
     def _combined_pre_model_hook(self, state, config=None):
+        # Step 1: Add timestamps to new messages
         state = self._add_timestamp_to_messages(state)
+        
+        # Step 2: Apply short-term memory filtering
+        state = self._filter_short_term_memory(state)
+        
+        # Step 3: Inject thread_id into tool calls
         return self._inject_thread_id_in_user_id_params(state, config)
 
     def _combined_post_model_hook(self, state, config=None):
