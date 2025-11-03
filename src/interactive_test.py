@@ -25,7 +25,7 @@ def get_agent():
     )
 
 
-user_id = "hahahahahaha1"
+user_id = "hahaha999"
 
 
 # Initialize agents
@@ -225,6 +225,7 @@ async def interactive_chat(use_local=False):
             elif user_input.lower() == "help":
                 print("\n📋 Available commands:")
                 print("  - Type your message to chat with the agent")
+                print("  - '!ai <message>' to inject a message as if the agent sent it")
                 print("  - 'quit' to exit")
                 print("  - 'help' to show this help")
                 print("  - 'clear' to clear the screen")
@@ -235,12 +236,19 @@ async def interactive_chat(use_local=False):
             elif not user_input:
                 continue
 
-            print(f"\n🔄 Processing: {user_input}")
-
-            # Prepare the data
-            data = {
-                "messages": [{"role": "human", "content": user_input}],
-            }
+            # Check if user wants to send a message as AI
+            if user_input.startswith("!ai "):
+                ai_message = user_input.replace("!ai ", "", 1).strip()
+                print(f"\n🤖 Injecting AI message: {ai_message}")
+                data = {
+                    "messages": [{"role": "ai", "content": ai_message}],
+                }
+            else:
+                print(f"\n🔄 Processing: {user_input}")
+                # Prepare the data
+                data = {
+                    "messages": [{"role": "human", "content": user_input}],
+                }
 
             config = {"configurable": {"thread_id": user_id}}
             try:
