@@ -25,7 +25,7 @@ def get_agent():
     )
 
 
-user_id = "hahaha999"
+user_id = "hahaha999999"
 
 
 # Initialize agents
@@ -238,14 +238,14 @@ async def interactive_chat(use_local=False):
 
             # Check if user wants to send a message as AI
             if user_input.startswith("!ai "):
-                ai_message = user_input.replace("!ai ", "", 1).strip()
-                print(f"\n🤖 Injecting AI message: {ai_message}")
+                user_input = user_input.replace("!ai ", "", 1).strip()
                 data = {
-                    "messages": [{"role": "ai", "content": ai_message}],
+                    "messages": [{"role": "ai", "content": user_input}],
                 }
+                type = "history"
             else:
                 print(f"\n🔄 Processing: {user_input}")
-                # Prepare the data
+                type = "chat"
                 data = {
                     "messages": [{"role": "human", "content": user_input}],
                 }
@@ -257,9 +257,13 @@ async def interactive_chat(use_local=False):
 
                 # Use async_query for both agents
                 if use_local:
-                    result = await local_agent.async_query(input=data, config=config)
+                    result = await local_agent.async_query(
+                        input=data, config=config, type=type
+                    )
                 else:
-                    result = await remote_agent.async_query(input=data, config=config)
+                    result = await remote_agent.async_query(
+                        input=data, config=config, type=type
+                    )
                 print(result)
                 # Parse and display the result
                 parse_agent_response(result, is_local=use_local, start_time=start_time)

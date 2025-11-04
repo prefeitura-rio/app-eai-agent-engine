@@ -309,7 +309,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             raise ValueError(
                 "Graph is not initialized. Call _ensure_async_setup first."
             )
-
+        type = kwargs.pop("type", "chat")
+        if type == "history":
+            # Bypass filtering for history requests
+            self._graph.update_state(
+                config=kwargs.get("config", {}), values=kwargs.get("input", {})
+            )
+            return {}
         result = await self._graph.ainvoke(**kwargs)
         filtered_result = self._filter_current_interaction(result)
 
