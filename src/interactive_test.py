@@ -236,6 +236,7 @@ async def interactive_chat(use_local=False):
             elif not user_input:
                 continue
 
+            type = None
             # Check if user wants to send a message as AI
             if user_input.startswith("!ai "):
                 user_input = user_input.replace("!ai ", "", 1).strip()
@@ -245,7 +246,6 @@ async def interactive_chat(use_local=False):
                 type = "history"
             else:
                 print(f"\n🔄 Processing: {user_input}")
-                type = "chat"
                 data = {
                     "messages": [{"role": "human", "content": user_input}],
                 }
