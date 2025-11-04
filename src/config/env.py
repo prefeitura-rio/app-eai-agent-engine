@@ -38,9 +38,3 @@ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = getenv_or_action(
 OTEL_EXPORTER_OTLP_TRACES_HEADERS = getenv_or_action(
     "OTEL_EXPORTER_OTLP_TRACES_HEADERS"
 )
-
-# Short-term memory limits
-SHORT_MEMORY_TIME_LIMIT = round(
-    float(getenv_or_action("SHORT_MEMORY_TIME_LIMIT")) * 86400
-)  # Convert days to seconds
-SHORT_MEMORY_TOKEN_LIMIT = int(getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT"))
