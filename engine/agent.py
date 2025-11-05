@@ -312,10 +312,17 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         type = kwargs.pop("type", None)
         if type == "history":
             # Bypass filtering for history requests
-            self._graph.update_state(
-                config=kwargs.get("config", {}), values=kwargs.get("input", {})
-            )
-            return {}
+            try:
+                self._graph.update_state(
+                    config=kwargs.get("config", {}), values=kwargs.get("input", {})
+                )
+                return {
+                    "status_code": 200,
+                    "status": "history updated",
+                    "message": None,
+                }
+            except Exception as e:
+                return {"status_code": 500, "status": "error", "message": str(e)}
         result = await self._graph.ainvoke(**kwargs)
         filtered_result = self._filter_current_interaction(result)
 

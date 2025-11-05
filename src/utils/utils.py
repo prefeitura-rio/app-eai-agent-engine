@@ -1,11 +1,3 @@
-# from src.tools import mcp_tools
-
-# for tool in mcp_tools:
-#     print("tool_name: ", tool.name)
-#     print("tool_description: ", tool.description)
-#     print("\n\n")
-
-
 import random
 import string
 import json
@@ -44,19 +36,3 @@ def gerar_conversa_aleatoria(num_mensagens: int, tamanho_content: int) -> list:
         conversa.append(mensagem)
 
     return conversa
-
-
-# --- Como Usar ---
-
-# 1. Defina os parâmetros desejados
-QUANTIDADE_DE_MENSAGENS = 1000
-TAMANHO_DO_CONTENT = 800  # Define que cada mensagem terá 80 caracteres
-
-# 2. Chame a função para gerar a lista de mensagens
-lista_de_mensagens = gerar_conversa_aleatoria(
-    num_mensagens=QUANTIDADE_DE_MENSAGENS, tamanho_content=TAMANHO_DO_CONTENT
-)
-
-# 3. Imprima o resultado de forma legível (usando o módulo json para formatação)
-# O 'indent=2' formata o JSON para que seja fácil de ler
-print(json.dumps(lista_de_mensagens, indent=2))

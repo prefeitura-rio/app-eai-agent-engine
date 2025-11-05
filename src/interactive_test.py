@@ -11,6 +11,8 @@ from src.config import env
 from src.prompt import prompt_data
 from engine.agent import Agent
 from src.tools import mcp_tools
+from src.utils.utils import gerar_conversa_aleatoria
+
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -25,7 +27,9 @@ def get_agent():
     )
 
 
-user_id = "hahaha999999"
+lista_de_mensagens = gerar_conversa_aleatoria(num_mensagens=1000, tamanho_content=1000)
+
+user_id = "hasdasdasd12312312"  # Unique user ID for the session
 
 
 # Initialize agents
@@ -244,6 +248,13 @@ async def interactive_chat(use_local=False):
                     "messages": [{"role": "ai", "content": user_input}],
                 }
                 type = "history"
+            elif user_input.startswith("!fake"):
+                # For testing: send a batch of fake messages
+                data = {
+                    "messages": lista_de_mensagens,
+                }
+                type = "history"
+                print(f"\n🔄 Processing batch of {len(lista_de_mensagens)} messages...")
             else:
                 print(f"\n🔄 Processing: {user_input}")
                 data = {
@@ -264,9 +275,16 @@ async def interactive_chat(use_local=False):
                     result = await remote_agent.async_query(
                         input=data, config=config, type=type
                     )
-                print(result)
+                # print(result)
                 # Parse and display the result
-                parse_agent_response(result, is_local=use_local, start_time=start_time)
+
+                if type == "history":
+                    print("\n✅ History updated successfully.")
+                    print(result)
+                else:
+                    parse_agent_response(
+                        result, is_local=use_local, start_time=start_time
+                    )
 
             except Exception as e:
                 print(f"\n❌ Error: {str(e)}")
