@@ -408,10 +408,11 @@ class EAIClient:
 async def main():
     # Exemplo com rate limiting de 50 requisições por minuto
     client = EAIClient(
-        rate_limit_requests_per_minute=50, reasoning_engine_id=env.REASONING_ENGINE_ID
+        rate_limit_requests_per_minute=50,
+        # reasoning_engine_id=env.REASONING_ENGINE_ID
     )
     response = await client.send_message_and_get_response(
-        user_number="asdsad123123cvvc",
+        user_number="asdsad123123cvvasdasdasdasdc",
         message="me manda um oi em negrito",
         previous_message="ASDASDASDASDASD",
     )
