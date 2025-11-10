@@ -10,7 +10,7 @@ from vertexai import agent_engines
 from src.config import env
 from src.prompt import prompt_data
 from engine.agent import Agent
-from src.tools import mcp_tools
+from src.agent_tools import mcp_tools
 from src.utils.utils import gerar_conversa_aleatoria
 
 
