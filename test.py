@@ -1,18 +1,4 @@
-"""
-
-
-o fluxo esta meio confuso com etapas desnecessarias
-
-nao é necessario uma verificar_tipo_cotas,
-
-queremos o seguinte fluxo
-
-informa inscricao --> escolhe ano --> consulta guias (exibe pro usuario escolher) ---> apartir da guia escolhida consulta cotas (exibe para o usuario escolher) -> pergunta se o usuario quer um boleto para cada cota ou boleto unico para N cotas selecionadas (caso selecionou so uma nao é necessario perguntar) --> confirma dados ---> gerar darm (usar informacao de darm_separado para fazer um for em cada cota, se for unico passar tudo junto para gerar um unico pdf/boleto) -> no node do pertuntar mesma_guia exibe as informacoes geradas pelo darm
-
-
-nao remova as logicas de reset pois elas sao importantes para o fluxo funcionar corretamente
-
-"""
+""" """
 
 import json
 import time

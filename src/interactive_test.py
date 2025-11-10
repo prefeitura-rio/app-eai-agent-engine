@@ -11,7 +11,8 @@ from src.config import env
 from src.prompt import prompt_data
 from engine.agent import Agent
 from src.tools import mcp_tools
-from uuid import uuid4
+from src.utils.utils import gerar_conversa_aleatoria
+
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -26,8 +27,9 @@ def get_agent():
     )
 
 
-# user_id = "hahaha010101234asd4"
-user_id = str(uuid4())
+lista_de_mensagens = gerar_conversa_aleatoria(num_mensagens=10, tamanho_content=100)
+
+user_id = "asdasdasdasdasdasd"  # Unique user ID for the session
 
 
 # Initialize agents
@@ -234,6 +236,7 @@ async def interactive_chat(use_local=False):
             elif user_input.lower() == "help":
                 print("\n📋 Available commands:")
                 print("  - Type your message to chat with the agent")
+                print("  - '!ai <message>' to inject a message as if the agent sent it")
                 print("  - 'quit' to exit")
                 print("  - 'help' to show this help")
                 print("  - 'clear' to clear the screen")
@@ -244,12 +247,26 @@ async def interactive_chat(use_local=False):
             elif not user_input:
                 continue
 
-            print(f"\n🔄 Processing: {user_input}")
-
-            # Prepare the data
-            data = {
-                "messages": [{"role": "human", "content": str(user_input)}],
-            }
+            type = None
+            # Check if user wants to send a message as AI
+            if user_input.startswith("!ai "):
+                user_input = user_input.replace("!ai ", "", 1).strip()
+                data = {
+                    "messages": [{"role": "ai", "content": user_input}],
+                }
+                type = "history"
+            elif user_input.startswith("!fake"):
+                # For testing: send a batch of fake messages
+                data = {
+                    "messages": lista_de_mensagens,
+                }
+                type = "history"
+                print(f"\n🔄 Processing batch of {len(lista_de_mensagens)} messages...")
+            else:
+                print(f"\n🔄 Processing: {user_input}")
+                data = {
+                    "messages": [{"role": "human", "content": user_input}],
+                }
 
             config = {"configurable": {"thread_id": user_id}}
             try:
@@ -258,12 +275,23 @@ async def interactive_chat(use_local=False):
 
                 # Use async_query for both agents
                 if use_local:
-                    result = await local_agent.async_query(input=data, config=config)
+                    result = await local_agent.async_query(
+                        input=data, config=config, type=type
+                    )
                 else:
-                    result = await remote_agent.async_query(input=data, config=config)
+                    result = await remote_agent.async_query(
+                        input=data, config=config, type=type
+                    )
                 # print(result)
                 # Parse and display the result
-                parse_agent_response(result, is_local=use_local, start_time=start_time)
+
+                if type == "history":
+                    print("\n✅ History updated successfully.")
+                    print(result)
+                else:
+                    parse_agent_response(
+                        result, is_local=use_local, start_time=start_time
+                    )
 
             except Exception as e:
                 print(f"\n❌ Error: {str(e)}")

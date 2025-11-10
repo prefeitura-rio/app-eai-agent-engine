@@ -26,6 +26,9 @@ REASONING_ENGINE_ID = getenv_or_action("REASONING_ENGINE_ID")
 EAI_AGENT_URL = getenv_or_action("EAI_AGENT_URL")
 EAI_AGENT_TOKEN = getenv_or_action("EAI_AGENT_TOKEN")
 
+EAI_GATEWAY_API_URL = getenv_or_action("EAI_GATEWAY_API_URL")
+EAI_GATEWAY_API_TOKEN = getenv_or_action("EAI_GATEWAY_API_TOKEN")
+
 MCP_EXCLUDED_TOOLS = (
     getenv_or_action("MCP_EXCLUDED_TOOLS").split(",")
     if getenv_or_action("MCP_EXCLUDED_TOOLS", default="")
@@ -58,3 +61,8 @@ REDIS_URL = getenv_or_action("REDIS_URL")
 REDIS_TTL_SECONDS = int(getenv_or_action("REDIS_TTL_SECONDS"))
 
 PROXY_URL = getenv_or_action("PROXY_URL")
+# Short-term memory limits
+SHORT_MEMORY_TIME_LIMIT = round(
+    float(getenv_or_action("SHORT_MEMORY_TIME_LIMIT")) * 86400
+)  # Convert days to seconds
+SHORT_MEMORY_TOKEN_LIMIT = int(getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT"))
