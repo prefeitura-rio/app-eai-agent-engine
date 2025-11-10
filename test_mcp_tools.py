@@ -33,7 +33,7 @@ def list_mcp_tools():
     
     print(f"\nTotal: {len(mcp_tools)} tools available")
 
-def test_specific_tool(tool_name: str, test_params: dict = None):
+async def test_specific_tool(tool_name: str, test_params: dict = None):
     """Test calling a specific MCP tool."""
     if test_params is None:
         test_params = {"user_id": "test_user_123"}
@@ -53,7 +53,7 @@ def test_specific_tool(tool_name: str, test_params: dict = None):
     
     try:
         print(f"📞 Calling {tool_name} with params: {test_params}")
-        result = target_tool.invoke(test_params)
+        result = await target_tool.ainvoke(test_params)
         print(f"✅ Success! Result:")
         print(f"   Type: {type(result)}")
         print(f"   Value: {result}")
@@ -68,11 +68,11 @@ def test_specific_tool(tool_name: str, test_params: dict = None):
 
 if __name__ == "__main__":
     # List all tools
-    list_mcp_tools()
+    # list_mcp_tools()
     
     # Example: Test a specific tool (replace with your actual tool name)
     # Uncomment and modify the line below to test a specific tool:
-    # test_specific_tool("get_user_profile", {"user_id": "test_123"})
+    asyncio.run(test_specific_tool("get_user_memory", {"user_id": "testuserid001"}))
     
     print("\n" + "="*60)
     print("NEXT STEPS:")
