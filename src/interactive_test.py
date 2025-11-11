@@ -1,11 +1,19 @@
 import traceback
 import asyncio
 import json
+import logging
 from sys import argv
 from datetime import datetime, timezone
 
 import vertexai
 from vertexai import agent_engines
+
+# Configure logging to show INFO level messages
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 from src.config import env
 from src.prompt import prompt_data
