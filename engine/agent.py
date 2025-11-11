@@ -11,7 +11,7 @@ from langchain_core.messages import trim_messages
 from engine.custom_react_agent import create_react_agent
 from langchain_google_vertexai import ChatVertexAI
 from langchain_core.tools import BaseTool
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from vertexai.agent_engines import (
     AsyncQueryable,
     AsyncStreamQueryable,
@@ -33,6 +33,8 @@ from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+
+from src.config.env import SHORT_MEMORY_TIME_LIMIT, SHORT_MEMORY_TOKEN_LIMIT
 
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
@@ -209,9 +211,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         Returns:
             dict: Updated state with filtered messages (only recent messages)
         """
-        from src.config.env import SHORT_MEMORY_TIME_LIMIT, SHORT_MEMORY_TOKEN_LIMIT
-        from langchain_core.messages import SystemMessage, AIMessage, ToolMessage
-        import logging
 
         logger = logging.getLogger(__name__)
         messages = state.get("messages", [])
@@ -372,7 +371,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         Returns:
             dict: Updated state with memory SystemMessage injected
         """
-        from langchain_core.messages import SystemMessage
 
         logger = logging.getLogger(__name__)
         messages = state.get("messages", [])
