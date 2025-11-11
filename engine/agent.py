@@ -35,7 +35,9 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 
 from src.config.env import SHORT_MEMORY_TIME_LIMIT, SHORT_MEMORY_TOKEN_LIMIT
+from src.tools import mcp_tools
 
+get_user_memory_tool = list(filter(lambda tool: tool.name == "get_user_memory", mcp_tools))[0]
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     """
@@ -343,13 +345,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         logger = logging.getLogger(__name__)
         logger.info(f"[Long-Term Memory] Fetching memory for thread_id: {thread_id}")
 
-        # TODO: Implement actual HTTP request to fetch long-term memory
-        # Example implementation:
-        # async with aiohttp.ClientSession() as session:
-        #     async with session.get(f"{MEMORY_API_URL}/memory/{thread_id}") as response:
-        #         return await response.json()
+        result = await get_user_memory_tool.ainvoke({"user_id": thread_id})
 
-        return {}
+        return result
 
     def _inject_long_term_memory(self, state, config=None):
         """Inject long-term memory as a SystemMessage.
