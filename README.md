@@ -189,3 +189,9 @@ config = {
     }
 }
 ```
+
+
+### REDIS port-forward
+
+`kubectx rj-superapp or rj-superapp-staging`
+`kubectl port-forward svc/mcp-redis -n mcp 6379:6379`

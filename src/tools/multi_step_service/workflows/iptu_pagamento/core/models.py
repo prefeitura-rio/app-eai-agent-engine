@@ -26,9 +26,8 @@ class InscricaoImobiliariaPayload(BaseModel):
         # Remove todos os caracteres não numéricos
         clean_inscricao = re.sub(r"[^0-9]", "", v)
 
-        # Valida comprimento mínimo
         if len(clean_inscricao) < 8:
-            raise ValueError("Inscrição imobiliária deve ter no mínimo 8 dígitos")
+            clean_inscricao = clean_inscricao.zfill(8)
 
         # Valida comprimento máximo
         if len(clean_inscricao) > 15:

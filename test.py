@@ -19,7 +19,7 @@ async def main():
     """
 
     user_id = f"test_user_iptu_{int(time.time())}"  # Unique user for each test
-    service_name = "bank_account"
+    service_name = "iptu_pagamento"
 
     print("=" * 80)
     print("TESTING IPTU WORKFLOW WITH REAL API INTEGRATION")
@@ -34,36 +34,29 @@ async def main():
     # Note: API accepts short inscricoes like "18", but Pydantic model requires 14-16 digits
     # So we pad with zeros: "18" -> "00000000000018"
     steps = [
-        {},
-        {
-            "user_info": {
-                "name": "L",
-                "email": "johndoe@gmail.com",
-            }
-        },
         # Step 1: Provide inscricao (padded to 14 digits minimum)
-        # {
-        #     "inscricao_imobiliaria": "00000018",  # "18" padded to 14 digits
-        # },
-        # {
-        #     "ano_exercicio": 2025,
-        # },
-        # # Step 2: Choose which guia to pay (IPTU or Taxa de Lixo)
-        # {
-        #     "guia_escolhida": "00",
-        # },
-        # # # Step 4: Choose cotas to pay (for parcelamento)
-        # {
-        #     "cotas_escolhidas": ["01", "02", "03"],
-        # },
-        # # Step 5: Choose payment format (darf or codigo_barras)
-        # {
-        #     "darm_separado": False,
-        # },
-        # # # # Step 6: Do you want to generate more guides for the same property?
-        # {
-        #     "confirmacao": True,
-        # },
+        {
+            "inscricao_imobiliaria": "18",  # "18" padded to 14 digits
+        },
+        {
+            "ano_exercicio": 2025,
+        },
+        # Step 2: Choose which guia to pay (IPTU or Taxa de Lixo)
+        {
+            "guia_escolhida": "00",
+        },
+        # # Step 4: Choose cotas to pay (for parcelamento)
+        {
+            "cotas_escolhidas": ["01", "02", "03"],
+        },
+        # Step 5: Choose payment format (darf or codigo_barras)
+        {
+            "darm_separado": False,
+        },
+        # # # Step 6: Do you want to generate more guides for the same property?
+        {
+            "confirmacao": True,
+        },
         # # # Step 7: Do you want to generate guides for another property?
         # {
         #     "mais_cotas": False,
