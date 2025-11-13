@@ -227,10 +227,11 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         """Ensure that all tool calls have corresponding tool responses and vice versa.
         
         This prevents errors when token filtering breaks tool call/response pairs.
+        Instead of removing orphaned messages, we add missing pairs from the full history.
         
         Args:
             filtered_messages: Messages after token filtering
-            full_messages: All messages before token filtering
+            full_messages: All messages from the database (complete history)
             logger: Logger instance
             
         Returns:
@@ -281,17 +282,19 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                         added_count += 1
             logger.info(f"[Short-Term Memory] Added {added_count} missing ToolMessage(s) to complete tool calls")
         
-        # Remove orphaned tool responses (responses without calls)
-        # These are invalid and will cause errors
+        # Add missing tool calls for orphaned responses
+        # Instead of removing orphaned responses, find and add the AIMessages that made those calls
         if orphaned_responses:
-            removed_count = len(orphaned_responses)
-            complete_messages = [
-                msg for msg in complete_messages
-                if not (isinstance(msg, ToolMessage) and 
-                       hasattr(msg, 'tool_call_id') and 
-                       msg.tool_call_id in orphaned_responses)
-            ]
-            logger.info(f"[Short-Term Memory] Removed {removed_count} orphaned ToolMessage(s) (responses without corresponding calls)")
+            added_count = 0
+            for msg in full_messages:
+                if isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls'):
+                    for tool_call in msg.tool_calls:
+                        tool_call_id = tool_call.get('id')
+                        if tool_call_id in orphaned_responses and msg not in complete_messages:
+                            complete_messages.append(msg)
+                            added_count += 1
+                            break  # Only add the message once, even if it has multiple relevant tool calls
+            logger.info(f"[Short-Term Memory] Added {added_count} missing AIMessage(s) with tool calls to complete tool responses")
         
         # Sort by timestamp to maintain chronological order
         complete_messages.sort(key=lambda m: (
@@ -439,8 +442,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         if has_tool_messages:
             # CRITICAL: Ensure we don't have orphaned tool calls or tool messages
             # Check if we have incomplete tool call/response pairs and fix them
+            # Pass full messages from database so we can find tool calls/responses that were filtered out
             token_filtered_messages = self._ensure_complete_tool_pairs(
-                token_filtered_messages, time_filtered_messages, logger
+                token_filtered_messages, messages, logger
             )
             
             # If tool pair validation removed all messages, ensure we have at least one message
@@ -573,14 +577,18 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                     # No event loop, create one
                     memory_data = asyncio.run(self._fetch_long_term_memory(thread_id))
                 
-                # Update cache
+                # Update cache regardless of whether memory_data exists or not
+                # This prevents repeated calls when there's no memory
+                self._memory_cache[thread_id] = {
+                    "data": memory_data if memory_data else {},
+                    "timestamp": current_time
+                }
+                self._memory_needs_refresh = False  # Clear refresh flag
+                
                 if memory_data:
-                    self._memory_cache[thread_id] = {
-                        "data": memory_data,
-                        "timestamp": current_time
-                    }
-                    self._memory_needs_refresh = False  # Clear refresh flag
-                    logger.info("[Long-Term Memory] Cache updated")
+                    logger.info("[Long-Term Memory] Cache updated with memory data")
+                else:
+                    logger.info("[Long-Term Memory] Cache updated with empty memory (no data available)")
             else:
                 logger.info("[Long-Term Memory] Using cached memory (skipping HTTP call)")
                 memory_data = cached_entry["data"]
