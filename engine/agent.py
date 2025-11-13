@@ -34,13 +34,6 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 
-from src.tools import mcp_tools
-
-get_user_memory_tool = list(filter(lambda tool: tool.name == "get_user_memory", mcp_tools))[0]
-
-# Short-term memory limits - convert from env vars (days to seconds for time, string to int for tokens)
-SHORT_MEMORY_TIME_LIMIT = round(float(getenv("SHORT_MEMORY_TIME_LIMIT", "7")) * 86400)
-SHORT_MEMORY_TOKEN_LIMIT = int(getenv("SHORT_MEMORY_TOKEN_LIMIT", "100"))
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     """
@@ -84,6 +77,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._tracer = None
         self._batch_processor = None
         self._shutdown_handlers_registered = False
+        
+        # Short-term memory limits - lazy loaded from env vars
+        self._short_memory_time_limit = None
+        self._short_memory_token_limit = None
+        
+        # Get user memory tool - lazy loaded
+        self._user_memory_tool = None
 
     def _set_up_opentelemetry(self):
         if self._opentelemetry_setup_complete:
@@ -198,6 +198,27 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return {"messages": messages}
 
+    def _get_short_memory_limits(self):
+        """Lazy load short-term memory limits from environment variables."""
+        if self._short_memory_time_limit is None:
+            # Convert days to seconds
+            self._short_memory_time_limit = round(
+                float(getenv("SHORT_MEMORY_TIME_LIMIT", "7")) * 86400
+            )
+        if self._short_memory_token_limit is None:
+            self._short_memory_token_limit = int(getenv("SHORT_MEMORY_TOKEN_LIMIT", "100"))
+        
+        return self._short_memory_time_limit, self._short_memory_token_limit
+
+    def _get_user_memory_tool(self):
+        """Lazy load the user memory tool from the tools list."""
+        if self._user_memory_tool is None:
+            self._user_memory_tool = next(
+                (tool for tool in self._tools if tool.name == "get_user_memory"),
+                None
+            )
+        return self._user_memory_tool
+
     def _filter_short_term_memory(self, state):
         """Filter messages based on time and token limits for short-term memory.
 
@@ -219,6 +240,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         logger = logging.getLogger(__name__)
         messages = state.get("messages", [])
+        
+        # Get limits lazily
+        SHORT_MEMORY_TIME_LIMIT, SHORT_MEMORY_TOKEN_LIMIT = self._get_short_memory_limits()
 
         if not messages:
             return {"messages": []}
@@ -348,7 +372,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         logger = logging.getLogger(__name__)
         logger.info(f"[Long-Term Memory] Fetching memory for thread_id: {thread_id}")
 
-        result = await get_user_memory_tool.ainvoke({"user_id": thread_id})
+        # Get user memory tool lazily
+        user_memory_tool = self._get_user_memory_tool()
+        if user_memory_tool is None:
+            logger.warning("[Long-Term Memory] User memory tool not found")
+            return {}
+
+        result = await user_memory_tool.ainvoke({"user_id": thread_id})
 
         return result
 
