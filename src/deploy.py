@@ -34,7 +34,7 @@ def deploy():
             "google-cloud-aiplatform[agent-engines]>=1.106.0",
             "httpx>=0.27.0",
             "langchain==0.3.27",
-            "langchain-core==0.3.72",
+            "langchain-core==0.3.74",
             "langchain-google-cloud-sql-pg==0.14.1",
             "langchain-google-genai>=2.1.9",
             "langchain-google-vertexai>=2.0.28",
@@ -63,6 +63,8 @@ def deploy():
             "MPC_API_TOKEN": env.MPC_API_TOKEN,
             "EAI_AGENT_URL": env.EAI_AGENT_URL,
             "EAI_AGENT_TOKEN": env.EAI_AGENT_TOKEN,
+            "SHORT_MEMORY_TOKEN_LIMIT": env.SHORT_MEMORY_TOKEN_LIMIT,
+            "SHORT_MEMORY_TIME_LIMIT": env.SHORT_MEMORY_TIME_LIMIT,
         },
         service_account=service_account,
     )

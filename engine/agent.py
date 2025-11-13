@@ -34,10 +34,13 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 
-from src.config.env import SHORT_MEMORY_TIME_LIMIT, SHORT_MEMORY_TOKEN_LIMIT
 from src.tools import mcp_tools
 
 get_user_memory_tool = list(filter(lambda tool: tool.name == "get_user_memory", mcp_tools))[0]
+
+# Short-term memory limits - convert from env vars (days to seconds for time, string to int for tokens)
+SHORT_MEMORY_TIME_LIMIT = round(float(getenv("SHORT_MEMORY_TIME_LIMIT", "7")) * 86400)
+SHORT_MEMORY_TOKEN_LIMIT = int(getenv("SHORT_MEMORY_TOKEN_LIMIT", "100"))
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     """
