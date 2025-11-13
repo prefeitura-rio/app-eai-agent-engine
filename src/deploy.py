@@ -34,7 +34,7 @@ def deploy():
             "google-cloud-aiplatform[agent-engines]>=1.106.0",
             "httpx>=0.27.0",
             "langchain==0.3.27",
-            "langchain-core==0.3.74",
+            "langchain-core==0.3.72",
             "langchain-google-cloud-sql-pg==0.14.1",
             "langchain-google-genai>=2.1.9",
             "langchain-google-vertexai>=2.0.28",
