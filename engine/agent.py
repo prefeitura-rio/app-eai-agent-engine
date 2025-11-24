@@ -204,13 +204,16 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     def _get_short_memory_limits(self):
         """Lazy load short-term memory limits from environment variables."""
+        logger = logging.getLogger(__name__)
         if self._short_memory_time_limit is None:
             # Convert days to seconds
             self._short_memory_time_limit = round(
                 float(getenv("SHORT_MEMORY_TIME_LIMIT", "7")) * 86400
             )
+            logger.info(f"Short memory time limit set to {self._short_memory_time_limit} seconds")
         if self._short_memory_token_limit is None:
             self._short_memory_token_limit = int(getenv("SHORT_MEMORY_TOKEN_LIMIT", "100"))
+            logger.info(f"Short memory token limit set to {self._short_memory_token_limit} tokens")
         
         return self._short_memory_time_limit, self._short_memory_token_limit
 

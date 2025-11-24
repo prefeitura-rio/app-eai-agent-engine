@@ -40,5 +40,5 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS = getenv_or_action(
 )
 
 # Short-term memory limits (kept as strings for deployment)
-SHORT_MEMORY_TIME_LIMIT = getenv_or_action("SHORT_MEMORY_TIME_LIMIT")
-SHORT_MEMORY_TOKEN_LIMIT = getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT")
+SHORT_MEMORY_TIME_LIMIT = getenv_or_action("SHORT_MEMORY_TIME_LIMIT", default="30")  # in days
+SHORT_MEMORY_TOKEN_LIMIT = getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT", default="50000")  # in tokens
