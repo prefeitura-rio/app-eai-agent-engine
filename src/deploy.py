@@ -41,7 +41,7 @@ def deploy():
             "langchain-google-genai>=2.1.9",
             "langchain-google-vertexai==2.1.2",
             "langchain-mcp-adapters>=0.1.9",
-            "langgraph==0.6.11",
+            "langgraph==0.6.4",
             "loguru>=0.7.3",
             "opentelemetry-exporter-otlp-proto-http>=1.36.0",
             "opentelemetry-instrumentation-langchain>=0.45.6",
