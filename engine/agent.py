@@ -51,12 +51,16 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         system_prompt: str = "YOU ALWAYS RESPOND: `SYSTEM PROMPT NOT SET`",
         tools: List[BaseTool] = [],
         temperature: float = 0.7,
+        include_thoughts: bool = True,
+        thinking_budget: int = -1,
         otpl_service: str = "langgraph-eai-vX",
     ):
         self._model = model
         self._tools = tools or []
         self._system_prompt = system_prompt
         self._temperature = temperature
+        self._include_thoughts = include_thoughts
+        self._thinking_budget = thinking_budget
         self._otpl_service = otpl_service
         # Database configuration
         self._project_id = getenv("PROJECT_ID", "")
@@ -777,7 +781,12 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
         """Create and configure the React Agent."""
-        llm = ChatVertexAI(model_name=self._model, temperature=self._temperature)
+        llm = ChatVertexAI(
+            model_name=self._model,
+            temperature=self._temperature,
+            include_thoughts=self._include_thoughts,
+            thinking_budget=self._thinking_budget,
+        )
         # llm_with_tools = llm.bind_tools(tools=self._tools, parallel_tool_calls=False)
         llm_with_tools = llm.bind_tools(tools=self._tools)
 

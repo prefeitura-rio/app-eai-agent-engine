@@ -22,6 +22,8 @@ def deploy():
     local_agent = Agent(
         model=model,
         system_prompt=system_prompt,
+        include_thoughts=True,
+        thinking_budget=-1,  # 0 to disable, -1 to unlimited and other token limit value
         temperature=0.7,
         tools=mcp_tools,
         otpl_service=f"eai-langgraph-v{system_prompt_version}",
