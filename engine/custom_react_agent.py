@@ -250,40 +250,18 @@ def _validate_chat_history(
 
 def _clean_malformed_messages(messages: Sequence[BaseMessage]) -> List[BaseMessage]:
     """
-
-
     Remove mensagens mal formadas que podem causar erro no Gemini API.
-
-
-
-
 
     Remove AIMessages que têm:
 
-
     - content vazio (empty string) E
-
-
     - tool_calls vazio (lista vazia ou None)
 
-
-
-
-
     Args:
-
-
         messages: Sequência de mensagens para limpar
 
-
-
-
-
     Returns:
-
-
         Lista de mensagens válidas
-
 
     """
 
@@ -292,25 +270,15 @@ def _clean_malformed_messages(messages: Sequence[BaseMessage]) -> List[BaseMessa
     for message in messages:
 
         # Verifica se é uma AIMessage com problemas
-
         if isinstance(message, AIMessage):
-
             # Verifica se tem conteúdo vazio E tool_calls vazio
-
             if isinstance(message.content, str):
-
                 has_empty_content = not message.content or message.content.strip() == ""
-
             elif isinstance(message.content, list):
-
                 has_empty_content = not message.content or len(message.content) == 0
-
             elif isinstance(message.content, int):
-
                 has_empty_content = True
-
             else:
-
                 has_empty_content = False
 
             has_empty_tool_calls = (
@@ -318,19 +286,14 @@ def _clean_malformed_messages(messages: Sequence[BaseMessage]) -> List[BaseMessa
             )
 
             finish_reason = message.response_metadata.get("finish_reason")
-
             # Se ambos estão vazios, pula esta mensagem
-
             if (
                 has_empty_content and has_empty_tool_calls
             ) or finish_reason == "MALFORMED_FUNCTION_CALL":
-
                 logger.info(f"Removendo AIMessage mal formada: ID={message.id}")
-
                 continue
 
         # Adiciona mensagem válida à lista
-
         cleaned_messages.append(message)
 
     return cleaned_messages
