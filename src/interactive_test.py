@@ -37,7 +37,7 @@ def get_agent():
 
 lista_de_mensagens = gerar_conversa_aleatoria(num_mensagens=10, tamanho_content=100)
 
-user_id = "asd123asd123asdasdasd5454534"  # Unique user ID for the session
+user_id = "asdasd123213213123123213213123asdasdasd"  # Unique user ID for the session
 
 
 # Initialize agents
