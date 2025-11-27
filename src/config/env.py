@@ -26,9 +26,6 @@ REASONING_ENGINE_ID = getenv_or_action("REASONING_ENGINE_ID")
 EAI_AGENT_URL = getenv_or_action("EAI_AGENT_URL")
 EAI_AGENT_TOKEN = getenv_or_action("EAI_AGENT_TOKEN")
 
-EAI_GATEWAY_API_URL = getenv_or_action("EAI_GATEWAY_API_URL")
-EAI_GATEWAY_API_TOKEN = getenv_or_action("EAI_GATEWAY_API_TOKEN")
-
 MCP_EXCLUDED_TOOLS = (
     getenv_or_action("MCP_EXCLUDED_TOOLS").split(",")
     if getenv_or_action("MCP_EXCLUDED_TOOLS", default="")
@@ -68,3 +65,10 @@ SHORT_MEMORY_TIME_LIMIT = round(
     float(getenv_or_action("SHORT_MEMORY_TIME_LIMIT")) * 86400
 )  # Convert days to seconds
 SHORT_MEMORY_TOKEN_LIMIT = int(getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT"))
+# Short-term memory limits (kept as strings for deployment)
+SHORT_MEMORY_TIME_LIMIT = getenv_or_action(
+    "SHORT_MEMORY_TIME_LIMIT", default="30"
+)  # in days
+SHORT_MEMORY_TOKEN_LIMIT = getenv_or_action(
+    "SHORT_MEMORY_TOKEN_LIMIT", default="50000"
+)  # in tokens

@@ -1,11 +1,19 @@
 import traceback
 import asyncio
 import json
+import logging
 from sys import argv
 from datetime import datetime, timezone
 
 import vertexai
 from vertexai import agent_engines
+
+# Configure logging to show INFO level messages
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 from src.config import env
 from src.prompt import prompt_data
@@ -29,7 +37,7 @@ def get_agent():
 
 lista_de_mensagens = gerar_conversa_aleatoria(num_mensagens=10, tamanho_content=100)
 
-user_id = "asdasd123123123123123asd"  # Unique user ID for the session
+user_id = "asd123asd123asd5454534"  # Unique user ID for the session
 
 
 # Initialize agents
@@ -120,8 +128,26 @@ def parse_agent_response(response, is_local=False, start_time=None):
                         print(f"      📋 Arguments: {json.dumps(tool_args, indent=8)}")
 
                 # Show AI content if any
+                thinking_content = ""
+                final_content = ""
                 if message.content:
-                    print(f"   💬 Response: {message.content}")
+                    if isinstance(message.content, list):
+                        for msg in message.content:
+                            if isinstance(msg, dict):
+                                if msg.get("type") == "thinking":
+                                    thinking_content += msg.get("thinking", "")
+                                elif msg.get("type") == "text":
+                                    final_content += msg.get("text", "")
+                            else:
+                                final_content += msg
+                    else:
+                        final_content = message.content
+
+                if thinking_content.strip == "":
+                    print(f"   💬 Response: {final_content}")
+                else:
+                    print(f"   📝 Thinking: {thinking_content}")
+                    print(f"   💬 Response: {final_content}")
 
                 # Show usage metadata
                 usage = getattr(message, "usage_metadata", {})
