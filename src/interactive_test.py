@@ -11,8 +11,8 @@ from vertexai import agent_engines
 # Configure logging to show INFO level messages
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 
 from src.config import env
@@ -37,7 +37,7 @@ def get_agent():
 
 lista_de_mensagens = gerar_conversa_aleatoria(num_mensagens=10, tamanho_content=100)
 
-user_id = "asdasdasdasdasdasd"  # Unique user ID for the session
+user_id = "asdsadsad123213asdsadasd123123"  # Unique user ID for the session
 
 
 # Initialize agents

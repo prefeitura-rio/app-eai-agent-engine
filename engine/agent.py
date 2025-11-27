@@ -77,16 +77,17 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._tracer = None
         self._batch_processor = None
         self._shutdown_handlers_registered = False
-        
+
         # Short-term memory limits - lazy loaded from env vars
         self._short_memory_time_limit = None
         self._short_memory_token_limit = None
-        
+
         # Get user memory tool - lazy loaded
         self._user_memory_tool = None
-        
+
         # Long-term memory cache to avoid redundant fetches
-        self._memory_cache = {}  # {thread_id: {"data": memory_data, "timestamp": datetime}}
+        # {thread_id: {"data": memory_data, "timestamp": datetime}}
+        self._memory_cache = {}
         self._memory_needs_refresh = False  # Flag set when upsert_user_memory is called
 
     def _set_up_opentelemetry(self):
@@ -158,49 +159,51 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._setup_complete_async = False
         self._setup_complete_sync = False
 
-    def _add_timestamp_to_messages(self, state):
-        """Hook para adicionar timestamp nas mensagens usando additional_kwargs."""
-        messages = state.get("messages", [])
-
-        # Adicionar timestamp nas mensagens que não têm, gerando um timestamp único para cada
-        for message in messages:
-            if (
-                hasattr(message, "additional_kwargs")
-                and "timestamp" not in message.additional_kwargs
-            ):
-                # Timestamp único para cada mensagem no momento certo:
-                # HumanMessage: quando chega
-                # AIMessage: quando é gerada
-                # ToolMessage: será adicionado após execução da tool
-                message.additional_kwargs["timestamp"] = datetime.now(
-                    timezone.utc
-                ).isoformat()
-
-        return {"messages": messages}
+    def _add_timestamp_to_input_messages(self, **kwargs):
+        "Adiciona timestamp nas mensagens do usuario antes do invoke"
+        msg_datetime = datetime.now(timezone.utc).isoformat()
+        for message in kwargs["input"]["messages"]:
+            message["additional_kwargs"] = {"timestamp": msg_datetime}
+        return kwargs
 
     def _add_timestamp_to_tool_messages(self, state):
         """Hook para adicionar timestamp nas ToolMessages após execução."""
         messages = state.get("messages", [])
         current_time = datetime.now(timezone.utc).isoformat()
+        updates = []
 
-        # Adicionar timestamp nas mensagens que não têm
+        # Adicionar timestamp apenas nas ToolMessages que não têm
         for message in messages:
-            if hasattr(message, "additional_kwargs"):
-                # ToolMessage: timestamp após execução
-                if (
-                    message.__class__.__name__ == "ToolMessage"
-                    and "timestamp" not in message.additional_kwargs
-                ):
-                    message.additional_kwargs["timestamp"] = current_time
+            if (
+                isinstance(message, ToolMessage)
+                and hasattr(message, "additional_kwargs")
+                and "timestamp" not in message.additional_kwargs
+            ):
+                message.additional_kwargs["timestamp"] = current_time
+                updates.append(message)
 
-                # AIMessage: timestamp quando é gerada (caso não tenha sido adicionado no pre-model)
-                elif (
-                    message.__class__.__name__ == "AIMessage"
-                    and "timestamp" not in message.additional_kwargs
-                ):
-                    message.additional_kwargs["timestamp"] = current_time
+        # Retorna APENAS as mensagens modificadas para evitar duplicação no add_messages
+        return {"messages": updates} if updates else {}
 
-        return {"messages": messages}
+    def _add_timestamp_to_ai_message(self, state):
+        """Hook para adicionar timestamp na AIMessage (Agent) logo após geração."""
+        messages = state.get("messages", [])
+        if not messages:
+            return {}
+
+        last_message = messages[-1]
+        current_time = datetime.now(timezone.utc).isoformat()
+
+        if (
+            isinstance(last_message, AIMessage)
+            and hasattr(last_message, "additional_kwargs")
+            and "timestamp" not in last_message.additional_kwargs
+        ):
+            last_message.additional_kwargs["timestamp"] = current_time
+            # Retorna apenas a mensagem modificada
+            return {"messages": [last_message]}
+
+        return {}
 
     def _get_short_memory_limits(self):
         """Lazy load short-term memory limits from environment variables."""
@@ -210,101 +213,119 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             self._short_memory_time_limit = round(
                 float(getenv("SHORT_MEMORY_TIME_LIMIT", "7")) * 86400
             )
-            logger.info(f"Short memory time limit set to {self._short_memory_time_limit} seconds")
+            logger.info(
+                f"Short memory time limit set to {self._short_memory_time_limit} seconds"
+            )
         if self._short_memory_token_limit is None:
-            self._short_memory_token_limit = int(getenv("SHORT_MEMORY_TOKEN_LIMIT", "100"))
-            logger.info(f"Short memory token limit set to {self._short_memory_token_limit} tokens")
-        
+            self._short_memory_token_limit = int(
+                getenv("SHORT_MEMORY_TOKEN_LIMIT", "100")
+            )
+            logger.info(
+                f"Short memory token limit set to {self._short_memory_token_limit} tokens"
+            )
+
         return self._short_memory_time_limit, self._short_memory_token_limit
 
     def _get_user_memory_tool(self):
         """Lazy load the user memory tool from the tools list."""
         if self._user_memory_tool is None:
             self._user_memory_tool = next(
-                (tool for tool in self._tools if tool.name == "get_user_memory"),
-                None
+                (tool for tool in self._tools if tool.name == "get_user_memory"), None
             )
         return self._user_memory_tool
 
     def _ensure_complete_tool_pairs(self, filtered_messages, full_messages, logger):
         """Ensure that all tool calls have corresponding tool responses and vice versa.
-        
+
         This prevents errors when token filtering breaks tool call/response pairs.
         Instead of removing orphaned messages, we add missing pairs from the full history.
-        
+
         Args:
             filtered_messages: Messages after token filtering
             full_messages: All messages from the database (complete history)
             logger: Logger instance
-            
+
         Returns:
             List of messages with complete tool pairs
         """
         if not filtered_messages:
             return filtered_messages
-        
+
         # Collect all tool call IDs that have calls in filtered messages
         tool_calls_in_filtered = set()
         for msg in filtered_messages:
-            if isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls'):
+            if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
                 for tool_call in msg.tool_calls:
-                    tool_calls_in_filtered.add(tool_call.get('id'))
-        
+                    tool_calls_in_filtered.add(tool_call.get("id"))
+
         # Collect all tool call IDs that have responses in filtered messages
         tool_responses_in_filtered = set()
         for msg in filtered_messages:
-            if isinstance(msg, ToolMessage) and hasattr(msg, 'tool_call_id'):
+            if isinstance(msg, ToolMessage) and hasattr(msg, "tool_call_id"):
                 tool_responses_in_filtered.add(msg.tool_call_id)
-        
+
         # Find orphaned tool calls (call without response)
         orphaned_calls = tool_calls_in_filtered - tool_responses_in_filtered
-        
+
         # Find orphaned responses (response without call)
         orphaned_responses = tool_responses_in_filtered - tool_calls_in_filtered
-        
+
         if not orphaned_calls and not orphaned_responses:
             # All tool pairs are complete
             return filtered_messages
-        
+
         logger.warning(
             f"[Short-Term Memory] Found incomplete tool pairs - "
             f"orphaned calls (missing response): {len(orphaned_calls)}, "
             f"orphaned responses (missing call): {len(orphaned_responses)}"
         )
-        
+
         # Build a complete message list by adding missing pairs
         complete_messages = list(filtered_messages)
-        
+
         # Add missing tool responses for orphaned calls
         if orphaned_calls:
             added_count = 0
             for msg in full_messages:
-                if isinstance(msg, ToolMessage) and hasattr(msg, 'tool_call_id'):
-                    if msg.tool_call_id in orphaned_calls and msg not in complete_messages:
+                if isinstance(msg, ToolMessage) and hasattr(msg, "tool_call_id"):
+                    if (
+                        msg.tool_call_id in orphaned_calls
+                        and msg not in complete_messages
+                    ):
                         complete_messages.append(msg)
                         added_count += 1
-            logger.info(f"[Short-Term Memory] Added {added_count} missing ToolMessage(s) to complete tool calls")
-        
+            logger.info(
+                f"[Short-Term Memory] Added {added_count} missing ToolMessage(s) to complete tool calls"
+            )
+
         # Add missing tool calls for orphaned responses
         # Instead of removing orphaned responses, find and add the AIMessages that made those calls
         if orphaned_responses:
             added_count = 0
             for msg in full_messages:
-                if isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls'):
+                if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
                     for tool_call in msg.tool_calls:
-                        tool_call_id = tool_call.get('id')
-                        if tool_call_id in orphaned_responses and msg not in complete_messages:
+                        tool_call_id = tool_call.get("id")
+                        if (
+                            tool_call_id in orphaned_responses
+                            and msg not in complete_messages
+                        ):
                             complete_messages.append(msg)
                             added_count += 1
                             break  # Only add the message once, even if it has multiple relevant tool calls
-            logger.info(f"[Short-Term Memory] Added {added_count} missing AIMessage(s) with tool calls to complete tool responses")
-        
+            logger.info(
+                f"[Short-Term Memory] Added {added_count} missing AIMessage(s) with tool calls to complete tool responses"
+            )
+
         # Sort by timestamp to maintain chronological order
-        complete_messages.sort(key=lambda m: (
-            getattr(m, 'additional_kwargs', {}).get('timestamp', '')
-            if hasattr(m, 'additional_kwargs') else ''
-        ))
-        
+        complete_messages.sort(
+            key=lambda m: (
+                getattr(m, "additional_kwargs", {}).get("timestamp", "")
+                if hasattr(m, "additional_kwargs")
+                else ""
+            )
+        )
+
         return complete_messages
 
     def _filter_short_term_memory(self, state):
@@ -328,9 +349,11 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         logger = logging.getLogger(__name__)
         messages = state.get("messages", [])
-        
+
         # Get limits lazily
-        SHORT_MEMORY_TIME_LIMIT, SHORT_MEMORY_TOKEN_LIMIT = self._get_short_memory_limits()
+        SHORT_MEMORY_TIME_LIMIT, SHORT_MEMORY_TOKEN_LIMIT = (
+            self._get_short_memory_limits()
+        )
 
         if not messages:
             return {"messages": []}
@@ -437,11 +460,15 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # Step 2.5: Check if we need to validate tool pairs (performance optimization)
         # Only check if we have any tool-related messages
         has_tool_messages = any(
-            isinstance(msg, (ToolMessage)) or 
-            (isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls') and msg.tool_calls)
+            isinstance(msg, (ToolMessage))
+            or (
+                isinstance(msg, AIMessage)
+                and hasattr(msg, "tool_calls")
+                and msg.tool_calls
+            )
             for msg in token_filtered_messages
         )
-        
+
         if has_tool_messages:
             # CRITICAL: Ensure we don't have orphaned tool calls or tool messages
             # Check if we have incomplete tool call/response pairs and fix them
@@ -449,7 +476,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             token_filtered_messages = self._ensure_complete_tool_pairs(
                 token_filtered_messages, messages, logger
             )
-            
+
             # If tool pair validation removed all messages, ensure we have at least one message
             if not token_filtered_messages:
                 logger.warning(
@@ -465,7 +492,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 if not token_filtered_messages:
                     token_filtered_messages = [time_filtered_messages[-1]]
         else:
-            logger.debug("[Short-Term Memory] No tool messages found, skipping tool pair validation")
+            logger.debug(
+                "[Short-Term Memory] No tool messages found, skipping tool pair validation"
+            )
 
         # Step 3: Combine system messages with filtered messages
         filtered_messages = system_messages + token_filtered_messages
@@ -547,19 +576,20 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             # Check if we need to fetch memory
             current_time = datetime.now(timezone.utc)
             cache_ttl_seconds = 300  # 5 minutes cache TTL
-            
+
             cached_entry = self._memory_cache.get(thread_id)
             cache_is_fresh = (
-                cached_entry is not None and
-                (current_time - cached_entry["timestamp"]).total_seconds() < cache_ttl_seconds
+                cached_entry is not None
+                and (current_time - cached_entry["timestamp"]).total_seconds()
+                < cache_ttl_seconds
             )
-            
+
             # Only fetch if cache is stale, missing, or refresh flag is set
             if not cache_is_fresh or self._memory_needs_refresh:
                 logger.info(
                     f"[Long-Term Memory] Fetching memory (cache_fresh={cache_is_fresh}, needs_refresh={self._memory_needs_refresh})"
                 )
-                
+
                 # Fetch memory data
                 # Note: We need to run async function in sync context
                 try:
@@ -579,21 +609,25 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 except RuntimeError:
                     # No event loop, create one
                     memory_data = asyncio.run(self._fetch_long_term_memory(thread_id))
-                
+
                 # Update cache regardless of whether memory_data exists or not
                 # This prevents repeated calls when there's no memory
                 self._memory_cache[thread_id] = {
                     "data": memory_data if memory_data else {},
-                    "timestamp": current_time
+                    "timestamp": current_time,
                 }
                 self._memory_needs_refresh = False  # Clear refresh flag
-                
+
                 if memory_data:
                     logger.info("[Long-Term Memory] Cache updated with memory data")
                 else:
-                    logger.info("[Long-Term Memory] Cache updated with empty memory (no data available)")
+                    logger.info(
+                        "[Long-Term Memory] Cache updated with empty memory (no data available)"
+                    )
             else:
-                logger.info("[Long-Term Memory] Using cached memory (skipping HTTP call)")
+                logger.info(
+                    "[Long-Term Memory] Using cached memory (skipping HTTP call)"
+                )
                 memory_data = cached_entry["data"]
 
             # If no memory data, skip injection
@@ -691,8 +725,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         return {"messages": messages}
 
     def _combined_pre_model_hook(self, state, config=None):
-        # Step 1: Add timestamps to new messages
-        state = self._add_timestamp_to_messages(state)
+        # Step 1: Add timestamps to new ToolMessages (safe update, modifies in-place)
+        # We invoke this for the side-effect on state['messages'], relying on
+        # _inject_long_term_memory or subsequent steps to return the messages list.
+        self._add_timestamp_to_tool_messages(state)
 
         # Step 2: Inject long-term memory as SystemMessage
         state = self._inject_long_term_memory(state, config)
@@ -700,17 +736,21 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # Step 3: Apply short-term memory filtering
         # This returns llm_input_messages which should NOT be overwritten
         filtered_state = self._filter_short_term_memory(state)
-        
+
         # Step 4: Inject thread_id into tool calls
         # Need to work on llm_input_messages if it exists
         if "llm_input_messages" in filtered_state:
             # Create a temporary state with the filtered messages for thread_id injection
             temp_state = {"messages": filtered_state["llm_input_messages"]}
-            thread_id_state = self._inject_thread_id_in_user_id_params(temp_state, config)
+            thread_id_state = self._inject_thread_id_in_user_id_params(
+                temp_state, config
+            )
             # Return both the filtered messages for LLM and keep any other state updates
             return {
                 "llm_input_messages": thread_id_state["messages"],
-                **{k: v for k, v in filtered_state.items() if k != "llm_input_messages"}
+                **{
+                    k: v for k, v in filtered_state.items() if k != "llm_input_messages"
+                },
             }
         else:
             # No filtering applied, just inject thread_id normally
@@ -725,11 +765,14 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                     if tool_call.get("name") == "upsert_user_memory":
                         self._memory_needs_refresh = True
                         logger = logging.getLogger(__name__)
-                        logger.info("[Long-Term Memory] Detected upsert_user_memory call, flagging for refresh")
+                        logger.info(
+                            "[Long-Term Memory] Detected upsert_user_memory call, flagging for refresh"
+                        )
                         break
                 break  # Only check the last AI message
-        
-        state = self._add_timestamp_to_tool_messages(state)
+        # Add timestamp to the new AIMessage (modifies in-place)
+        self._add_timestamp_to_ai_message(state)
+
         return self._inject_thread_id_in_user_id_params(state, config)
 
     def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
@@ -791,6 +834,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     async def async_query(self, **kwargs) -> dict[str, Any] | Any:
         """Asynchronous query execution with filtered current interaction."""
+        kwargs = self._add_timestamp_to_input_messages(**kwargs)
         await self._ensure_async_setup()
         if self._graph is None:
             raise ValueError(
@@ -820,6 +864,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     async def async_stream_query(self, **kwargs) -> AsyncIterable[Any]:
         """Asynchronous streaming query execution with filtered chunks."""
+        kwargs = self._add_timestamp_to_input_messages(**kwargs)
 
         async def async_generator() -> AsyncIterable[Any]:
             await self._ensure_async_setup()
@@ -835,6 +880,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     def query(self, **kwargs) -> dict[str, Any] | Any:
         """Synchronous query execution with filtered current interaction."""
+        kwargs = self._add_timestamp_to_input_messages(**kwargs)
         self._ensure_sync_setup()
         if self._graph is None:
             raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
@@ -849,6 +895,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     def stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
         """Synchronous streaming query execution with filtered chunks."""
+        kwargs = self._add_timestamp_to_input_messages(**kwargs)
         self._ensure_sync_setup()
         if self._graph is None:
             raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
