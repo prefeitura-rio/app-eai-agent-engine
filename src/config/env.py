@@ -68,3 +68,13 @@ SHORT_MEMORY_TIME_LIMIT = round(
     float(getenv_or_action("SHORT_MEMORY_TIME_LIMIT")) * 86400
 )  # Convert days to seconds
 SHORT_MEMORY_TOKEN_LIMIT = int(getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT"))
+
+
+CHATBOT_INTEGRATIONS_URL = getenv_or_action("CHATBOT_INTEGRATIONS_URL")
+CHATBOT_INTEGRATIONS_KEY = getenv_or_action("CHATBOT_INTEGRATIONS_KEY")
+# SGRC Configuration
+SGRC_URL = getenv_or_action("SGRC_URL")
+SGRC_AUTHORIZATION_HEADER = getenv_or_action("SGRC_AUTHORIZATION_HEADER")
+SGRC_BODY_TOKEN = getenv_or_action("SGRC_BODY_TOKEN")
+GMAPS_API_TOKEN = getenv_or_action("GMAPS_API_TOKEN")
+DATA_DIR = getenv_or_action("DATA_DIR")

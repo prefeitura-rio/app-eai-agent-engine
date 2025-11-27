@@ -213,3 +213,6 @@ llms-full.txt
 README_BRUNO.md
 src/services/workflows/iptu_pagamento/docs/*
 src/tools/multi_step_service/data/*
+README_gabs.md
+prod.json
+staging.json
