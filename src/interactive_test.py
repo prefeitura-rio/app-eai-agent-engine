@@ -214,8 +214,27 @@ def parse_agent_response(response, is_local=False, start_time=None):
                         print(f"      📋 Arguments: {json.dumps(tool_args, indent=8)}")
 
                 # Show AI content if any
+                # Show AI content if any
+                thinking_content = ""
+                final_content = ""
                 if content:
-                    print(f"   💬 Response: {content}")
+                    if isinstance(content, list):
+                        for msg in content:
+                            if isinstance(msg, dict):
+                                if msg.get("type") == "thinking":
+                                    thinking_content += msg.get("thinking", "")
+                                elif msg.get("type") == "text":
+                                    final_content += msg.get("text", "")
+                            else:
+                                final_content += msg
+                    else:
+                        final_content = content
+
+                if thinking_content.strip == "":
+                    print(f"   💬 Response: {final_content}")
+                else:
+                    print(f"   📝 Thinking: {thinking_content}")
+                    print(f"   💬 Response: {final_content}")
 
                 # Show usage metadata
                 usage = message.get("usage_metadata", {})
