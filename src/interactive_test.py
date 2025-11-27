@@ -20,6 +20,7 @@ from src.prompt import prompt_data
 from engine.agent import Agent
 from src.tools import mcp_tools
 from src.utils.utils import gerar_conversa_aleatoria
+import uuid
 
 
 vertexai.init(
@@ -37,18 +38,20 @@ def get_agent():
 
 lista_de_mensagens = gerar_conversa_aleatoria(num_mensagens=10, tamanho_content=100)
 
-user_id = "asd123asd123asd5454534"  # Unique user ID for the session
+user_id = str(uuid.uuid4())  # Unique user ID for the session
 
 
 # Initialize agents
 remote_agent = get_agent()
-
+prompt_version = prompt_data["version"]
 local_agent = Agent(
     model="gemini-2.5-flash",
     system_prompt=prompt_data["prompt"],
     temperature=0.7,
     tools=mcp_tools,
-    otpl_service=f"eai-langgraph-v{prompt_data["version"]}",
+    include_thoughts=True,
+    thinking_budget=-1,
+    otpl_service=f"eai-langgraph-v{prompt_version}",
 )
 
 

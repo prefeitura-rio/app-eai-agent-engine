@@ -3,7 +3,7 @@ from langchain.load.dump import dumpd
 from datetime import datetime, timezone
 import json
 import asyncio
-import logging
+import ast
 from langchain_core.messages import trim_messages
 
 # from langgraph.prebuilt import create_react_agent
@@ -33,6 +33,8 @@ from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+
+from engine.log import logger
 
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
@@ -163,6 +165,55 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._setup_complete_async = False
         self._setup_complete_sync = False
 
+    def _sanitize_input_messages(self, **kwargs):
+        """Sanitizes input messages to prevent Vertex AI errors with integer lists in strings.
+
+        Checks if any message content is a string that ast.literal_eval would parse
+        into a list or tuple containing integers (e.g., "1,2,3"). If so, wraps it
+        in repr() to ensure it remains a string when processed by Vertex AI.
+        """
+        if "input" not in kwargs or "messages" not in kwargs["input"]:
+            return kwargs
+
+        messages = kwargs["input"]["messages"]
+        for message in messages:
+            # Handle dicts (common input format)
+            if isinstance(message, dict):
+                content = message.get("content")
+                if isinstance(content, str):
+                    try:
+                        parsed = ast.literal_eval(content)
+                        if isinstance(parsed, (list, tuple)):
+                            has_int = any(isinstance(item, int) for item in parsed)
+                            if has_int:
+                                # Wrap in repr to ensure it stays a string when Vertex parses it
+                                message["content"] = repr(content)
+                                logger.info(
+                                    f"Sanitized input message: wrapped content in quotes: {message['content']}"
+                                )
+                    except (ValueError, SyntaxError):
+                        pass
+            # Handle objects (if input is BaseMessage objects)
+            elif hasattr(message, "content") and isinstance(message.content, str):
+                try:
+                    parsed = ast.literal_eval(message.content)
+                    if isinstance(parsed, (list, tuple)):
+                        has_int = any(isinstance(item, int) for item in parsed)
+                        if has_int:
+                            message.content = repr(message.content)
+                            logger.info(
+                                f"Sanitized input message object: wrapped content in quotes: {message.content}"
+                            )
+                except (ValueError, SyntaxError):
+                    pass
+        return kwargs
+
+    def _combined_pre_invoke_hook(self, **kwargs):
+        """Centralizes all manipulations on input arguments before invoking the graph."""
+        kwargs = self._add_timestamp_to_input_messages(**kwargs)
+        kwargs = self._sanitize_input_messages(**kwargs)
+        return kwargs
+
     def _add_timestamp_to_input_messages(self, **kwargs):
         "Adiciona timestamp nas mensagens do usuario antes do invoke"
         msg_datetime = datetime.now(timezone.utc).isoformat()
@@ -211,7 +262,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     def _get_short_memory_limits(self):
         """Lazy load short-term memory limits from environment variables."""
-        logger = logging.getLogger(__name__)
         if self._short_memory_time_limit is None:
             # Convert days to seconds
             self._short_memory_time_limit = round(
@@ -351,7 +401,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             dict: Updated state with filtered messages (only recent messages)
         """
 
-        logger = logging.getLogger(__name__)
         messages = state.get("messages", [])
 
         # Get limits lazily
@@ -525,7 +574,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         Returns:
             dict: JSON containing long-term memory data
         """
-        logger = logging.getLogger(__name__)
         logger.info(f"[Long-Term Memory] Fetching memory for thread_id: {thread_id}")
 
         # Get user memory tool lazily
@@ -562,7 +610,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             dict: Updated state with memory SystemMessage injected
         """
 
-        logger = logging.getLogger(__name__)
         messages = state.get("messages", [])
 
         # Extract thread_id
@@ -768,7 +815,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 for tool_call in msg.tool_calls:
                     if tool_call.get("name") == "upsert_user_memory":
                         self._memory_needs_refresh = True
-                        logger = logging.getLogger(__name__)
                         logger.info(
                             "[Long-Term Memory] Detected upsert_user_memory call, flagging for refresh"
                         )
@@ -843,7 +889,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     async def async_query(self, **kwargs) -> dict[str, Any] | Any:
         """Asynchronous query execution with filtered current interaction."""
-        kwargs = self._add_timestamp_to_input_messages(**kwargs)
+        kwargs = self._combined_pre_invoke_hook(**kwargs)
         await self._ensure_async_setup()
         if self._graph is None:
             raise ValueError(
@@ -873,7 +919,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     async def async_stream_query(self, **kwargs) -> AsyncIterable[Any]:
         """Asynchronous streaming query execution with filtered chunks."""
-        kwargs = self._add_timestamp_to_input_messages(**kwargs)
+        kwargs = self._combined_pre_invoke_hook(**kwargs)
 
         async def async_generator() -> AsyncIterable[Any]:
             await self._ensure_async_setup()
@@ -889,7 +935,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     def query(self, **kwargs) -> dict[str, Any] | Any:
         """Synchronous query execution with filtered current interaction."""
-        kwargs = self._add_timestamp_to_input_messages(**kwargs)
+        kwargs = self._combined_pre_invoke_hook(**kwargs)
         self._ensure_sync_setup()
         if self._graph is None:
             raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
@@ -904,7 +950,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     def stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
         """Synchronous streaming query execution with filtered chunks."""
-        kwargs = self._add_timestamp_to_input_messages(**kwargs)
+        kwargs = self._combined_pre_invoke_hook(**kwargs)
         self._ensure_sync_setup()
         if self._graph is None:
             raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
