@@ -26,9 +26,6 @@ REASONING_ENGINE_ID = getenv_or_action("REASONING_ENGINE_ID")
 EAI_AGENT_URL = getenv_or_action("EAI_AGENT_URL")
 EAI_AGENT_TOKEN = getenv_or_action("EAI_AGENT_TOKEN")
 
-EAI_GATEWAY_API_URL = getenv_or_action("EAI_GATEWAY_API_URL")
-EAI_GATEWAY_API_TOKEN = getenv_or_action("EAI_GATEWAY_API_TOKEN")
-
 MCP_EXCLUDED_TOOLS = (
     getenv_or_action("MCP_EXCLUDED_TOOLS").split(",")
     if getenv_or_action("MCP_EXCLUDED_TOOLS", default="")
@@ -64,11 +61,6 @@ REDIS_TTL_SECONDS = int(getenv_or_action("REDIS_TTL_SECONDS"))
 
 PROXY_URL = getenv_or_action("PROXY_URL")
 # Short-term memory limits
-SHORT_MEMORY_TIME_LIMIT = round(
-    float(getenv_or_action("SHORT_MEMORY_TIME_LIMIT")) * 86400
-)  # Convert days to seconds
-SHORT_MEMORY_TOKEN_LIMIT = int(getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT"))
-
 
 CHATBOT_INTEGRATIONS_URL = getenv_or_action("CHATBOT_INTEGRATIONS_URL")
 CHATBOT_INTEGRATIONS_KEY = getenv_or_action("CHATBOT_INTEGRATIONS_KEY")
@@ -78,3 +70,10 @@ SGRC_AUTHORIZATION_HEADER = getenv_or_action("SGRC_AUTHORIZATION_HEADER")
 SGRC_BODY_TOKEN = getenv_or_action("SGRC_BODY_TOKEN")
 GMAPS_API_TOKEN = getenv_or_action("GMAPS_API_TOKEN")
 DATA_DIR = getenv_or_action("DATA_DIR")
+# Short-term memory limits (kept as strings for deployment)
+SHORT_MEMORY_TIME_LIMIT = getenv_or_action(
+    "SHORT_MEMORY_TIME_LIMIT", default="30"
+)  # in days
+SHORT_MEMORY_TOKEN_LIMIT = getenv_or_action(
+    "SHORT_MEMORY_TOKEN_LIMIT", default="50000"
+)  # in tokens

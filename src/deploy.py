@@ -22,6 +22,8 @@ def deploy():
     local_agent = Agent(
         model=model,
         system_prompt=system_prompt,
+        include_thoughts=True,
+        thinking_budget=-1,  # 0 to disable, -1 to unlimited and other token limit value
         temperature=0.7,
         tools=mcp_tools,
         otpl_service=f"eai-langgraph-v{system_prompt_version}",
@@ -63,6 +65,8 @@ def deploy():
             "MPC_API_TOKEN": env.MPC_API_TOKEN,
             "EAI_AGENT_URL": env.EAI_AGENT_URL,
             "EAI_AGENT_TOKEN": env.EAI_AGENT_TOKEN,
+            "SHORT_MEMORY_TOKEN_LIMIT": env.SHORT_MEMORY_TOKEN_LIMIT,
+            "SHORT_MEMORY_TIME_LIMIT": env.SHORT_MEMORY_TIME_LIMIT,
         },
         service_account=service_account,
     )

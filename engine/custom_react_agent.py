@@ -270,7 +270,13 @@ def _clean_malformed_messages(messages: Sequence[BaseMessage]) -> List[BaseMessa
         # Verifica se é uma AIMessage com problemas
         if isinstance(message, AIMessage):
             # Verifica se tem conteúdo vazio E tool_calls vazio
-            has_empty_content = not message.content or message.content.strip() == ""
+            if isinstance(message.content, str):
+                has_empty_content = not message.content or message.content.strip() == ""
+            elif isinstance(message.content, list):
+                has_empty_content = not message.content or len(message.content) == 0
+            else:
+                has_empty_content = False
+
             has_empty_tool_calls = (
                 not message.tool_calls or len(message.tool_calls) == 0
             )

@@ -3,7 +3,7 @@ name = "app-eai-agent-google-engine"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "cloudpickle>=3.1.1",
     "google-cloud-aiplatform[agent-engines]>=1.106.0",
