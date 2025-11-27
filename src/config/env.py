@@ -64,7 +64,6 @@ PROXY_URL = getenv_or_action("PROXY_URL")
 SHORT_MEMORY_TIME_LIMIT = round(
     float(getenv_or_action("SHORT_MEMORY_TIME_LIMIT")) * 86400
 )  # Convert days to seconds
-SHORT_MEMORY_TOKEN_LIMIT = int(getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT"))
 # Short-term memory limits (kept as strings for deployment)
 SHORT_MEMORY_TIME_LIMIT = getenv_or_action(
     "SHORT_MEMORY_TIME_LIMIT", default="30"
