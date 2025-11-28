@@ -9,7 +9,7 @@ from src.config import env
 
 from src.utils.log import logger
 
-logger.debug(env.MPC_SERVER_URL)
+logger.debug(env.MCP_SERVER_URL)
 
 
 async def get_mcp_tools(
