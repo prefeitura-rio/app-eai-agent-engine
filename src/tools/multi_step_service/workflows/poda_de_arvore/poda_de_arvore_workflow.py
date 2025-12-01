@@ -73,6 +73,9 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
         state: ServiceState
     ) -> ServiceState:
         """Coleta CPF do usuário."""
+        logger.info("[ENTRADA] _collect_cpf")
+        logger.info(f"[STATE.DATA] Chaves presentes: {list(state.data.keys())}")
+        logger.info(f"[STATE.PAYLOAD] Conteúdo: {state.payload}")
         
         
         # Se já verificou cadastro, pula
@@ -122,25 +125,45 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
                 return state
             
             except Exception as e:
-                state.agent_response = AgentResponse(
-                    description=IdentificationMessageTemplates.solicitar_cpf(),
-                    payload_schema=CPFPayload.model_json_schema(),
-                    error_message=f"CPF inválido: {str(e)}"
-                )
+                # Incrementa contador de tentativas de CPF
+                cpf_attempts = state.data.get("cpf_attempts", 0) + 1
+                state.data["cpf_attempts"] = cpf_attempts
+                
+                if cpf_attempts >= 3:
+                    # Excedeu tentativas - pula CPF
+                    state.data["cpf"] = "skip"
+                    state.data["identificacao_pulada"] = True
+                    state.data["cpf_max_attempts_reached"] = True
+                    logger.warning(f"CPF: máximo de tentativas ({cpf_attempts}) excedido. Pulando identificação.")
+                    state.agent_response = AgentResponse(
+                        description="Número máximo de tentativas excedido. Continuando sem identificação.",
+                        error_message="Máximo de tentativas excedido"
+                    )
+                    return state  # Retorna para prosseguir sem CPF
+                else:
+                    state.agent_response = AgentResponse(
+                        description=f"CPF inválido. Tentativa {cpf_attempts}/3. {IdentificationMessageTemplates.solicitar_cpf()}",
+                        payload_schema=CPFPayload.model_json_schema(),
+                        error_message=f"CPF inválido: {str(e)}"
+                    )
                 # Não retorna aqui - continua para verificar se deve solicitar CPF novamente
                 # ou terminar o fluxo
 
-        if "cpf" in state.data:
+        # Se já tem CPF processado e não é um novo valor sendo enviado
+        if "cpf" in state.data and "cpf" not in state.payload:
+            logger.info("CPF já existe em state.data, prosseguindo")
             return state
 
         # Se já temos uma resposta de erro (validação falhou), retorna com erro
         if state.agent_response and state.agent_response.error_message:
             return state
 
-        state.agent_response = AgentResponse(
-            description=IdentificationMessageTemplates.solicitar_cpf(),
-            payload_schema=CPFPayload.model_json_schema(),
-        )
+        # Se chegou aqui e não tem CPF, solicita
+        if "cpf" not in state.data:
+            state.agent_response = AgentResponse(
+                description=IdentificationMessageTemplates.solicitar_cpf(),
+                payload_schema=CPFPayload.model_json_schema(),
+            )
 
         return state
     
@@ -148,6 +171,9 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
     @handle_errors
     async def _collect_email(self, state: ServiceState) -> ServiceState:
         """Coleta email do usuário (opcional)."""
+        logger.info("[ENTRADA] _collect_email")
+        logger.info(f"[STATE.DATA] Chaves presentes: {list(state.data.keys())}")
+        logger.info(f"[STATE.PAYLOAD] Conteúdo: {state.payload}")
         
         # Se já processou email (coletado ou pulado), não pede novamente
         if state.data.get("email_processed"):
@@ -178,26 +204,44 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
                 return state
             
             except Exception as e:
-                # Email inválido - solicita novamente
-                state.agent_response = AgentResponse(
-                    description="Por favor, informe um email válido (ou deixe em branco para pular):",
-                    payload_schema=EmailPayload.model_json_schema(),
-                    error_message=f"Email inválido: {str(e)}"
-                )
+                # Incrementa contador de tentativas de email
+                email_attempts = state.data.get("email_attempts", 0) + 1
+                state.data["email_attempts"] = email_attempts
+                logger.info(f"[EMAIL] Tentativa {email_attempts}/3 - Erro: {str(e)}")
+                
+                if email_attempts >= 3:
+                    # Excedeu tentativas - pula email
+                    state.data["email_skipped"] = True
+                    state.data["email_processed"] = True
+                    state.data["email_max_attempts_reached"] = True
+                    logger.warning(f"Email: máximo de tentativas ({email_attempts}) excedido. Pulando email.")
+                    state.agent_response = AgentResponse(
+                        description="Número máximo de tentativas excedido. Continuando sem email.",
+                        error_message="Máximo de tentativas excedido"
+                    )
+                else:
+                    state.agent_response = AgentResponse(
+                        description=f"Email inválido. Tentativa {email_attempts}/3. Por favor, informe um email válido (ou deixe em branco para pular):",
+                        payload_schema=EmailPayload.model_json_schema(),
+                        error_message=f"Email inválido: {str(e)}"
+                    )
                 return state
 
         # Se já processou (tem email ou foi pulado), retorna
-        if state.data.get("email_processed"):
+        if state.data.get("email_processed") and "email" not in state.payload:
+            logger.info("Email já processado, prosseguindo")
             return state
 
         # Se já temos uma resposta de erro (validação falhou), retorna com erro
         if state.agent_response and state.agent_response.error_message:
             return state
 
-        state.agent_response = AgentResponse(
-            description="Por favor, informe seu email (opcional - você pode deixar em branco para pular):",
-            payload_schema=EmailPayload.model_json_schema(),
-        )
+        # Se chegou aqui e não processou email ainda, solicita
+        if not state.data.get("email_processed"):
+            state.agent_response = AgentResponse(
+                description="Por favor, informe seu email (opcional - você pode deixar em branco para pular):",
+                payload_schema=EmailPayload.model_json_schema(),
+            )
 
         return state
     
@@ -205,6 +249,9 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
     @handle_errors
     async def _collect_name(self, state: ServiceState) -> ServiceState:
         """Coleta nome do usuário (opcional)."""
+        logger.info("[ENTRADA] _collect_name")
+        logger.info(f"[STATE.DATA] Chaves presentes: {list(state.data.keys())}")
+        logger.info(f"[STATE.PAYLOAD] Conteúdo: {state.payload}")
         
         # Se já processou nome (coletado ou pulado), não pede novamente
         if state.data.get("name_processed"):
@@ -235,26 +282,43 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
                 return state
             
             except Exception as e:
-                # Nome inválido - solicita novamente
-                state.agent_response = AgentResponse(
-                    description="Por favor, informe um nome válido com nome e sobrenome (ou deixe em branco para pular):",
-                    payload_schema=NomePayload.model_json_schema(),
-                    error_message=f"Nome inválido: {str(e)}"
-                )
+                # Incrementa contador de tentativas de nome
+                name_attempts = state.data.get("name_attempts", 0) + 1
+                state.data["name_attempts"] = name_attempts
+                
+                if name_attempts >= 3:
+                    # Excedeu tentativas - pula nome
+                    state.data["name_skipped"] = True
+                    state.data["name_processed"] = True
+                    state.data["name_max_attempts_reached"] = True
+                    logger.warning(f"Nome: máximo de tentativas ({name_attempts}) excedido. Pulando nome.")
+                    state.agent_response = AgentResponse(
+                        description="Número máximo de tentativas excedido. Continuando sem nome.",
+                        error_message="Máximo de tentativas excedido"
+                    )
+                else:
+                    state.agent_response = AgentResponse(
+                        description=f"Nome inválido. Tentativa {name_attempts}/3. Por favor, informe um nome válido com nome e sobrenome (ou deixe em branco para pular):",
+                        payload_schema=NomePayload.model_json_schema(),
+                        error_message=f"Nome inválido: {str(e)}"
+                    )
                 return state
 
         # Se já processou (tem nome ou foi pulado), retorna
-        if state.data.get("name_processed"):
+        if state.data.get("name_processed") and "name" not in state.payload:
+            logger.info("Nome já processado, prosseguindo")
             return state
 
         # Se já temos uma resposta de erro (validação falhou), retorna com erro
         if state.agent_response and state.agent_response.error_message:
             return state
 
-        state.agent_response = AgentResponse(
-            description="Por favor, informe seu nome completo (opcional - você pode deixar em branco para pular):",
-            payload_schema=NomePayload.model_json_schema(),
-        )
+        # Se chegou aqui e não processou nome ainda, solicita
+        if not state.data.get("name_processed"):
+            state.agent_response = AgentResponse(
+                description="Por favor, informe seu nome completo (opcional - você pode deixar em branco para pular):",
+                payload_schema=NomePayload.model_json_schema(),
+            )
 
         return state
 
@@ -262,6 +326,58 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
     @handle_errors
     async def _collect_address(self, state: ServiceState) -> ServiceState:
         """Coleta endereço do usuário para a solicitação."""
+        logger.info("[ENTRADA] _collect_address")
+        logger.info(f"[STATE.DATA] Chaves presentes: {list(state.data.keys())}")
+        logger.info(f"[STATE.PAYLOAD] Conteúdo: {state.payload}")
+        
+        # IMPORTANTE: Detecta se o payload contém dados de outras etapas
+        # Se recebeu dados específicos de outras etapas quando já processou algumas coisas
+        if state.payload:
+            # Se já tem endereço validado e recebe outros dados, pula direto
+            if state.data.get("address_validated"):
+                if "cpf" in state.payload:
+                    logger.info("[ROTEAMENTO] Payload contém CPF, pulando direto para _collect_cpf")
+                    state.agent_response = None
+                    return state
+                elif "email" in state.payload:
+                    logger.info("[ROTEAMENTO] Payload contém email, continuando fluxo")
+                    state.agent_response = None
+                    return state
+                elif "name" in state.payload:
+                    logger.info("[ROTEAMENTO] Payload contém nome, continuando fluxo")
+                    state.agent_response = None
+                    return state
+                elif "ponto_referencia" in state.payload:
+                    logger.info("[ROTEAMENTO] Payload contém ponto_referencia, continuando fluxo")
+                    state.agent_response = None
+                    return state
+            # Se está esperando confirmação e recebe confirmação, continua processando
+            elif state.data.get("address_needs_confirmation") and "confirmacao" in state.payload:
+                logger.info("[ROTEAMENTO] Recebendo confirmação de endereço, processando...")
+                # Deixa processar normalmente
+            # Se recebe endereço mas não é a primeira execução nem confirmação, processa
+            elif "address" in state.payload:
+                logger.info("[ROTEAMENTO] Recebendo novo endereço, processando...")
+                # Deixa processar normalmente
+        
+        # IMPORTANTE: Se é primeira execução (payload vazio e não está reiniciando após erro),
+        # limpa TODOS os dados anteriores
+        if not state.payload and not state.data.get("restarting_after_error"):
+            if state.data:  # Se há dados antigos
+                logger.warning("[LIMPEZA] Detectados dados de execução anterior. Limpando state.data...")
+                state.data.clear()  # Limpa TUDO, incluindo contadores
+        
+        # Se está recomeçando após erro de ticket
+        if state.data.get("restarting_after_error"):
+            state.data.pop("restarting_after_error", None)
+            # Usa a mensagem de erro original, se disponível
+            error_msg = state.data.pop("error_message", "Não foi possível criar o ticket.")
+            # Mostra mensagem informando que está recomeçando
+            state.agent_response = AgentResponse(
+                description=f"❌ {error_msg}\n\nVamos tentar novamente.\n\n📍 Por favor, informe novamente o endereço completo onde está a árvore que necessita poda:",
+                payload_schema=AddressPayload.model_json_schema()
+            )
+            return state
         
         # Se já coletou endereço validado e confirmado, pula
         if state.data.get("address_validated") and state.data.get("address_confirmed"):
@@ -554,6 +670,12 @@ Rua Afonso Cavalcanti, 455, Cidade Nova""",
     @handle_errors
     async def _open_ticket(self, state: ServiceState) -> ServiceState:
         """Abre um ticket no SGRC com os dados coletados."""
+        logger.info("[ENTRADA] _open_ticket")
+        logger.info(f"[STATE.DATA] Chaves presentes: {list(state.data.keys())}")
+        logger.info(f"[STATE.DATA] Endereço: {state.data.get('address')}")
+        logger.info(f"[STATE.DATA] CPF: {state.data.get('cpf')}")
+        logger.info(f"[STATE.DATA] Email: {state.data.get('email')}")
+        logger.info(f"[STATE.DATA] Nome: {state.data.get('name')}")
         
         # Se estiver usando API fake, simula criação de ticket
         if self.use_fake_api:
@@ -635,9 +757,8 @@ Rua Afonso Cavalcanti, 455, Cidade Nova""",
             logger.exception(exc)
             state.data["ticket_created"] = False
             state.data["error"] = "erro_interno"
-            state.agent_response = AgentResponse(
-                description="Infelizmente houve um erro e a solicitação não pôde ser criada."
-            )
+            state.data["error_message"] = "Infelizmente houve um erro e a solicitação não pôde ser criada."
+            # NÃO define agent_response para permitir reinicialização
             return state
         except (SGRCDuplicateTicketException, SGRCEquivalentTicketException) as exc:
             logger.exception(exc)
@@ -653,18 +774,15 @@ Rua Afonso Cavalcanti, 455, Cidade Nova""",
             logger.exception(exc)
             state.data["ticket_created"] = False
             state.data["error"] = "erro_sgrc"
-            state.agent_response = AgentResponse(
-                description="O sistema está indisponível no momento.\n\nAguarde, que sua solicitação será criada assim que o sistema voltar ao normal. Nesse momento você vai receber o número de protocolo.\n\nSeu atendimento está finalizado, obrigado!"
-            )
+            state.data["error_message"] = "O sistema está indisponível no momento. Por favor, tente novamente."
+            # NÃO define agent_response para permitir reinicialização
             return state
         except Exception as exc:
             logger.exception(exc)
             state.data["ticket_created"] = False
             state.data["error"] = "erro_geral"
-            state.agent_response = AgentResponse(
-                description="Houve um erro ao abrir o chamado. Por favor, tente novamente mais tarde.",
-                error_message=str(exc)
-            )
+            state.data["error_message"] = "Houve um erro ao abrir o chamado. Por favor, tente novamente."
+            # NÃO define agent_response para permitir reinicialização
             return state
 
 
@@ -676,9 +794,23 @@ Rua Afonso Cavalcanti, 455, Cidade Nova""",
         return "continue"
     
     def _route_after_cpf(self, state: ServiceState) -> str:
+        logger.info("[ROTEAMENTO] _route_after_cpf")
+        logger.info(f"[STATE.DATA] cpf: {state.data.get('cpf')}")
+        logger.info(f"[STATE.DATA] cadastro_verificado: {state.data.get('cadastro_verificado')}")
+        logger.info(f"[STATE.DATA] cpf_max_attempts_reached: {state.data.get('cpf_max_attempts_reached')}")
         
-        # Se há qualquer agent_response (erro ou solicitação), termina o fluxo
-        if state.agent_response:
+        # Se excedeu tentativas máximas, continua sem CPF
+        if state.data.get("cpf_max_attempts_reached"):
+            # Remove agent_response para não terminar o fluxo
+            state.agent_response = None
+            return "collect_email"  # Vai para email
+        
+        # Se há agent_response (erro) mas NÃO tem CPF ainda, termina para aguardar novo input
+        if state.agent_response and "cpf" not in state.data:
+            return END  # Termina e aguarda novo input do usuário
+            
+        # Se há qualquer agent_response E já tem CPF, termina o fluxo
+        if state.agent_response and "cpf" in state.data:
             return END
             
         if "cpf" in state.data:
@@ -701,12 +833,33 @@ Rua Afonso Cavalcanti, 455, Cidade Nova""",
             else:
                 # CPF não encontrado - solicita email (opcional)
                 return "collect_email"
-        return "collect_cpf"
+        # Se chegou aqui sem processar, aguarda input
+        return END
     
     def _route_after_email(self, state: ServiceState) -> str:
+        logger.info("[ROTEAMENTO] _route_after_email")
+        logger.info(f"[STATE.DATA] email_processed: {state.data.get('email_processed')}")
+        logger.info(f"[STATE.DATA] email_max_attempts_reached: {state.data.get('email_max_attempts_reached')}")
         
-        # Se há qualquer agent_response (erro ou solicitação), termina o fluxo
-        if state.agent_response:
+        # Se excedeu tentativas máximas, continua sem email
+        if state.data.get("email_max_attempts_reached"):
+            # Remove agent_response para não terminar o fluxo
+            state.agent_response = None
+            # Vai para próxima etapa
+            if state.data.get("cadastro_verificado"):
+                if state.data.get("name") or state.data.get("name_processed"):
+                    return "open_ticket"
+                else:
+                    return "collect_name"
+            else:
+                return "collect_name"
+        
+        # Se há agent_response (erro) mas NÃO processou email, termina para aguardar novo input
+        if state.agent_response and not state.data.get("email_processed"):
+            return END  # Termina e aguarda novo input do usuário
+            
+        # Se há qualquer agent_response E já processou, termina o fluxo
+        if state.agent_response and state.data.get("email_processed"):
             return END
             
         # Se já processou email (informou ou pulou)
@@ -723,18 +876,34 @@ Rua Afonso Cavalcanti, 455, Cidade Nova""",
                     return "open_ticket"
                 else:
                     return "collect_name"
-        return "collect_email"
+        # Se chegou aqui sem processar, aguarda input
+        return END
     
     def _route_after_name(self, state: ServiceState) -> str:
-        # Se há qualquer agent_response (erro ou solicitação), termina o fluxo
-        if state.agent_response:
+        logger.info("[ROTEAMENTO] _route_after_name")
+        logger.info(f"[STATE.DATA] name_processed: {state.data.get('name_processed')}")
+        logger.info(f"[STATE.DATA] name_max_attempts_reached: {state.data.get('name_max_attempts_reached')}")
+        
+        # Se excedeu tentativas máximas, continua sem nome
+        if state.data.get("name_max_attempts_reached"):
+            # Remove agent_response para não terminar o fluxo
+            state.agent_response = None
+            return "open_ticket"  # Vai para abrir ticket
+        
+        # Se há agent_response (erro) mas NÃO processou nome ainda, termina para aguardar novo input
+        if state.agent_response and not state.data.get("name_processed"):
+            return END  # Termina e aguarda novo input do usuário
+            
+        # Se há qualquer agent_response E já processou, termina o fluxo
+        if state.agent_response and state.data.get("name_processed"):
             return END
             
         # Se já processou nome (informou ou pulou), vai para abrir ticket
         if state.data.get("name_processed"):
             return "open_ticket"
         
-        return "collect_name"
+        # Se chegou aqui sem processar, aguarda input
+        return END
     
     @handle_errors
     async def _confirm_address(self, state: ServiceState) -> ServiceState:
@@ -822,6 +991,9 @@ Rua Afonso Cavalcanti, 455, Cidade Nova""",
         return state
     
     def _route_after_address(self, state: ServiceState) -> str:
+        logger.info("[ROTEAMENTO] _route_after_address")
+        logger.info(f"[STATE.DATA] address_max_attempts_reached: {state.data.get('address_max_attempts_reached')}")
+        logger.info(f"[STATE] agent_response: {state.agent_response}")
         # Se atingiu o máximo de tentativas, sempre termina
         if state.data.get("address_max_attempts_reached"):
             return END
@@ -840,6 +1012,9 @@ Rua Afonso Cavalcanti, 455, Cidade Nova""",
     @handle_errors
     async def _collect_reference_point(self, state: ServiceState) -> ServiceState:
         """Coleta ponto de referência opcional."""
+        logger.info("[ENTRADA] _collect_reference_point")
+        logger.info(f"[STATE.DATA] Chaves presentes: {list(state.data.keys())}")
+        logger.info(f"[STATE.PAYLOAD] Conteúdo: {state.payload}")
         
         # Se já coletou ou não precisa coletar
         if state.data.get("reference_point_collected") or not state.data.get("need_reference_point"):
@@ -911,7 +1086,26 @@ Se não for necessário, responda AVANÇAR.""",
         return "collect_cpf"
     
     def _route_after_ticket(self, state: ServiceState) -> str:
-        # Sempre termina após tentar criar o ticket
+        logger.info("[ROTEAMENTO] _route_after_ticket")
+        logger.info(f"[STATE.DATA] ticket_created: {state.data.get('ticket_created')}")
+        logger.info(f"[STATE.DATA] error: {state.data.get('error')}")
+        
+        # Se houve erro na criação do ticket, limpa todos os dados e volta ao início
+        if state.data.get("error") or not state.data.get("ticket_created"):
+            # Salva apenas a mensagem de erro para mostrar ao usuário
+            error_msg = state.data.get("error_message", "Erro ao criar ticket")
+            
+            # Limpa COMPLETAMENTE todos os dados
+            state.data.clear()
+            
+            # Apenas marca que está recomeçando e salva a mensagem
+            state.data["restarting_after_error"] = True
+            state.data["error_message"] = error_msg
+            
+            # Volta para coletar endereço (início do fluxo)
+            return "collect_address"
+        
+        # Se o ticket foi criado com sucesso, termina
         return END
     
     def build_graph(self) -> StateGraph[ServiceState]:
@@ -995,6 +1189,7 @@ Se não for necessário, responda AVANÇAR.""",
             "open_ticket",
             self._route_after_ticket,
             {
+                "collect_address": "collect_address",  # Volta ao início após erro
                 END: END
             }
         )

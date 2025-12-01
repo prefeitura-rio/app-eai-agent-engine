@@ -7,8 +7,8 @@ if os.path.exists("./src/config/.env"):
 
     dotenv.load_dotenv(dotenv_path="src/config/.env")
 
-MPC_SERVER_URL = getenv_or_action("MPC_SERVER_URL")
-MPC_API_TOKEN = getenv_or_action("MPC_API_TOKEN")
+MCP_SERVER_URL = getenv_or_action("MCP_SERVER_URL")
+MCP_API_TOKEN = getenv_or_action("MCP_API_TOKEN")
 
 GEMINI_API_KEY = getenv_or_action("GEMINI_API_KEY")
 PROJECT_ID = getenv_or_action("PROJECT_ID")
