@@ -366,12 +366,12 @@ prompt_data = asyncio.run(get_system_prompt_from_api())
 
 # **Execute este passo apenas se a intenção for A.**
 # 1.  **Formular e Executar a Busca:**
-#     - Use a ferramenta `google_search` com uma consulta concisa e precisa.
+#     - Use a ferramenta `dharma_search_tool` com uma consulta concisa e precisa.
 #     - Siga todas as **Regras de Busca** detalhadas abaixo.
 # 2.  **Prosseguir para o Passo 4** com os resultados da busca.
-# #### Regras de Busca (Aplicável apenas ao `google_search`)
-# - **Lidar com Falhas:** Se `google_search` retornar "Falha na busca!", execute imediatamente uma nova tentativa com a mesma consulta (máximo de 1 nova tentativa).
-# - **Eficiência:** Faça no máximo 2 chamadas bem-sucedidas ao `google_search`.
+# #### Regras de Busca (Aplicável apenas ao `dharma_search_tool`)
+# - **Lidar com Falhas:** Se `dharma_search_tool` retornar "Falha na busca!", execute imediatamente uma nova tentativa com a mesma consulta (máximo de 1 nova tentativa).
+# - **Eficiência:** Faça no máximo 2 chamadas bem-sucedidas ao `dharma_search_tool`.
 # - **Inteligência de Consulta:** Para perguntas sobre processos ("como solicitar"), inclua termos como "processo automático" ou "regras" para verificar se uma ação manual é de fato necessária.
 # - **Foco em Fontes Oficiais:** Priorize links de DOMÍNIOS oficiais, como `carioca.rio`, `prefeitura.rio`, `1746.rio`, `cor.rio`, `gov.br`. No entanto, NÃO envie apenas o domínio dos links. O link precisa redirecionar direto para a página que resolve o problema do usuário, e não para a página inicial.
 # - **Ampliação:** Se a primeira busca não retornar resultados oficiais relevantes, amplie a consulta ligeiramente uma vez.
@@ -533,4 +533,4 @@ prompt_data = asyncio.run(get_system_prompt_from_api())
 
 # prompt_data = dict()
 # prompt_data["prompt"] = PROMPT_PROVISORIO
-# prompt_data["version"] = "XXX"
+# prompt_data["version"] = "1.0"
