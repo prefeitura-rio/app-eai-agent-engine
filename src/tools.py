@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from langchain_core.tools import BaseTool
 import asyncio
 
@@ -7,12 +7,19 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from src.config import env
 
 
-async def get_mcp_tools(include_tools: List[str] = None, exclude_tools: List[str] = None) -> List[BaseTool]:
+from src.utils.log import logger
+
+logger.debug(env.MCP_SERVER_URL)
+
+
+async def get_mcp_tools(
+    include_tools: Optional[List[str]] = None, exclude_tools: Optional[List[str]] = None
+) -> List[BaseTool]:
     """
     Inicializa o cliente MCP e busca as ferramentas disponíveis de forma assíncrona.
 
     Args:
-        include_tools (List[str], optional): Lista de nomes de ferramentas para incluir. 
+        include_tools (List[str], optional): Lista de nomes de ferramentas para incluir.
                                            Se fornecida, apenas essas ferramentas serão retornadas.
         exclude_tools (List[str], optional): Lista de nomes de ferramentas para excluir.
                                            Se fornecida, todas as ferramentas exceto essas serão retornadas.
@@ -25,20 +32,20 @@ async def get_mcp_tools(include_tools: List[str] = None, exclude_tools: List[str
         include_tools = []
     if exclude_tools is None:
         exclude_tools = []
-    
+
     client = MultiServerMCPClient(
         {
             "rio_mcp": {
                 "transport": "streamable_http",
-                "url": env.MPC_SERVER_URL,
+                "url": env.MCP_SERVER_URL,
                 "headers": {
-                    "Authorization": f"Bearer {env.MPC_API_TOKEN}",
+                    "Authorization": f"Bearer {env.MCP_API_TOKEN}",
                 },
             },
         }
     )
     tools = await client.get_tools()
-    
+
     # Apply filtering logic
     if include_tools:
         # If include list is not empty, return only tools in the include list
@@ -49,7 +56,7 @@ async def get_mcp_tools(include_tools: List[str] = None, exclude_tools: List[str
     else:
         # If both lists are empty, return all tools
         filtered_tools = tools
-    
+
     return filtered_tools
 
 

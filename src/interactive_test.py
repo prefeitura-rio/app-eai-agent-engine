@@ -1,16 +1,27 @@
 import traceback
 import asyncio
 import json
+import logging
 from sys import argv
 from datetime import datetime, timezone
 
 import vertexai
 from vertexai import agent_engines
 
+# Configure logging to show INFO level messages
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
 from src.config import env
 from src.prompt import prompt_data
 from engine.agent import Agent
 from src.tools import mcp_tools
+from src.utils.utils import gerar_conversa_aleatoria
+import uuid
+
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -25,23 +36,27 @@ def get_agent():
     )
 
 
-user_id = "bruno_2025_10_21_01"
+lista_de_mensagens = gerar_conversa_aleatoria(num_mensagens=10, tamanho_content=100)
+
+user_id = str(uuid.uuid4())  # Unique user ID for the session
 
 
 # Initialize agents
 remote_agent = get_agent()
-
+prompt_version = prompt_data["version"]
 local_agent = Agent(
     model="gemini-2.5-flash",
     system_prompt=prompt_data["prompt"],
     temperature=0.7,
     tools=mcp_tools,
-    otpl_service=f"eai-langgraph-v{prompt_data["version"]}",
+    include_thoughts=True,
+    thinking_budget=-1,
+    otpl_service=f"eai-langgraph-v{prompt_version}",
 )
 
 
 def parse_agent_response(response, is_local=False, start_time=None):
-    """Parse the agent response and show all steps."""
+    """Parse the agent response and show all steps"""
     print("\n" + "=" * 60)
     print("🤖 AGENT EXECUTION STEPS")
     print("=" * 60)
@@ -116,8 +131,26 @@ def parse_agent_response(response, is_local=False, start_time=None):
                         print(f"      📋 Arguments: {json.dumps(tool_args, indent=8)}")
 
                 # Show AI content if any
+                thinking_content = ""
+                final_content = ""
                 if message.content:
-                    print(f"   💬 Response: {message.content}")
+                    if isinstance(message.content, list):
+                        for msg in message.content:
+                            if isinstance(msg, dict):
+                                if msg.get("type") == "thinking":
+                                    thinking_content += msg.get("thinking", "")
+                                elif msg.get("type") == "text":
+                                    final_content += msg.get("text", "")
+                            else:
+                                final_content += msg
+                    else:
+                        final_content = message.content
+
+                if thinking_content.strip == "":
+                    print(f"   💬 Response: {final_content}")
+                else:
+                    print(f"   📝 Thinking: {thinking_content}")
+                    print(f"   💬 Response: {final_content}")
 
                 # Show usage metadata
                 usage = getattr(message, "usage_metadata", {})
@@ -181,8 +214,27 @@ def parse_agent_response(response, is_local=False, start_time=None):
                         print(f"      📋 Arguments: {json.dumps(tool_args, indent=8)}")
 
                 # Show AI content if any
+                # Show AI content if any
+                thinking_content = ""
+                final_content = ""
                 if content:
-                    print(f"   💬 Response: {content}")
+                    if isinstance(content, list):
+                        for msg in content:
+                            if isinstance(msg, dict):
+                                if msg.get("type") == "thinking":
+                                    thinking_content += msg.get("thinking", "")
+                                elif msg.get("type") == "text":
+                                    final_content += msg.get("text", "")
+                            else:
+                                final_content += msg
+                    else:
+                        final_content = content
+
+                if thinking_content.strip == "":
+                    print(f"   💬 Response: {final_content}")
+                else:
+                    print(f"   📝 Thinking: {thinking_content}")
+                    print(f"   💬 Response: {final_content}")
 
                 # Show usage metadata
                 usage = message.get("usage_metadata", {})
@@ -225,6 +277,7 @@ async def interactive_chat(use_local=False):
             elif user_input.lower() == "help":
                 print("\n📋 Available commands:")
                 print("  - Type your message to chat with the agent")
+                print("  - '!ai <message>' to inject a message as if the agent sent it")
                 print("  - 'quit' to exit")
                 print("  - 'help' to show this help")
                 print("  - 'clear' to clear the screen")
@@ -235,12 +288,26 @@ async def interactive_chat(use_local=False):
             elif not user_input:
                 continue
 
-            print(f"\n🔄 Processing: {user_input}")
-
-            # Prepare the data
-            data = {
-                "messages": [{"role": "human", "content": user_input}],
-            }
+            type = None
+            # Check if user wants to send a message as AI
+            if user_input.startswith("!ai "):
+                user_input = user_input.replace("!ai ", "", 1).strip()
+                data = {
+                    "messages": [{"role": "ai", "content": user_input}],
+                }
+                type = "history"
+            elif user_input.startswith("!fake"):
+                # For testing: send a batch of fake messages
+                data = {
+                    "messages": lista_de_mensagens,
+                }
+                type = "history"
+                print(f"\n🔄 Processing batch of {len(lista_de_mensagens)} messages...")
+            else:
+                print(f"\n🔄 Processing: {user_input}")
+                data = {
+                    "messages": [{"role": "human", "content": user_input}],
+                }
 
             config = {"configurable": {"thread_id": user_id}}
             try:
@@ -249,12 +316,23 @@ async def interactive_chat(use_local=False):
 
                 # Use async_query for both agents
                 if use_local:
-                    result = await local_agent.async_query(input=data, config=config)
+                    result = await local_agent.async_query(
+                        input=data, config=config, type=type
+                    )
                 else:
-                    result = await remote_agent.async_query(input=data, config=config)
-                print(result)
+                    result = await remote_agent.async_query(
+                        input=data, config=config, type=type
+                    )
+                # print(result)
                 # Parse and display the result
-                parse_agent_response(result, is_local=use_local, start_time=start_time)
+
+                if type == "history":
+                    print("\n✅ History updated successfully.")
+                    print(result)
+                else:
+                    parse_agent_response(
+                        result, is_local=use_local, start_time=start_time
+                    )
 
             except Exception as e:
                 print(f"\n❌ Error: {str(e)}")

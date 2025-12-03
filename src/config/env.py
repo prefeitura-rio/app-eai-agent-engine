@@ -7,8 +7,8 @@ if os.path.exists("./src/config/.env"):
 
     dotenv.load_dotenv(dotenv_path="src/config/.env")
 
-MPC_SERVER_URL = getenv_or_action("MPC_SERVER_URL")
-MPC_API_TOKEN = getenv_or_action("MPC_API_TOKEN")
+MCP_SERVER_URL = getenv_or_action("MCP_SERVER_URL")
+MCP_API_TOKEN = getenv_or_action("MCP_API_TOKEN")
 
 GEMINI_API_KEY = getenv_or_action("GEMINI_API_KEY")
 PROJECT_ID = getenv_or_action("PROJECT_ID")
@@ -38,3 +38,7 @@ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = getenv_or_action(
 OTEL_EXPORTER_OTLP_TRACES_HEADERS = getenv_or_action(
     "OTEL_EXPORTER_OTLP_TRACES_HEADERS"
 )
+
+# Short-term memory limits (kept as strings for deployment)
+SHORT_MEMORY_TIME_LIMIT = getenv_or_action("SHORT_MEMORY_TIME_LIMIT", default="30")  # in days
+SHORT_MEMORY_TOKEN_LIMIT = getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT", default="50000")  # in tokens
