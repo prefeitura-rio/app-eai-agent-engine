@@ -97,7 +97,12 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
                                        "awaiting_user_memory_confirmation"]
                         for key in keys_to_clear:
                             state.data.pop(key, None)
-                        # Prossegue para coletar novos dados (CPF será solicitado abaixo)
+                        # Solicita CPF imediatamente após limpar dados
+                        state.agent_response = AgentResponse(
+                            description=solicitar_cpf(),
+                            payload_schema=CPFPayload.model_json_schema(),
+                        )
+                        return state
                     
                 except Exception as e:
                     logger.error(f"Erro ao processar confirmação de dados pessoais: {e}")
