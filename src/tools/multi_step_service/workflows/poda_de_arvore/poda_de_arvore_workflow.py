@@ -134,9 +134,15 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
         payload_is_empty = not state.payload or (len(state.payload) == 1 and "ponto_referencia" in state.payload)
         
         # Se está aguardando confirmação OU precisa perguntar pela primeira vez
+        # Também pergunta se tem CPF="skip" mas não tem dados pessoais reais
+        should_ask_about_data = (
+            (state.data.get("address_confirmed") or state.data.get("personal_data_needs_confirmation")) or
+            (state.data.get("cpf") == "skip" and not state.data.get("name") and not state.data.get("email"))
+        )
+        
         if (((payload_is_empty and not state.data.get("awaiting_user_memory_confirmation")) or 
             (state.data.get("awaiting_user_memory_confirmation") and "confirmacao" not in state.payload)) and 
-            (state.data.get("address_confirmed") or state.data.get("personal_data_needs_confirmation"))):
+            should_ask_about_data):
             has_user_data = []
             
             if state.data.get("name"):
@@ -279,9 +285,19 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
                 # ou terminar o fluxo
 
         # Se já tem CPF processado e não é um novo valor sendo enviado
+        # MAS se CPF é "skip" e acabou de coletar ponto de referência, solicita CPF novamente
         if "cpf" in state.data and "cpf" not in state.payload:
-            logger.info("CPF já existe em state.data, prosseguindo")
-            return state
+            # Se CPF é "skip" e acabou de processar ponto de referência, pergunta CPF
+            if (state.data.get("cpf") == "skip" and 
+                state.data.get("reference_point_collected") and 
+                "ponto_referencia" in state.payload):
+                logger.info("CPF é 'skip' mas acabou de coletar ponto de referência - solicitando CPF")
+                # Limpa o CPF skip para solicitar novamente
+                state.data.pop("cpf", None)
+                state.data.pop("identificacao_pulada", None)
+            else:
+                logger.info("CPF já existe em state.data, prosseguindo")
+                return state
 
         # Se já temos uma resposta de erro (validação falhou), retorna com erro
         if state.agent_response and state.agent_response.error_message:
@@ -492,13 +508,13 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
                     
                     # Se tem endereço ou dados pessoais, marca para confirmar
                     if state.data.get("address") or state.data.get("address_temp"):
-                        state.data["personal_data_needs_confirmation"] = True
+                        # Tem endereço salvo, marca para confirmar dados pessoais depois
+                        if state.data.get("cpf") or state.data.get("email") or state.data.get("name"):
+                            state.data["personal_data_needs_confirmation"] = True
                         # Continua para perguntar sobre endereço
                     elif state.data.get("cpf") or state.data.get("email") or state.data.get("name"):
-                        # Tem só dados pessoais, limpa tudo e pede endereço novo
-                        keys_to_clear = ["cpf", "email", "name", "phone"]
-                        for key in keys_to_clear:
-                            state.data.pop(key, None)
+                        # Tem só dados pessoais, marca para confirmar depois do endereço
+                        state.data["personal_data_needs_confirmation"] = True
         
         # Se já coletou endereço validado e confirmado, pula
         # MAS não pula se houver erro/ticket (novo atendimento) ou confirmações pendentes
@@ -639,7 +655,7 @@ class PodaDeArvoreWorkflow(BaseWorkflow):
                 state.data["last_address_text"] = address_text
                 
                 # Verifica se excedeu tentativas
-                if validation_state.attempts > validation_state.max_attempts:
+                if validation_state.attempts >= validation_state.max_attempts:
                     state.agent_response = AgentResponse(
                         description="Não foi possível validar o endereço após 3 tentativas. Por favor, tente novamente mais tarde ou entre em contato pelo telefone 1746. Seu atendimento está finalizado.",
                         error_message="Máximo de tentativas excedido"
