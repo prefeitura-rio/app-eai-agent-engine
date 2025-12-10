@@ -140,6 +140,7 @@ dependencies = [
     { name = "langchain-google-genai" },
     { name = "langchain-google-vertexai" },
     { name = "langchain-mcp-adapters" },
+    { name = "langchain-text-splitters" },
     { name = "langgraph" },
     { name = "loguru" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
@@ -147,6 +148,7 @@ dependencies = [
     { name = "opentelemetry-sdk" },
     { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "typing-extensions" },
 ]
 
 [package.metadata]
@@ -157,9 +159,10 @@ requires-dist = [
     { name = "langchain", specifier = "==0.3.27" },
     { name = "langchain-core", specifier = "==0.3.76" },
     { name = "langchain-google-cloud-sql-pg", specifier = "==0.14.1" },
-    { name = "langchain-google-genai", specifier = ">=2.1.9" },
+    { name = "langchain-google-genai", specifier = "==2.1.12" },
     { name = "langchain-google-vertexai", specifier = "==2.1.2" },
-    { name = "langchain-mcp-adapters", specifier = ">=0.1.9" },
+    { name = "langchain-mcp-adapters", specifier = "==0.1.14" },
+    { name = "langchain-text-splitters", specifier = "==0.3.11" },
     { name = "langgraph", specifier = "==0.6.4" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.36.0" },
@@ -167,6 +170,7 @@ requires-dist = [
     { name = "opentelemetry-sdk", specifier = ">=1.36.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "typing-extensions", specifier = ">=4.12.2" },
 ]
 
 [[package]]
