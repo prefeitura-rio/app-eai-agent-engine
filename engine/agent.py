@@ -9,7 +9,7 @@ from langchain_core.messages import trim_messages
 # from langgraph.prebuilt import create_react_agent
 # use custom graph without _validate_chat_history
 from engine.custom_react_agent import create_react_agent
-from langchain_google_vertexai import ChatVertexAI
+from langchain_openai import ChatOpenAI
 from langchain_core.tools import BaseTool
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from vertexai.agent_engines import (
@@ -64,6 +64,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._include_thoughts = include_thoughts
         self._thinking_budget = thinking_budget
         self._otpl_service = otpl_service
+        # RIO API configuration
+        self._rio_api_key = getenv("RIO_API_KEY", "")
+        self._rio_api_base = "https://rio-api-test.onrender.com/v1"
         # Database configuration
         self._project_id = getenv("PROJECT_ID", "")
         self._region = getenv("LOCATION", "")
@@ -858,11 +861,15 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             # Use stored messages that were sent to LLM (from pre_model_hook)
             llm_input_messages = self._last_llm_input_messages or []
             
-            # Count tokens using built-in ChatVertexAI method
+            # Count tokens using built-in ChatOpenAI method
             # This gives us accurate token counts for the messages
             try:
                 # Reuse the same LLM instance to avoid initialization overhead
-                llm = ChatVertexAI(model_name=self._model)
+                llm = ChatOpenAI(
+                    model=self._model,
+                    openai_api_key=self._rio_api_key,
+                    base_url=self._rio_api_base,
+                )
                 
                 # Count system prompt tokens (the main system prompt string)
                 system_prompt_tokens = llm.get_num_tokens(self._system_prompt)
@@ -970,11 +977,11 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
         """Create and configure the React Agent."""
-        llm = ChatVertexAI(
-            model_name=self._model,
+        llm = ChatOpenAI(
+            model=self._model,
             temperature=self._temperature,
-            include_thoughts=self._include_thoughts,
-            thinking_budget=self._thinking_budget,
+            openai_api_key=self._rio_api_key,
+            base_url=self._rio_api_base,
         )
         # llm_with_tools = llm.bind_tools(tools=self._tools, parallel_tool_calls=False)
         llm_with_tools = llm.bind_tools(tools=self._tools)

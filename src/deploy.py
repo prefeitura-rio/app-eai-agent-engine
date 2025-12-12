@@ -17,7 +17,7 @@ vertexai.init(
 def deploy():
     system_prompt = prompt_data["prompt"]
     system_prompt_version = prompt_data["version"]
-    model = "gemini-2.5-flash"
+    model = "rio-2.5-fast"
     now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     local_agent = Agent(
         model=model,
@@ -39,7 +39,7 @@ def deploy():
             "langchain-core==0.3.76",
             "langchain-google-cloud-sql-pg==0.14.1",
             "langchain-google-genai==2.1.12",
-            "langchain-google-vertexai==2.1.2",
+            "langchain-openai>=0.2.0",
             "langchain-mcp-adapters==0.1.14",
             "langgraph==0.6.4",
             "langchain-text-splitters==0.3.11",
@@ -67,6 +67,7 @@ def deploy():
             "MCP_API_TOKEN": env.MCP_API_TOKEN,
             "EAI_AGENT_URL": env.EAI_AGENT_URL,
             "EAI_AGENT_TOKEN": env.EAI_AGENT_TOKEN,
+            "RIO_API_KEY": env.RIO_API_KEY,
             "SHORT_MEMORY_TOKEN_LIMIT": env.SHORT_MEMORY_TOKEN_LIMIT,
             "SHORT_MEMORY_TIME_LIMIT": env.SHORT_MEMORY_TIME_LIMIT,
         },
