@@ -25,7 +25,7 @@ tools = [{
 messages = [{"role": "user", "content": "Use the weather tool for London right now."}]
 
 resp1 = client.chat.completions.create(
-    model="rio-2.5-fast",
+    model="rio-3.0-preview",
     messages=messages,
     tools=tools,
     tool_choice="auto",
@@ -47,7 +47,7 @@ messages.append({
 })
 
 resp2 = client.chat.completions.create(
-    model="rio-2.5-fast",
+    model="rio-3.0-preview",
     messages=messages,
 )
 print(resp2.choices[0].message.content)

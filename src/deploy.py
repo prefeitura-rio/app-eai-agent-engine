@@ -17,7 +17,7 @@ vertexai.init(
 def deploy():
     system_prompt = prompt_data["prompt"]
     system_prompt_version = prompt_data["version"]
-    model = "rio-2.5-fast"
+    model = "rio-3.0-preview"
     now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     local_agent = Agent(
         model=model,

@@ -1,4 +1,5 @@
 import inspect
+import datetime
 from typing import (
     Any,
     Awaitable,
@@ -757,7 +758,9 @@ def create_react_agent(
         messages = _get_state_value(state, "messages")
         structured_response_schema = response_format
         if isinstance(response_format, tuple):
+            current_timestamp = datetime.datetime.now(tz=datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d-%m-%Y às %H:%M")
             system_prompt, structured_response_schema = response_format
+            system_prompt = (f"Data e Horário: {current_timestamp}\n" + system_prompt).strip()
             messages = [SystemMessage(content=system_prompt)] + list(messages)
 
         resolved_model = _resolve_model(state, runtime)
@@ -775,7 +778,9 @@ def create_react_agent(
         messages = _get_state_value(state, "messages")
         structured_response_schema = response_format
         if isinstance(response_format, tuple):
+            current_timestamp = datetime.datetime.now(tz=datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d-%m-%Y às %H:%M")
             system_prompt, structured_response_schema = response_format
+            system_prompt = (f"Data e Horário: {current_timestamp}\n" + system_prompt).strip()
             messages = [SystemMessage(content=system_prompt)] + list(messages)
 
         resolved_model = await _aresolve_model(state, runtime)
