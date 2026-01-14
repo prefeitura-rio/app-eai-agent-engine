@@ -1,11 +1,12 @@
-from src.config import env
+from datetime import datetime
+
 import vertexai
 from vertexai import agent_engines
+
+from engine.agent import Agent
 from src.config import env
 from src.prompt import prompt_data
-from engine.agent import Agent
 from src.tools import mcp_tools
-from datetime import datetime
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -29,6 +30,23 @@ def deploy():
         otpl_service=f"eai-langgraph-v{system_prompt_version}",
     )
     service_account = f"{env.PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+    # VPC network configuration for private MCP server access
+    network_config = {}
+    if hasattr(env, "NETWORK_ATTACHMENT") and env.NETWORK_ATTACHMENT:
+        network_config["config"] = {
+            "psc_interface_config": {
+                "network_attachment": env.NETWORK_ATTACHMENT,
+                "dns_peering_configs": [
+                    {
+                        "domain": "mcp.internal.",
+                        "target_project": env.PROJECT_ID,
+                        "target_network": "application-network",
+                    },
+                ],
+            },
+        }
+
     return agent_engines.create(
         local_agent,
         requirements=[
@@ -69,6 +87,7 @@ def deploy():
             "SHORT_MEMORY_TIME_LIMIT": env.SHORT_MEMORY_TIME_LIMIT,
         },
         service_account=service_account,
+        **network_config,
     )
 
 
