@@ -19,7 +19,7 @@ def deploy():
     system_prompt_version = prompt_data["version"]
     model = "gemini-2.5-flash"
     now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    
+
     # Tools will be loaded at runtime from MCP server (not at deployment time)
     # This allows deployment from local machine where MCP private network is not accessible
     local_agent = Agent(
@@ -36,18 +36,16 @@ def deploy():
     # VPC network configuration for private MCP server access
     psc_config = None
     if hasattr(env, "NETWORK_ATTACHMENT") and env.NETWORK_ATTACHMENT:
-        from google.cloud.aiplatform_v1.types import PscInterfaceConfig
-        
-        psc_config = PscInterfaceConfig(
-            network_attachment=env.NETWORK_ATTACHMENT,
-            dns_peering_configs=[
+        psc_config = {
+            "network_attachment": env.NETWORK_ATTACHMENT,
+            "dns_peering_configs": [
                 {
-                    "domain": "mcp.internal.",
+                    "domain": "mcp.internal",
                     "target_project": env.PROJECT_ID,
                     "target_network": "application-network",
                 },
             ],
-        )
+        }
 
     return agent_engines.create(
         local_agent,

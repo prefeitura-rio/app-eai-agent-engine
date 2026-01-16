@@ -30,13 +30,13 @@ VPC: application-network
 
 ### 1. Prerequisites
 
-Infrastructure resources (managed in `/infra/superapp/modules/gcp/psc-mcp.tf`):
+Infrastructure resources (managed in `/infra/superapp/modules/`):
 
 - VPC Network: `application-network`
 - PSC Subnet: `psc-mcp-subnet` (10.1.0.0/28)
 - Network Attachment: `agent-engine-mcp-attachment`
-- DNS Zone: `mcp.internal.`
-- DNS Record: `mcp-server.mcp.internal`
+- Private DNS Zone: `mcp-internal-zone` (domain: `mcp.internal`)
+- DNS Record: `mcp-server.mcp.internal` → Internal Load Balancer IP
 - Firewall rules and IAM permissions
 
 ### 2. Configure Environment
@@ -57,10 +57,10 @@ DATABASE_USER="agent_user"
 DATABASE_PASSWORD="your-password"
 
 # MCP Server (Private Network)
-MCP_SERVER_URL="http://mcp-server.mcp.internal:8000"
+MCP_SERVER_URL="http://mcp-server.mcp.internal"
 MCP_API_TOKEN="your-mcp-api-token"
 
-# VPC Network - REQUIRED for private MCP access
+# PSC Network Configuration - REQUIRED for private MCP access
 NETWORK_ATTACHMENT="projects/rj-superapp/regions/us-central1/networkAttachments/agent-engine-mcp-attachment"
 
 # Agent Gateway
@@ -82,34 +82,44 @@ SHORT_MEMORY_TOKEN_LIMIT="50000"
 # Install dependencies
 pip install -r requirements.txt
 
-# Deploy agent
+# Deploy agent (with PSC if NETWORK_ATTACHMENT is set)
 python src/deploy.py
 ```
 
-## VPC Configuration
+**PSC Deployment Validation:**
+The deployment script will log whether PSC interface is enabled:
+- `✓ PSC Interface: Enabled` - Agent will connect via private network
+- `✓ PSC Interface: Disabled` - Agent will use public internet (fallback)
 
-The agent uses Private Service Connect (PSC) to access the MCP server. When `NETWORK_ATTACHMENT` is set, the deployment automatically configures:
+## Private Service Connect (PSC) Configuration
+
+The agent uses Private Service Connect Interface to securely access the MCP server in your VPC. When `NETWORK_ATTACHMENT` is configured, the deployment automatically enables:
 
 ```python
-config = {
-    "psc_interface_config": {
-        "network_attachment": env.NETWORK_ATTACHMENT,
-        "dns_peering_configs": [
-            {
-                "domain": "mcp.internal.",
-                "target_project": env.PROJECT_ID,
-                "target_network": "application-network",
-            },
-        ],
-    },
+# Automatic PSC configuration in deploy.py
+psc_config = {
+    "network_attachment": env.NETWORK_ATTACHMENT,
+    "dns_peering_configs": [
+        {
+            "domain": "mcp.internal",
+            "target_project": env.PROJECT_ID,
+            "target_network": "application-network",
+        },
+    ],
 }
 ```
 
-**What this enables:**
+**Environment-Specific Network Attachments:**
 
-- Private connectivity via PSC network attachment
-- DNS resolution for `mcp.internal.` domain (resolves `mcp-server.mcp.internal` to ILB IP)
-- Secure communication without public internet exposure
+- **Staging**: `projects/rj-superapp-staging/regions/us-central1/networkAttachments/agent-engine-mcp-attachment`
+- **Production**: `projects/rj-superapp/regions/us-central1/networkAttachments/agent-engine-mcp-attachment`
+
+**What PSC enables:**
+
+- **Private connectivity**: Agent Engine connects directly to your VPC via network attachment
+- **DNS peering**: Resolves `mcp-server.mcp.internal` to internal load balancer IP
+- **Security**: All traffic flows through Google's private network, never public internet
+- **VPC Service Controls**: Required for environments with VPC-SC perimeters
 
 ## Usage
 
@@ -123,23 +133,45 @@ python src/interactive_test.py
 
 ## Troubleshooting
 
-### Agent Cannot Connect to MCP Server
+### PSC Interface Issues
 
+**Check if PSC is enabled:**
 ```bash
-# Verify network attachment
+# Verify deployment logs show PSC configuration
+python -c "from src.config import env; print('NETWORK_ATTACHMENT:', getattr(env, 'NETWORK_ATTACHMENT', 'NOT_SET'))"
+```
+
+**Validate network attachment:**
+```bash
+# Verify network attachment exists
 gcloud compute network-attachments describe agent-engine-mcp-attachment \
   --region=us-central1 --project=rj-superapp
 
-# Check firewall rules
-gcloud compute firewall-rules describe allow-agent-engine-to-mcp \
-  --project=rj-superapp
+# Check subnet configuration
+gcloud compute networks subnets describe psc-mcp-subnet \
+  --region=us-central1 --project=rj-superapp
+```
 
-# Test DNS (from within VPC)
+**Test DNS resolution:**
+```bash
+# From within VPC (e.g., GKE pod)
 nslookup mcp-server.mcp.internal
 
-# Check agent logs
+# Should resolve to internal load balancer IP (10.0.x.x range)
+```
+
+### Agent Cannot Connect to MCP Server
+
+```bash
+# Check firewall rules
+gcloud compute firewall-rules list --filter="name~mcp OR name~agent" --project=rj-superapp
+
+# Verify internal load balancer status
+kubectl get service mcp-ilb -n mcp
+
+# Check agent logs for PSC connectivity
 gcloud logging read "resource.type=aiplatform.googleapis.com/Endpoint" \
-  --project=rj-superapp --limit=50
+  --project=rj-superapp --filter="textPayload:PSC OR textPayload:mcp" --limit=50
 ```
 
 ### Deployment Fails
@@ -167,8 +199,16 @@ gcloud logging read "resource.type=aiplatform.googleapis.com/Endpoint" \
 
 Infrastructure managed in `/infra/superapp/`:
 
-- `modules/gcp/psc-mcp.tf` - VPC and PSC configuration
-- `modules/deployments/mcp.tf` - MCP server deployment
+- `modules/gcp/network.tf` - VPC and PSC network attachment configuration
+- `modules/gcp/dns-records.tf` - Private DNS zone for `mcp.internal`
+- `modules/gcp/addresses.tf` - Internal load balancer IP allocation
+- `modules/deployments/mcp.tf` - MCP server Kubernetes deployment
+
+**Key Infrastructure Resources:**
+- Network Attachment: `agent-engine-mcp-attachment`
+- PSC Subnet: `psc-mcp-subnet` (10.1.0.0/28)
+- DNS Zone: `mcp-internal-zone`
+- Internal LB: `mcp-ilb` service
 
 ## Security
 
