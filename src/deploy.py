@@ -6,7 +6,6 @@ from vertexai import agent_engines
 from engine.agent import Agent
 from src.config import env
 from src.prompt import prompt_data
-from src.tools import mcp_tools
 
 vertexai.init(
     project=env.PROJECT_ID,
@@ -20,32 +19,35 @@ def deploy():
     system_prompt_version = prompt_data["version"]
     model = "gemini-2.5-flash"
     now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    
+    # Tools will be loaded at runtime from MCP server (not at deployment time)
+    # This allows deployment from local machine where MCP private network is not accessible
     local_agent = Agent(
         model=model,
         system_prompt=system_prompt,
         include_thoughts=True,
         thinking_budget=-1,  # 0 to disable, -1 to unlimited and other token limit value
         temperature=0.7,
-        tools=mcp_tools,
+        tools=[],  # Empty - tools loaded lazily at runtime
         otpl_service=f"eai-langgraph-v{system_prompt_version}",
     )
     service_account = f"{env.PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
     # VPC network configuration for private MCP server access
-    network_config = {}
+    psc_config = None
     if hasattr(env, "NETWORK_ATTACHMENT") and env.NETWORK_ATTACHMENT:
-        network_config["config"] = {
-            "psc_interface_config": {
-                "network_attachment": env.NETWORK_ATTACHMENT,
-                "dns_peering_configs": [
-                    {
-                        "domain": "mcp.internal.",
-                        "target_project": env.PROJECT_ID,
-                        "target_network": "application-network",
-                    },
-                ],
-            },
-        }
+        from google.cloud.aiplatform_v1.types import PscInterfaceConfig
+        
+        psc_config = PscInterfaceConfig(
+            network_attachment=env.NETWORK_ATTACHMENT,
+            dns_peering_configs=[
+                {
+                    "domain": "mcp.internal.",
+                    "target_project": env.PROJECT_ID,
+                    "target_network": "application-network",
+                },
+            ],
+        )
 
     return agent_engines.create(
         local_agent,
@@ -87,7 +89,7 @@ def deploy():
             "SHORT_MEMORY_TIME_LIMIT": env.SHORT_MEMORY_TIME_LIMIT,
         },
         service_account=service_account,
-        **network_config,
+        psc_interface_config=psc_config,
     )
 
 
