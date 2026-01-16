@@ -1,25 +1,20 @@
-### Use public MCP URL for local testing ###
+### Use private MCP URL not to go through Google Cloud Armor ###
 
 from typing import List, Optional
 from langchain_core.tools import BaseTool
-import asyncio
-
+import os
 from langchain_mcp_adapters.client import MultiServerMCPClient
-
-from src.config import env
-
-
-from src.utils.log import logger
-
-# Use public URL for local testing (private URL not accessible from local machine)
-logger.debug(f"Local testing MCP URL: {env.MCP_SERVER_PUBLIC_URL}")
 
 
 async def get_mcp_tools(
-    include_tools: Optional[List[str]] = None, exclude_tools: Optional[List[str]] = None
+    include_tools: Optional[List[str]] = None,
+    exclude_tools: Optional[List[str]] = None,
 ) -> List[BaseTool]:
     """
-    Inicializa o cliente MCP e busca as ferramentas disponíveis de forma assíncrona.
+    Load MCP tools from server URL specified in environment variables.
+    
+    This function reads MCP_SERVER_URL and MCP_API_TOKEN from environment variables,
+    allowing different URLs in local development vs deployed environments.
 
     Args:
         include_tools (List[str], optional): Lista de nomes de ferramentas para incluir.
@@ -36,14 +31,20 @@ async def get_mcp_tools(
     if exclude_tools is None:
         exclude_tools = []
 
-    # Use public URL for local testing (MCP_SERVER_URL is private and not accessible locally)
+    # Read from environment variables (works in both local and deployed environments)
+    mcp_url = os.getenv("MCP_SERVER_URL")
+    mcp_token = os.getenv("MCP_API_TOKEN")
+    
+    if not mcp_url or not mcp_token:
+        raise ValueError("MCP_SERVER_URL and MCP_API_TOKEN environment variables must be set")
+
     client = MultiServerMCPClient(
         {
             "rio_mcp": {
                 "transport": "streamable_http",
-                "url": env.MCP_SERVER_PUBLIC_URL,
+                "url": mcp_url,
                 "headers": {
-                    "Authorization": f"Bearer {env.MCP_API_TOKEN}",
+                    "Authorization": f"Bearer {mcp_token}",
                 },
             },
         }
@@ -62,5 +63,3 @@ async def get_mcp_tools(
         filtered_tools = tools
 
     return filtered_tools
-
-mcp_tools = asyncio.run(get_mcp_tools(exclude_tools=env.MCP_EXCLUDED_TOOLS))
