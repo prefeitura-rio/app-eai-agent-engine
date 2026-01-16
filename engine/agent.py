@@ -852,6 +852,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         if self._setup_complete_async:
             return
+        
+        # Load MCP tools at runtime if not already loaded
+        if not self._tools:
+            from src.tools import get_mcp_tools
+            from src.config import env
+            self._tools = await get_mcp_tools(exclude_tools=env.MCP_EXCLUDED_TOOLS)
+        
         engine = await PostgresEngine.afrom_instance(
             project_id=self._project_id,
             region=self._region,
@@ -872,6 +879,14 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         if self._setup_complete_sync:
             return self._graph
+        
+        # Load MCP tools at runtime if not already loaded
+        if not self._tools:
+            import asyncio
+            from src.tools import get_mcp_tools
+            from src.config import env
+            self._tools = asyncio.run(get_mcp_tools(exclude_tools=env.MCP_EXCLUDED_TOOLS))
+        
         engine = PostgresEngine.from_instance(
             project_id=self._project_id,
             region=self._region,

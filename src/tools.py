@@ -60,4 +60,6 @@ async def get_mcp_tools(
     return filtered_tools
 
 
-mcp_tools = asyncio.run(get_mcp_tools(exclude_tools=env.MCP_EXCLUDED_TOOLS))
+# Lazy loading: only load tools at runtime, not at import time
+# This allows deployment to succeed even when MCP server is not accessible from local machine
+mcp_tools = None
