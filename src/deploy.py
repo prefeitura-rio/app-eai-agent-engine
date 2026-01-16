@@ -85,6 +85,7 @@ def deploy():
             "EAI_AGENT_TOKEN": env.EAI_AGENT_TOKEN,
             "SHORT_MEMORY_TOKEN_LIMIT": env.SHORT_MEMORY_TOKEN_LIMIT,
             "SHORT_MEMORY_TIME_LIMIT": env.SHORT_MEMORY_TIME_LIMIT,
+            "MCP_EXCLUDED_TOOLS": ",".join(env.MCP_EXCLUDED_TOOLS) if env.MCP_EXCLUDED_TOOLS else "",
         },
         service_account=service_account,
         psc_interface_config=psc_config,

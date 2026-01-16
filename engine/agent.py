@@ -855,9 +855,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         
         # Load MCP tools at runtime if not already loaded
         if not self._tools:
-            from src.tools import get_mcp_tools
-            from src.config import env
-            self._tools = await get_mcp_tools(exclude_tools=env.MCP_EXCLUDED_TOOLS)
+            from engine.mcp_tools import get_mcp_tools
+            excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
+            excluded_tools_list = excluded_tools.split(",") if excluded_tools else []
+            self._tools = await get_mcp_tools(exclude_tools=excluded_tools_list)
         
         engine = await PostgresEngine.afrom_instance(
             project_id=self._project_id,
@@ -883,9 +884,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # Load MCP tools at runtime if not already loaded
         if not self._tools:
             import asyncio
-            from src.tools import get_mcp_tools
-            from src.config import env
-            self._tools = asyncio.run(get_mcp_tools(exclude_tools=env.MCP_EXCLUDED_TOOLS))
+            from engine.mcp_tools import get_mcp_tools
+            excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
+            excluded_tools_list = excluded_tools.split(",") if excluded_tools else []
+            self._tools = asyncio.run(get_mcp_tools(exclude_tools=excluded_tools_list))
         
         engine = PostgresEngine.from_instance(
             project_id=self._project_id,
