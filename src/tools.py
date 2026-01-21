@@ -9,7 +9,7 @@ from src.config import env
 
 from src.utils.log import logger
 
-logger.debug(env.MCP_SERVER_URL)
+logger.debug(env.MCP_SERVER_PUBLIC_URL)
 
 
 async def get_mcp_tools(
@@ -37,7 +37,7 @@ async def get_mcp_tools(
         {
             "rio_mcp": {
                 "transport": "streamable_http",
-                "url": env.MCP_SERVER_URL,
+                "url": env.MCP_SERVER_PUBLIC_URL,
                 "headers": {
                     "Authorization": f"Bearer {env.MCP_API_TOKEN}",
                 },

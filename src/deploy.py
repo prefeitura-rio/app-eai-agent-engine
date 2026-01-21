@@ -17,7 +17,7 @@ vertexai.init(
 def deploy():
     system_prompt = prompt_data["prompt"]
     system_prompt_version = prompt_data["version"]
-    model = "rio-3.0-preview"
+    model = "rio-3.0-nano"
     now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     local_agent = Agent(
         model=model,
@@ -63,7 +63,7 @@ def deploy():
             "DATABASE_PASSWORD": env.DATABASE_PASSWORD,
             "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
             "OTEL_EXPORTER_OTLP_TRACES_HEADERS": env.OTEL_EXPORTER_OTLP_TRACES_HEADERS,
-            "MCP_SERVER_URL": env.MCP_SERVER_URL,
+            "MCP_SERVER_URL": env.MCP_SERVER_PUBLIC_URL,
             "MCP_API_TOKEN": env.MCP_API_TOKEN,
             "EAI_AGENT_URL": env.EAI_AGENT_URL,
             "EAI_AGENT_TOKEN": env.EAI_AGENT_TOKEN,
