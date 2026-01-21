@@ -34,6 +34,22 @@ def deploy():
     service_account = f"{env.PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
     # VPC network configuration for private MCP server access
+    # IMPORTANT: psc_interface_config affects ALL network connections from the agent,
+    # not just MCP calls. This includes:
+    # - PostgreSQL/Cloud SQL connections
+    # - External API calls
+    # - DNS resolution
+    # 
+    # When enabled, the network_attachment determines ALL routing, and dns_peering_configs
+    # affects ALL DNS lookups. This can cause issues if:
+    # 1. Cloud SQL is not accessible from the PSC network
+    # 2. DNS peering interferes with Cloud SQL DNS resolution
+    # 3. Network routes don't include paths to Cloud SQL
+    # 
+    # Solution options:
+    # A) Keep PSC disabled and use MCP_SERVER_PUBLIC_URL (current working solution)
+    # B) Configure PSC network to allow Cloud SQL access
+    # C) Use Cloud SQL Private IP and add appropriate routes to PSC network
     psc_config = None
     if hasattr(env, "NETWORK_ATTACHMENT") and env.NETWORK_ATTACHMENT:
         psc_config = {
@@ -56,16 +72,18 @@ def deploy():
             "langchain==0.3.27",
             "langchain-core==0.3.76",
             "langchain-google-cloud-sql-pg==0.14.1",
-            "langchain-google-genai>=2.1.9",
+            "langchain-google-genai==2.1.12",
             "langchain-google-vertexai==2.1.2",
-            "langchain-mcp-adapters>=0.1.9",
+            "langchain-mcp-adapters==0.1.14",
             "langgraph==0.6.4",
+            "langchain-text-splitters==0.3.11",
             "loguru>=0.7.3",
             "opentelemetry-exporter-otlp-proto-http>=1.36.0",
             "opentelemetry-instrumentation-langchain>=0.45.6",
             "opentelemetry-sdk>=1.36.0",
             "pydantic>=2.11.7",
             "python-dotenv>=1.0.0",
+            "typing-extensions>=4.12.2",
         ],
         extra_packages=["./engine"],
         gcs_dir_name=f"{model}/v{system_prompt_version}/{now}",

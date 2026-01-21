@@ -5,6 +5,7 @@ import json
 import asyncio
 import ast
 from langchain_core.messages import trim_messages
+from functools import wraps
 
 # from langgraph.prebuilt import create_react_agent
 # use custom graph without _validate_chat_history
@@ -236,6 +237,20 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             ):
                 message.additional_kwargs["timestamp"] = current_time
                 updates.append(message)
+                
+                # Log tool execution result
+                logger.info("[Tool Execution] Tool execution completed")
+                logger.info(f"[Tool Execution]   - Tool Call ID: {message.tool_call_id if hasattr(message, 'tool_call_id') else 'UNKNOWN'}")
+                logger.info(f"[Tool Execution]   - Tool Name: {message.name if hasattr(message, 'name') else 'UNKNOWN'}")
+                logger.info(f"[Tool Execution]   - Status: {message.status if hasattr(message, 'status') else 'success'}")
+                
+                # Log the content (result), but limit size for large responses
+                content_str = str(message.content)
+                if len(content_str) > 1000:
+                    logger.info(f"[Tool Execution]   - Result (first 1000 chars): {content_str[:1000]}...")
+                    logger.info(f"[Tool Execution]   - Result length: {len(content_str)} characters")
+                else:
+                    logger.info(f"[Tool Execution]   - Result: {content_str}")
 
         # Retorna APENAS as mensagens modificadas para evitar duplicação no add_messages
         return {"messages": updates} if updates else {}
@@ -808,8 +823,20 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             return self._inject_thread_id_in_user_id_params(filtered_state, config)
 
     def _combined_post_model_hook(self, state, config=None):
-        # Check if upsert_user_memory tool was called
+        # Log tool calls if present
         messages = state.get("messages", [])
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+                logger.info("[Tool Execution] AI Message with tool calls detected")
+                for i, tool_call in enumerate(msg.tool_calls, 1):
+                    logger.info(f"[Tool Execution] Tool Call #{i}:")
+                    logger.info(f"[Tool Execution]   - Tool Name: {tool_call.get('name', 'UNKNOWN')}")
+                    logger.info(f"[Tool Execution]   - Tool ID: {tool_call.get('id', 'UNKNOWN')}")
+                    logger.info(f"[Tool Execution]   - Tool Args: {tool_call.get('args', {})}")
+                    logger.info(f"[Tool Execution]   - Full Tool Call: {tool_call}")
+                break  # Only log the most recent AI message
+        
+        # Check if upsert_user_memory tool was called
         for msg in reversed(messages):
             if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
                 for tool_call in msg.tool_calls:
@@ -835,15 +862,74 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         )
         # llm_with_tools = llm.bind_tools(tools=self._tools, parallel_tool_calls=False)
         llm_with_tools = llm.bind_tools(tools=self._tools)
+        
+        # Wrap tools with logging
+        wrapped_tools = self._wrap_tools_with_logging(self._tools)
 
         self._graph = create_react_agent(
             model=llm_with_tools,
-            tools=self._tools,
+            tools=wrapped_tools,
             prompt=self._system_prompt,
             checkpointer=checkpointer,
             pre_model_hook=self._combined_pre_model_hook,
             post_model_hook=self._combined_post_model_hook,
         )
+    
+    def _wrap_tools_with_logging(self, tools: List[BaseTool]) -> List[BaseTool]:
+        """Wrap each tool with logging to capture invocations."""
+        wrapped_tools = []
+        
+        for tool in tools:
+            # Create a wrapped version of the tool
+            original_invoke = tool._run
+            original_ainvoke = tool._arun
+            
+            def create_sync_wrapper(original_func, tool_name):
+                @wraps(original_func)
+                def sync_wrapper(*args, **kwargs):
+                    logger.info(f"[Tool Invocation] SYNC: Invoking tool: {tool_name}")
+                    logger.info(f"[Tool Invocation]   - Args: {args}")
+                    logger.info(f"[Tool Invocation]   - Kwargs: {kwargs}")
+                    try:
+                        result = original_func(*args, **kwargs)
+                        result_str = str(result)
+                        if len(result_str) > 500:
+                            logger.info(f"[Tool Invocation]   - Result (first 500 chars): {result_str[:500]}...")
+                        else:
+                            logger.info(f"[Tool Invocation]   - Result: {result_str}")
+                        return result
+                    except Exception as e:
+                        logger.error(f"[Tool Invocation]   - ERROR: {type(e).__name__}: {str(e)}", exc_info=True)
+                        raise
+                return sync_wrapper
+            
+            def create_async_wrapper(original_func, tool_name):
+                @wraps(original_func)
+                async def async_wrapper(*args, **kwargs):
+                    logger.info(f"[Tool Invocation] ASYNC: Invoking tool: {tool_name}")
+                    logger.info(f"[Tool Invocation]   - Args: {args}")
+                    logger.info(f"[Tool Invocation]   - Kwargs: {kwargs}")
+                    try:
+                        result = await original_func(*args, **kwargs)
+                        result_str = str(result)
+                        if len(result_str) > 500:
+                            logger.info(f"[Tool Invocation]   - Result (first 500 chars): {result_str[:500]}...")
+                        else:
+                            logger.info(f"[Tool Invocation]   - Result: {result_str}")
+                        return result
+                    except Exception as e:
+                        logger.error(f"[Tool Invocation]   - ERROR: {type(e).__name__}: {str(e)}", exc_info=True)
+                        raise
+                return async_wrapper
+            
+            # Wrap the tool methods
+            tool._run = create_sync_wrapper(original_invoke, tool.name)
+            tool._arun = create_async_wrapper(original_ainvoke, tool.name)
+            
+            wrapped_tools.append(tool)
+        
+        logger.info(f"[Tool Wrapping] Wrapped {len(wrapped_tools)} tools with logging")
+        return wrapped_tools
 
     async def _ensure_async_setup(self):
         """Ensure async components are set up."""
@@ -886,17 +972,68 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 logger.error(f"[Agent Setup] MCP_EXCLUDED_TOOLS was: {getenv('MCP_EXCLUDED_TOOLS', 'NOT SET')}")
                 raise RuntimeError(f"Failed to load MCP tools during async setup: {str(e)}") from e
         
-        engine = await PostgresEngine.afrom_instance(
-            project_id=self._project_id,
-            region=self._region,
-            instance=self._instance_name,
-            database=self._database_name,
-            user=self._database_user,
-            password=self._database_password,
-            engine_args={"pool_pre_ping": True, "pool_recycle": 300},
-        )
-        checkpointer = await PostgresSaver.create(engine=engine)
+        # PostgreSQL connection with detailed logging
+        logger.info("[Agent Setup] ========== Starting PostgreSQL Connection ==========")
+        logger.info(f"[Agent Setup] PostgreSQL Configuration:")
+        logger.info(f"[Agent Setup]   - Project ID: {self._project_id}")
+        logger.info(f"[Agent Setup]   - Region: {self._region}")
+        logger.info(f"[Agent Setup]   - Instance: {self._instance_name}")
+        logger.info(f"[Agent Setup]   - Database: {self._database_name}")
+        logger.info(f"[Agent Setup]   - User: {self._database_user}")
+        logger.info(f"[Agent Setup]   - Password: {'SET' if self._database_password else 'NOT SET'}")
+        
+        # Check for network-related environment variables
+        import os
+        network_vars = {
+            'NETWORK_ATTACHMENT': os.getenv('NETWORK_ATTACHMENT', 'NOT SET'),
+            'VPC_CONNECTOR': os.getenv('VPC_CONNECTOR', 'NOT SET'),
+            'CLOUDSQL_CONNECTION': os.getenv('CLOUDSQL_CONNECTION', 'NOT SET'),
+        }
+        logger.info(f"[Agent Setup] Network Environment Variables: {network_vars}")
+        
+        try:
+            logger.info("[Agent Setup] Attempting to create PostgresEngine...")
+            engine = await PostgresEngine.afrom_instance(
+                project_id=self._project_id,
+                region=self._region,
+                instance=self._instance_name,
+                database=self._database_name,
+                user=self._database_user,
+                password=self._database_password,
+                engine_args={"pool_pre_ping": True, "pool_recycle": 300},
+            )
+            logger.info("[Agent Setup] ✓ PostgresEngine created successfully (async)")
+        except Exception as pg_error:
+            logger.error("[Agent Setup] ✗ CRITICAL: Failed to create PostgresEngine")
+            logger.error(f"[Agent Setup]   - Error Type: {type(pg_error).__name__}")
+            logger.error(f"[Agent Setup]   - Error Message: {str(pg_error)}")
+            logger.error(f"[Agent Setup]   - Full Error Details:", exc_info=True)
+            
+            # Additional diagnostic info
+            logger.error(f"[Agent Setup] PostgreSQL connection failed. Possible causes:")
+            logger.error(f"[Agent Setup]   1. PSC network_attachment blocking Cloud SQL access")
+            logger.error(f"[Agent Setup]   2. DNS resolution failing for Cloud SQL instance")
+            logger.error(f"[Agent Setup]   3. Network routing misconfigured")
+            logger.error(f"[Agent Setup]   4. Cloud SQL instance not accessible from PSC network")
+            
+            raise RuntimeError(f"Failed to connect to PostgreSQL: {str(pg_error)}") from pg_error
+
+        try:
+            logger.info("[Agent Setup] Attempting to create PostgresSaver...")
+            checkpointer = await PostgresSaver.create(engine=engine)
+            logger.info("[Agent Setup] ✓ PostgresSaver created successfully (async)")
+        except Exception as saver_error:
+            logger.error("[Agent Setup] ✗ CRITICAL: Failed to create PostgresSaver")
+            logger.error(f"[Agent Setup]   - Error Type: {type(saver_error).__name__}")
+            logger.error(f"[Agent Setup]   - Error Message: {str(saver_error)}")
+            logger.error(f"[Agent Setup]   - Full Error Details:", exc_info=True)
+            raise RuntimeError(f"Failed to create PostgresSaver: {str(saver_error)}") from saver_error
+
+        logger.info("[Agent Setup] Creating React agent with checkpointer...")
         self._create_react_agent(checkpointer=checkpointer)
+        logger.info("[Agent Setup] ✓ React agent created successfully (async)")
+        logger.info("[Agent Setup] ========== Agent Setup Complete ==========")
+
         self._setup_complete_async = True
 
     def _ensure_sync_setup(self):
