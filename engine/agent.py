@@ -855,10 +855,36 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         
         # Load MCP tools at runtime if not already loaded
         if not self._tools:
-            from engine.mcp_tools import get_mcp_tools
-            excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
-            excluded_tools_list = excluded_tools.split(",") if excluded_tools else []
-            self._tools = await get_mcp_tools(exclude_tools=excluded_tools_list)
+            try:
+                logger.info("[Agent Setup] Loading MCP tools (async)...")
+                from engine.mcp_tools import get_mcp_tools
+                
+                # Get and log excluded tools
+                excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
+                excluded_tools_list = [t.strip() for t in excluded_tools.split(",") if t.strip()] if excluded_tools else []
+                
+                # Get MCP server URL for logging
+                mcp_url = getenv("MCP_SERVER_URL", "NOT SET")
+                
+                logger.info(f"[Agent Setup] MCP_SERVER_URL: {mcp_url}")
+                logger.info(f"[Agent Setup] MCP_EXCLUDED_TOOLS: {excluded_tools_list if excluded_tools_list else 'None'}")
+                logger.info(f"[Agent Setup] Calling get_mcp_tools with exclude_tools={excluded_tools_list}")
+                
+                self._tools = await get_mcp_tools(exclude_tools=excluded_tools_list)
+                
+                logger.info(f"[Agent Setup] Successfully loaded {len(self._tools)} MCP tools")
+                tool_names = [tool.name for tool in self._tools]
+                logger.info(f"[Agent Setup] Loaded tool names: {tool_names}")
+                
+            except Exception as e:
+                logger.error(
+                    f"[Agent Setup] CRITICAL ERROR: Failed to load MCP tools. "
+                    f"Error type: {type(e).__name__}, Message: {str(e)}",
+                    exc_info=True
+                )
+                logger.error(f"[Agent Setup] MCP_SERVER_URL was: {getenv('MCP_SERVER_URL', 'NOT SET')}")
+                logger.error(f"[Agent Setup] MCP_EXCLUDED_TOOLS was: {getenv('MCP_EXCLUDED_TOOLS', 'NOT SET')}")
+                raise RuntimeError(f"Failed to load MCP tools during async setup: {str(e)}") from e
         
         engine = await PostgresEngine.afrom_instance(
             project_id=self._project_id,
@@ -883,11 +909,37 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         
         # Load MCP tools at runtime if not already loaded
         if not self._tools:
-            import asyncio
-            from engine.mcp_tools import get_mcp_tools
-            excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
-            excluded_tools_list = excluded_tools.split(",") if excluded_tools else []
-            self._tools = asyncio.run(get_mcp_tools(exclude_tools=excluded_tools_list))
+            try:
+                logger.info("[Agent Setup] Loading MCP tools (sync)...")
+                import asyncio
+                from engine.mcp_tools import get_mcp_tools
+                
+                # Get and log excluded tools
+                excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
+                excluded_tools_list = [t.strip() for t in excluded_tools.split(",") if t.strip()] if excluded_tools else []
+                
+                # Get MCP server URL for logging
+                mcp_url = getenv("MCP_SERVER_URL", "NOT SET")
+                
+                logger.info(f"[Agent Setup] MCP_SERVER_URL: {mcp_url}")
+                logger.info(f"[Agent Setup] MCP_EXCLUDED_TOOLS: {excluded_tools_list if excluded_tools_list else 'None'}")
+                logger.info(f"[Agent Setup] Calling get_mcp_tools with exclude_tools={excluded_tools_list}")
+                
+                self._tools = asyncio.run(get_mcp_tools(exclude_tools=excluded_tools_list))
+                
+                logger.info(f"[Agent Setup] Successfully loaded {len(self._tools)} MCP tools")
+                tool_names = [tool.name for tool in self._tools]
+                logger.info(f"[Agent Setup] Loaded tool names: {tool_names}")
+                
+            except Exception as e:
+                logger.error(
+                    f"[Agent Setup] CRITICAL ERROR: Failed to load MCP tools. "
+                    f"Error type: {type(e).__name__}, Message: {str(e)}",
+                    exc_info=True
+                )
+                logger.error(f"[Agent Setup] MCP_SERVER_URL was: {getenv('MCP_SERVER_URL', 'NOT SET')}")
+                logger.error(f"[Agent Setup] MCP_EXCLUDED_TOOLS was: {getenv('MCP_EXCLUDED_TOOLS', 'NOT SET')}")
+                raise RuntimeError(f"Failed to load MCP tools during sync setup: {str(e)}") from e
         
         engine = PostgresEngine.from_instance(
             project_id=self._project_id,
