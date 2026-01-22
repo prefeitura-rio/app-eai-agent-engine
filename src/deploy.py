@@ -40,7 +40,7 @@ def deploy():
             "network_attachment": env.NETWORK_ATTACHMENT,
             "dns_peering_configs": [
                 {
-                    "domain": "mcp.internal",
+                    "domain": "agent-engine.internal",
                     "target_project": env.PROJECT_ID,
                     "target_network": "application-network",
                 },
