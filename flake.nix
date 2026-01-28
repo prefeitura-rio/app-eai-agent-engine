@@ -25,12 +25,17 @@
           with pkgs;
           mkShell {
             packages = [
-              (python313.withPackages (ps: with ps; [
-                matplotlib
-                numpy
-                pandas
-                seaborn
-              ]))
+              (google-cloud-sdk.withExtraComponents (
+                with google-cloud-sdk.components; [ gke-gcloud-auth-plugin ]
+              ))
+              (python313.withPackages (
+                ps: with ps; [
+                  matplotlib
+                  numpy
+                  pandas
+                  seaborn
+                ]
+              ))
               uv
               k6
               just
@@ -44,3 +49,4 @@
       }
     );
 }
+

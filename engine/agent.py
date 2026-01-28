@@ -1,17 +1,29 @@
-from typing import Any, Iterator, List, Optional, AsyncIterable
-from langchain.load.dump import dumpd
-from datetime import datetime, timezone
-import json
-import asyncio
 import ast
-from langchain_core.messages import trim_messages
+import asyncio
+import json
+from datetime import datetime, timezone
+from os import getenv
+from typing import Any, AsyncIterable, Iterator, List
 
-# from langgraph.prebuilt import create_react_agent
-# use custom graph without _validate_chat_history
-from engine.custom_react_agent import create_react_agent
-from langchain_google_vertexai import ChatVertexAI
+from langchain_core.load.dump import dumpd
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+    trim_messages,
+)
 from langchain_core.tools import BaseTool
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
+from langchain_google_vertexai import ChatVertexAI
+from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 from vertexai.agent_engines import (
     AsyncQueryable,
     AsyncStreamQueryable,
@@ -19,21 +31,9 @@ from vertexai.agent_engines import (
     StreamQueryable,
 )
 
-from os import getenv
-from langchain_google_cloud_sql_pg import (
-    PostgresEngine,
-    PostgresSaver,
-)
-
-from opentelemetry import trace
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.trace.sampling import ALWAYS_ON
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-
-from opentelemetry.instrumentation.langchain import LangchainInstrumentor
-
+# from langgraph.prebuilt import create_react_agent
+# use custom graph without _validate_chat_history
+from engine.custom_react_agent import create_react_agent
 from engine.log import logger
 
 
@@ -43,7 +43,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     Components are initialized lazily on the first query.
 
-    Use engine.init_checkpoint_table() if the table does not exists
+    Database tables are automatically created when needed via checkpointer.setup()
     """
 
     def __init__(
@@ -65,9 +65,8 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._thinking_budget = thinking_budget
         self._otpl_service = otpl_service
         # Database configuration
-        self._project_id = getenv("PROJECT_ID", "")
-        self._region = getenv("LOCATION", "")
-        self._instance_name = getenv("INSTANCE", "")
+        self._database_host = getenv("DATABASE_HOST", "localhost")
+        self._database_port = getenv("DATABASE_PORT", "5432")
         self._database_name = getenv("DATABASE", "")
         self._database_user = getenv("DATABASE_USER", "")
         self._database_password = getenv("DATABASE_PASSWORD", "")
@@ -75,6 +74,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._otlp_header = getenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
 
         self._graph = None
+        self._checkpointer = None  # Store checkpointer instance
         self._setup_complete_async = False
         self._setup_complete_sync = False
         self._opentelemetry_setup_complete = False
@@ -462,7 +462,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         if not time_filtered_messages:
             # If all messages are filtered out, keep at least the last message
             logger.warning(
-                f"[Short-Term Memory] All messages filtered by time limit, keeping last message"
+                "[Short-Term Memory] All messages filtered by time limit, keeping last message"
             )
             time_filtered_messages = [non_system_messages[-1]]
         else:
@@ -825,7 +825,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return self._inject_thread_id_in_user_id_params(state, config)
 
-    def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
+    def _create_react_agent(
+        self,
+        checkpointer: AsyncPostgresSaver | PostgresSaver | None = None,
+    ):
         """Create and configure the React Agent."""
         llm = ChatVertexAI(
             model_name=self._model,
@@ -852,24 +855,24 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         if self._setup_complete_async:
             return
-        
+
         # Load MCP tools at runtime if not already loaded
         if not self._tools:
             from engine.mcp_tools import get_mcp_tools
+
             excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
             excluded_tools_list = excluded_tools.split(",") if excluded_tools else []
             self._tools = await get_mcp_tools(exclude_tools=excluded_tools_list)
-        
-        engine = await PostgresEngine.afrom_instance(
-            project_id=self._project_id,
-            region=self._region,
-            instance=self._instance_name,
-            database=self._database_name,
-            user=self._database_user,
-            password=self._database_password,
-            engine_args={"pool_pre_ping": True, "pool_recycle": 300},
-        )
-        checkpointer = await PostgresSaver.create(engine=engine)
+
+        # Create connection string for standard Postgres
+        conn_string = f"postgresql://{self._database_user}:{self._database_password}@{self._database_host}:{self._database_port}/{self._database_name}"
+
+        # Pass the context manager generator directly to create_react_agent
+        checkpointer_ctx = AsyncPostgresSaver.from_conn_string(conn_string)
+        checkpointer = await checkpointer_ctx.__aenter__()
+
+        await checkpointer.setup()
+
         self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_async = True
 
@@ -880,26 +883,25 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         if self._setup_complete_sync:
             return self._graph
-        
+
         # Load MCP tools at runtime if not already loaded
         if not self._tools:
             import asyncio
+
             from engine.mcp_tools import get_mcp_tools
+
             excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
             excluded_tools_list = excluded_tools.split(",") if excluded_tools else []
             self._tools = asyncio.run(get_mcp_tools(exclude_tools=excluded_tools_list))
-        
-        engine = PostgresEngine.from_instance(
-            project_id=self._project_id,
-            region=self._region,
-            instance=self._instance_name,
-            database=self._database_name,
-            user=self._database_user,
-            password=self._database_password,
-            engine_args={"pool_pre_ping": True, "pool_recycle": 300},
-        )
 
-        checkpointer = PostgresSaver.create_sync(engine=engine)
+        # Create connection string for standard Postgres
+        conn_string = f"postgresql://{self._database_user}:{self._database_password}@{self._database_host}:{self._database_port}/{self._database_name}"
+
+        # Pass the context manager generator directly to create_react_agent
+        checkpointer_ctx = PostgresSaver.from_conn_string(conn_string)
+        checkpointer = checkpointer_ctx.__enter__()
+        checkpointer.setup()
+
         self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_sync = True
         return self._graph

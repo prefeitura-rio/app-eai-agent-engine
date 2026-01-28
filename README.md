@@ -4,7 +4,7 @@ Vertex AI Agent Engine deployment for Rio de Janeiro municipal services (IplanRi
 
 ## Overview
 
-AI agent using Google Cloud Vertex AI Agent Engine with Gemini 2.5 Flash model. Connects to both MCP (Model Context Protocol) server and Cloud SQL PostgreSQL via Private Service Connect (PSC) interface for secure, private connectivity.
+AI agent using Google Cloud Vertex AI Agent Engine with Gemini 2.5 Flash model. Connects to both MCP (Model Context Protocol) server and PostgreSQL database via Private Service Connect (PSC) interface for secure, private connectivity.
 
 ## Architecture
 
@@ -13,15 +13,14 @@ Vertex AI Agent Engine (Google-Managed VPC)
     ↓ (PSC Interface)
 psc-mcp-subnet (10.1.0.0/28)
     ├─→ MCP Server (ILB: mcp.agent-engine.internal)
-    └─→ Cloud SQL Proxy (ILB: postgres.agent-engine.internal:5432)
+    └─→ PostgreSQL Database (postgres.agent-engine.internal:5432)
 ```
 
 **Components:**
 - Vertex AI Agent Engine (Gemini 2.5 Flash)
 - MCP Server (private via Internal Load Balancer)
-- Cloud SQL Proxy (private via Internal Load Balancer)
-- Cloud SQL PostgreSQL (accessed via proxy)
-- LangGraph with Cloud SQL checkpointing
+- PostgreSQL Database (private via Internal Load Balancer)
+- LangGraph with PostgreSQL checkpointing
 
 ## Quick Start
 
@@ -31,11 +30,11 @@ Infrastructure (managed in `/infra/superapp`):
 - Network Attachment: `agent-engine-mcp-attachment`
 - PSC Subnet: `psc-mcp-subnet` (10.1.0.0/28)
 - DNS: `mcp.agent-engine.internal` → MCP ILB
-- DNS: `postgres.agent-engine.internal` → Cloud SQL Proxy ILB
+- DNS: `postgres.agent-engine.internal` → PostgreSQL Database ILB
 
 ### 2. Configure Environment
 
-Create `src/config/.env` with required variables:
+Create `.env` in the root directory with required variables:
 
 ```bash
 # GCP Project
@@ -44,8 +43,9 @@ PROJECT_NUMBER="989726518247"
 LOCATION="us-central1"
 GCS_BUCKET="gs://your-staging-bucket"
 
-# Database (Cloud SQL via Proxy ILB)
-INSTANCE="postgres"
+# Database (PostgreSQL via Private Network)
+DATABASE_HOST="postgres.agent-engine.internal"
+DATABASE_PORT="5432"
 DATABASE="eai-agent"
 DATABASE_USER="eai-agent"
 DATABASE_PASSWORD="your-password"
@@ -54,7 +54,7 @@ DATABASE_PASSWORD="your-password"
 MCP_SERVER_URL="http://mcp.agent-engine.internal/mcp"
 MCP_API_TOKEN="your-mcp-api-token"
 
-# PSC Network Configuration - REQUIRED for private MCP and Cloud SQL access
+# PSC Network Configuration - REQUIRED for private MCP and database access
 NETWORK_ATTACHMENT="projects/rj-superapp-staging/regions/us-central1/networkAttachments/agent-engine-mcp-attachment"
 
 # Agent Gateway
@@ -74,10 +74,10 @@ SHORT_MEMORY_TOKEN_LIMIT="50000"
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+uv sync
 
 # Deploy agent (with PSC if NETWORK_ATTACHMENT is set)
-python src/deploy.py
+uv run src/deploy.py
 ```
 
 The deployment logs will show: `✓ PSC Interface: Enabled`
@@ -86,8 +86,8 @@ The deployment logs will show: `✓ PSC Interface: Enabled`
 
 PSC enables private connectivity from Vertex AI Agent Engine to VPC resources:
 
-- MCP server via Internal Load Balancer (`mcp.agent-engine.internal:8000`)
-- Cloud SQL Proxy via Internal Load Balancer (`postgres.agent-engine.internal:5432`)
+- MCP server via Internal Load Balancer (`mcp.agent-engine.internal`)
+- PostgreSQL Database via Internal Load Balancer (`postgres.agent-engine.internal:5432`)
 - DNS resolution for `agent-engine.internal` domain
 
 **Network Attachments:**
@@ -99,7 +99,7 @@ PSC enables private connectivity from Vertex AI Agent Engine to VPC resources:
 **Local Testing:**
 
 ```bash
-python src/interactive_test.py
+uv run src/interactive_test.py
 ```
 
 **Production:** Agent is invoked via the EAI Agent Gateway API.
@@ -128,15 +128,29 @@ gcloud compute firewall-rules list --filter="name~agent-engine" --project=rj-sup
 kubectl get service mcp-ilb -n mcp
 ```
 
-### Cloud SQL Connection Issues
+### PostgreSQL Connection Issues
 
 ```bash
-# Verify Cloud SQL Proxy ILB
-kubectl get service postgres-ilb -n cloudsql-proxy
+# Test database connectivity
+uv run python -c "
+import psycopg
+conn = psycopg.connect('postgresql://eai-agent:password@postgres.agent-engine.internal:5432/eai-agent')
+print('Database connection successful!')
+conn.close()
+"
 
-# Check Cloud SQL Proxy logs
-kubectl logs -n cloudsql-proxy deployment/postgres --tail=50
+# Check PostgreSQL service
+kubectl get service postgres-ilb -n database
 ```
+
+## Dependencies
+
+Key packages:
+- `langgraph==0.6.4` - LangGraph workflow engine
+- `langgraph-checkpoint-postgres>=3.0.3` - PostgreSQL checkpointer for state persistence
+- `psycopg[binary]>=3.2.0` - PostgreSQL adapter
+- `langchain-google-vertexai==2.1.2` - Vertex AI integration
+- `google-cloud-aiplatform[agent-engines]>=1.106.0` - Agent Engine deployment
 
 ## Infrastructure
 
@@ -145,5 +159,4 @@ Managed in `/infra/superapp/modules/`:
 - `gcp/firewall.tf` - Firewall rules (ports 80, 443, 5432, 8000, 8080)
 - `gcp/dns-records.tf` - Private DNS for `agent-engine.internal`
 - `gcp/addresses.tf` - Internal Load Balancer IPs
-- `deployments/cloudsql-proxy.tf` - Cloud SQL Proxy with ILB
-- `databases/main.tf` - Cloud SQL PostgreSQL (public IP)
+- `deployments/postgres.tf` - PostgreSQL deployment with ILB
