@@ -1,18 +1,29 @@
-from typing import Any, Iterator, List, Optional, AsyncIterable
-from langchain.load.dump import dumpd
-from datetime import datetime, timezone
-import json
-import asyncio
 import ast
-from langchain_core.messages import trim_messages
-from functools import wraps
+import asyncio
+import json
+from datetime import datetime, timezone
+from os import getenv
+from typing import Any, AsyncIterable, Iterator, List
 
-# from langgraph.prebuilt import create_react_agent
-# use custom graph without _validate_chat_history
-from engine.custom_react_agent import create_react_agent
-from langchain_google_vertexai import ChatVertexAI
+from langchain_core.load.dump import dumpd
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+    trim_messages,
+)
 from langchain_core.tools import BaseTool
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
+from langchain_google_vertexai import ChatVertexAI
+from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 from vertexai.agent_engines import (
     AsyncQueryable,
     AsyncStreamQueryable,
@@ -20,21 +31,9 @@ from vertexai.agent_engines import (
     StreamQueryable,
 )
 
-from os import getenv
-from langchain_google_cloud_sql_pg import (
-    PostgresEngine,
-    PostgresSaver,
-)
-
-from opentelemetry import trace
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.trace.sampling import ALWAYS_ON
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-
-from opentelemetry.instrumentation.langchain import LangchainInstrumentor
-
+# from langgraph.prebuilt import create_react_agent
+# use custom graph without _validate_chat_history
+from engine.custom_react_agent import create_react_agent
 from engine.log import logger
 
 
@@ -44,7 +43,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     Components are initialized lazily on the first query.
 
-    Use engine.init_checkpoint_table() if the table does not exists
+    Database tables are automatically created when needed via checkpointer.setup()
     """
 
     def __init__(
@@ -66,9 +65,8 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._thinking_budget = thinking_budget
         self._otpl_service = otpl_service
         # Database configuration
-        self._project_id = getenv("PROJECT_ID", "")
-        self._region = getenv("LOCATION", "")
-        self._instance_name = getenv("INSTANCE", "")
+        self._database_host = getenv("DATABASE_HOST", "localhost")
+        self._database_port = getenv("DATABASE_PORT", "5432")
         self._database_name = getenv("DATABASE", "")
         self._database_user = getenv("DATABASE_USER", "")
         self._database_password = getenv("DATABASE_PASSWORD", "")
@@ -76,6 +74,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._otlp_header = getenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
 
         self._graph = None
+        self._checkpointer = None  # Store checkpointer instance
         self._setup_complete_async = False
         self._setup_complete_sync = False
         self._opentelemetry_setup_complete = False
@@ -477,7 +476,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         if not time_filtered_messages:
             # If all messages are filtered out, keep at least the last message
             logger.warning(
-                f"[Short-Term Memory] All messages filtered by time limit, keeping last message"
+                "[Short-Term Memory] All messages filtered by time limit, keeping last message"
             )
             time_filtered_messages = [non_system_messages[-1]]
         else:
@@ -852,7 +851,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return self._inject_thread_id_in_user_id_params(state, config)
 
-    def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
+    def _create_react_agent(
+        self,
+        checkpointer: AsyncPostgresSaver | PostgresSaver | None = None,
+    ):
         """Create and configure the React Agent."""
         llm = ChatVertexAI(
             model_name=self._model,
@@ -938,98 +940,24 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         if self._setup_complete_async:
             return
-        
+
         # Load MCP tools at runtime if not already loaded
         if not self._tools:
-            try:
-                logger.info("[Agent Setup] Loading MCP tools (async)...")
-                from engine.mcp_tools import get_mcp_tools
-                
-                # Get and log excluded tools
-                excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
-                excluded_tools_list = [t.strip() for t in excluded_tools.split(",") if t.strip()] if excluded_tools else []
-                
-                # Get MCP server URL for logging
-                mcp_url = getenv("MCP_SERVER_URL", "NOT SET")
-                
-                logger.info(f"[Agent Setup] MCP_SERVER_URL: {mcp_url}")
-                logger.info(f"[Agent Setup] MCP_EXCLUDED_TOOLS: {excluded_tools_list if excluded_tools_list else 'None'}")
-                logger.info(f"[Agent Setup] Calling get_mcp_tools with exclude_tools={excluded_tools_list}")
-                
-                self._tools = await get_mcp_tools(exclude_tools=excluded_tools_list)
-                
-                logger.info(f"[Agent Setup] Successfully loaded {len(self._tools)} MCP tools")
-                tool_names = [tool.name for tool in self._tools]
-                logger.info(f"[Agent Setup] Loaded tool names: {tool_names}")
-                
-            except Exception as e:
-                logger.error(
-                    f"[Agent Setup] CRITICAL ERROR: Failed to load MCP tools. "
-                    f"Error type: {type(e).__name__}, Message: {str(e)}",
-                    exc_info=True
-                )
-                logger.error(f"[Agent Setup] MCP_SERVER_URL was: {getenv('MCP_SERVER_URL', 'NOT SET')}")
-                logger.error(f"[Agent Setup] MCP_EXCLUDED_TOOLS was: {getenv('MCP_EXCLUDED_TOOLS', 'NOT SET')}")
-                raise RuntimeError(f"Failed to load MCP tools during async setup: {str(e)}") from e
-        
-        # PostgreSQL connection with detailed logging
-        logger.info("[Agent Setup] ========== Starting PostgreSQL Connection ==========")
-        logger.info(f"[Agent Setup] PostgreSQL Configuration:")
-        logger.info(f"[Agent Setup]   - Project ID: {self._project_id}")
-        logger.info(f"[Agent Setup]   - Region: {self._region}")
-        logger.info(f"[Agent Setup]   - Instance: {self._instance_name}")
-        logger.info(f"[Agent Setup]   - Database: {self._database_name}")
-        logger.info(f"[Agent Setup]   - User: {self._database_user}")
-        logger.info(f"[Agent Setup]   - Password: {'SET' if self._database_password else 'NOT SET'}")
-        
-        # Check for network-related environment variables
-        import os
-        network_vars = {
-            'NETWORK_ATTACHMENT': os.getenv('NETWORK_ATTACHMENT', 'NOT SET'),
-            'VPC_CONNECTOR': os.getenv('VPC_CONNECTOR', 'NOT SET'),
-            'CLOUDSQL_CONNECTION': os.getenv('CLOUDSQL_CONNECTION', 'NOT SET'),
-        }
-        logger.info(f"[Agent Setup] Network Environment Variables: {network_vars}")
-        
-        try:
-            logger.info("[Agent Setup] Attempting to create PostgresEngine...")
-            engine = await PostgresEngine.afrom_instance(
-                project_id=self._project_id,
-                region=self._region,
-                instance=self._instance_name,
-                database=self._database_name,
-                user=self._database_user,
-                password=self._database_password,
-                engine_args={"pool_pre_ping": True, "pool_recycle": 300},
-            )
-            logger.info("[Agent Setup] ✓ PostgresEngine created successfully (async)")
-        except Exception as pg_error:
-            logger.error("[Agent Setup] ✗ CRITICAL: Failed to create PostgresEngine")
-            logger.error(f"[Agent Setup]   - Error Type: {type(pg_error).__name__}")
-            logger.error(f"[Agent Setup]   - Error Message: {str(pg_error)}")
-            logger.error(f"[Agent Setup]   - Full Error Details:", exc_info=True)
-            
-            # Additional diagnostic info
-            logger.error(f"[Agent Setup] PostgreSQL connection failed. Possible causes:")
-            logger.error(f"[Agent Setup]   1. PSC network_attachment blocking Cloud SQL access")
-            logger.error(f"[Agent Setup]   2. DNS resolution failing for Cloud SQL instance")
-            logger.error(f"[Agent Setup]   3. Network routing misconfigured")
-            logger.error(f"[Agent Setup]   4. Cloud SQL instance not accessible from PSC network")
-            
-            raise RuntimeError(f"Failed to connect to PostgreSQL: {str(pg_error)}") from pg_error
+            from engine.mcp_tools import get_mcp_tools
 
-        try:
-            logger.info("[Agent Setup] Attempting to create PostgresSaver...")
-            checkpointer = await PostgresSaver.create(engine=engine)
-            logger.info("[Agent Setup] ✓ PostgresSaver created successfully (async)")
-        except Exception as saver_error:
-            logger.error("[Agent Setup] ✗ CRITICAL: Failed to create PostgresSaver")
-            logger.error(f"[Agent Setup]   - Error Type: {type(saver_error).__name__}")
-            logger.error(f"[Agent Setup]   - Error Message: {str(saver_error)}")
-            logger.error(f"[Agent Setup]   - Full Error Details:", exc_info=True)
-            raise RuntimeError(f"Failed to create PostgresSaver: {str(saver_error)}") from saver_error
+            excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
+            excluded_tools_list = excluded_tools.split(",") if excluded_tools else []
+            self._tools = await get_mcp_tools(exclude_tools=excluded_tools_list)
 
-        logger.info("[Agent Setup] Creating React agent with checkpointer...")
+        # Create connection string for standard Postgres
+        conn_string = f"postgresql://{self._database_user}:{self._database_password}@{self._database_host}:{self._database_port}/{self._database_name}"
+
+        # Pass the context manager generator directly to create_react_agent
+        checkpointer_ctx = AsyncPostgresSaver.from_conn_string(conn_string)
+        checkpointer = await checkpointer_ctx.__aenter__()
+
+        await checkpointer.setup()
+
         self._create_react_agent(checkpointer=checkpointer)
         logger.info("[Agent Setup] ✓ React agent created successfully (async)")
         logger.info("[Agent Setup] ========== Agent Setup Complete ==========")
@@ -1043,52 +971,25 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         if self._setup_complete_sync:
             return self._graph
-        
+
         # Load MCP tools at runtime if not already loaded
         if not self._tools:
-            try:
-                logger.info("[Agent Setup] Loading MCP tools (sync)...")
-                import asyncio
-                from engine.mcp_tools import get_mcp_tools
-                
-                # Get and log excluded tools
-                excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
-                excluded_tools_list = [t.strip() for t in excluded_tools.split(",") if t.strip()] if excluded_tools else []
-                
-                # Get MCP server URL for logging
-                mcp_url = getenv("MCP_SERVER_URL", "NOT SET")
-                
-                logger.info(f"[Agent Setup] MCP_SERVER_URL: {mcp_url}")
-                logger.info(f"[Agent Setup] MCP_EXCLUDED_TOOLS: {excluded_tools_list if excluded_tools_list else 'None'}")
-                logger.info(f"[Agent Setup] Calling get_mcp_tools with exclude_tools={excluded_tools_list}")
-                
-                self._tools = asyncio.run(get_mcp_tools(exclude_tools=excluded_tools_list))
-                
-                logger.info(f"[Agent Setup] Successfully loaded {len(self._tools)} MCP tools")
-                tool_names = [tool.name for tool in self._tools]
-                logger.info(f"[Agent Setup] Loaded tool names: {tool_names}")
-                
-            except Exception as e:
-                logger.error(
-                    f"[Agent Setup] CRITICAL ERROR: Failed to load MCP tools. "
-                    f"Error type: {type(e).__name__}, Message: {str(e)}",
-                    exc_info=True
-                )
-                logger.error(f"[Agent Setup] MCP_SERVER_URL was: {getenv('MCP_SERVER_URL', 'NOT SET')}")
-                logger.error(f"[Agent Setup] MCP_EXCLUDED_TOOLS was: {getenv('MCP_EXCLUDED_TOOLS', 'NOT SET')}")
-                raise RuntimeError(f"Failed to load MCP tools during sync setup: {str(e)}") from e
-        
-        engine = PostgresEngine.from_instance(
-            project_id=self._project_id,
-            region=self._region,
-            instance=self._instance_name,
-            database=self._database_name,
-            user=self._database_user,
-            password=self._database_password,
-            engine_args={"pool_pre_ping": True, "pool_recycle": 300},
-        )
+            import asyncio
 
-        checkpointer = PostgresSaver.create_sync(engine=engine)
+            from engine.mcp_tools import get_mcp_tools
+
+            excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
+            excluded_tools_list = excluded_tools.split(",") if excluded_tools else []
+            self._tools = asyncio.run(get_mcp_tools(exclude_tools=excluded_tools_list))
+
+        # Create connection string for standard Postgres
+        conn_string = f"postgresql://{self._database_user}:{self._database_password}@{self._database_host}:{self._database_port}/{self._database_name}"
+
+        # Pass the context manager generator directly to create_react_agent
+        checkpointer_ctx = PostgresSaver.from_conn_string(conn_string)
+        checkpointer = checkpointer_ctx.__enter__()
+        checkpointer.setup()
+
         self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_sync = True
         return self._graph
