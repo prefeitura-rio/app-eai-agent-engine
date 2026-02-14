@@ -2,6 +2,7 @@ import ast
 import asyncio
 import json
 from datetime import datetime, timezone
+from functools import wraps
 from os import getenv
 from typing import Any, AsyncIterable, Iterator, List
 
@@ -75,6 +76,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         self._graph = None
         self._checkpointer = None  # Store checkpointer instance
+        self._checkpointer_cm = None  # Store checkpointer context manager for cleanup
         self._setup_complete_async = False
         self._setup_complete_sync = False
         self._opentelemetry_setup_complete = False
@@ -952,11 +954,12 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # Create connection string for standard Postgres
         conn_string = f"postgresql://{self._database_user}:{self._database_password}@{self._database_host}:{self._database_port}/{self._database_name}"
 
-        # Pass the context manager generator directly to create_react_agent
-        checkpointer_ctx = AsyncPostgresSaver.from_conn_string(conn_string)
-        checkpointer = await checkpointer_ctx.__aenter__()
-
+        # Create checkpointer using from_conn_string (mirrors migrate_checkpoints.py pattern)
+        # Store the context manager so we can properly exit it during cleanup
+        self._checkpointer_cm = AsyncPostgresSaver.from_conn_string(conn_string)
+        checkpointer = await self._checkpointer_cm.__aenter__()
         await checkpointer.setup()
+        logger.info("[Agent Setup] ✓ Checkpointer connected and setup complete")
 
         self._create_react_agent(checkpointer=checkpointer)
         logger.info("[Agent Setup] ✓ React agent created successfully (async)")
@@ -1086,3 +1089,28 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         if isinstance(chunk, dict) and "messages" in chunk:
             return self._filter_current_interaction(chunk)
         return chunk
+
+    async def cleanup(self):
+        """Cleanup resources, including checkpointer connection and telemetry."""
+        # Close checkpointer context manager if it exists
+        if self._checkpointer_cm is not None:
+            try:
+                await self._checkpointer_cm.__aexit__(None, None, None)
+                logger.info("[Agent Cleanup] Checkpointer connection closed")
+            except Exception as e:
+                logger.warning(f"[Agent Cleanup] Error closing checkpointer: {e}")
+            finally:
+                self._checkpointer_cm = None
+        
+        # Force flush telemetry spans
+        if self._batch_processor:
+            self._batch_processor.force_flush(timeout_millis=5000)
+            self._batch_processor.shutdown()
+            logger.info("[Agent Cleanup] Telemetry processor flushed and shutdown")
+
+    def __del__(self):
+        """Ensure cleanup on object destruction."""
+        # For async cleanup, we can't directly await in __del__
+        # This is just a warning - users should call cleanup() explicitly
+        if self._checkpointer_cm is not None:
+            logger.warning("[Agent Cleanup] Checkpointer not closed. Call cleanup() explicitly.")
