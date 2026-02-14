@@ -237,6 +237,12 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 and "timestamp" not in message.additional_kwargs
             ):
                 message.additional_kwargs["timestamp"] = current_time
+                
+                # Normalize tool response: extract first item if content is a list
+                if isinstance(message.content, list) and len(message.content) > 0:
+                    message.content = message.content[0]
+                    logger.debug(f"[Tool Execution] Normalized list response to single item for tool: {message.name if hasattr(message, 'name') else 'UNKNOWN'}")
+                
                 updates.append(message)
                 
                 # Log tool execution result
