@@ -1,3 +1,5 @@
+### Use public MCP URL for local testing ###
+
 from typing import List, Optional
 from langchain_core.tools import BaseTool
 import asyncio
@@ -9,7 +11,8 @@ from src.config import env
 
 from src.utils.log import logger
 
-logger.debug(env.MCP_SERVER_URL)
+# Use public URL for local testing (private URL not accessible from local machine)
+logger.debug(f"Local testing MCP URL: {env.MCP_SERVER_PUBLIC_URL}")
 
 
 async def get_mcp_tools(
@@ -33,11 +36,12 @@ async def get_mcp_tools(
     if exclude_tools is None:
         exclude_tools = []
 
+    # Use public URL for local testing (MCP_SERVER_URL is private and not accessible locally)
     client = MultiServerMCPClient(
         {
             "rio_mcp": {
                 "transport": "streamable_http",
-                "url": env.MCP_SERVER_URL,
+                "url": env.MCP_SERVER_PUBLIC_URL,
                 "headers": {
                     "Authorization": f"Bearer {env.MCP_API_TOKEN}",
                 },
@@ -58,6 +62,5 @@ async def get_mcp_tools(
         filtered_tools = tools
 
     return filtered_tools
-
 
 mcp_tools = asyncio.run(get_mcp_tools(exclude_tools=env.MCP_EXCLUDED_TOOLS))

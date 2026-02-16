@@ -880,11 +880,8 @@ def create_react_agent(
             elif version == "v2":
                 if post_model_hook is not None:
                     return "post_model_hook"
-                tool_calls = [
-                    tool_node.inject_tool_args(call, state, store)  # type: ignore[arg-type]
-                    for call in last_message.tool_calls
-                ]
-                return [Send("tools", [tool_call]) for tool_call in tool_calls]
+                # inject_tool_args doesn't exist in langgraph-prebuilt 1.0.7, pass calls directly
+                return [Send("tools", [tool_call]) for tool_call in last_message.tool_calls]
 
     # Define a new graph
     workflow = StateGraph(
@@ -965,10 +962,7 @@ def create_react_agent(
             ]
 
             if pending_tool_calls:
-                pending_tool_calls = [
-                    tool_node.inject_tool_args(call, state, store)  # type: ignore[arg-type]
-                    for call in pending_tool_calls
-                ]
+                # inject_tool_args doesn't exist in langgraph-prebuilt 1.0.7, pass calls directly
                 return [Send("tools", [tool_call]) for tool_call in pending_tool_calls]
             elif isinstance(messages[-1], ToolMessage):
                 return entrypoint
