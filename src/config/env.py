@@ -40,5 +40,16 @@ OTEL_EXPORTER_OTLP_TRACES_HEADERS = getenv_or_action(
 )
 
 # Short-term memory limits (kept as strings for deployment)
-SHORT_MEMORY_TIME_LIMIT = getenv_or_action("SHORT_MEMORY_TIME_LIMIT", default="30")  # in days
-SHORT_MEMORY_TOKEN_LIMIT = getenv_or_action("SHORT_MEMORY_TOKEN_LIMIT", default="50000")  # in tokens
+SHORT_MEMORY_TIME_LIMIT = getenv_or_action(
+    "SHORT_MEMORY_TIME_LIMIT", default="30"
+)  # in days
+SHORT_MEMORY_TOKEN_LIMIT = getenv_or_action(
+    "SHORT_MEMORY_TOKEN_LIMIT", default="50000"
+)  # in tokens
+
+# VPC Network attachment for accessing MCP server in private network
+NETWORK_ATTACHMENT = getenv_or_action("NETWORK_ATTACHMENT", default="")
+
+# Error Interceptor Configuration
+ERROR_INTERCEPTOR_URL = getenv_or_action("ERROR_INTERCEPTOR_URL")
+ERROR_INTERCEPTOR_TOKEN = getenv_or_action("ERROR_INTERCEPTOR_TOKEN")
