@@ -97,6 +97,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # {thread_id: {"data": memory_data, "timestamp": datetime}}
         self._memory_cache = {}
         self._memory_needs_refresh = False  # Flag set when upsert_user_memory is called
+        
+        # Store messages sent to LLM for accurate token counting
+        self._last_llm_input_messages = None
 
     def _set_up_opentelemetry(self):
         if self._opentelemetry_setup_complete:
@@ -818,8 +821,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             thread_id_state = self._inject_thread_id_in_user_id_params(
                 temp_state, config
             )
-            # Return both the filtered messages for LLM and keep any other state updates
-            return {
+            final_state = {
                 "llm_input_messages": thread_id_state["messages"],
                 **{
                     k: v for k, v in filtered_state.items() if k != "llm_input_messages"
@@ -827,10 +829,151 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             }
         else:
             # No filtering applied, just inject thread_id normally
-            return self._inject_thread_id_in_user_id_params(filtered_state, config)
+            final_state = self._inject_thread_id_in_user_id_params(filtered_state, config)
+        
+        # Step 5: Store the messages that will be sent to LLM for token counting later
+        # The prompt_runnable will prepend system prompt to these messages
+        if "llm_input_messages" in final_state:
+            self._last_llm_input_messages = final_state["llm_input_messages"]
+        else:
+            self._last_llm_input_messages = final_state.get("messages", [])
+        
+        return final_state
+
+    def _log_token_usage(self, state, config=None):
+        """Extract and log detailed token usage from the AI response metadata.
+        
+        Uses actual token counts from the API and classifies them into:
+        - System Prompt: The system prompt string (from self._system_prompt)
+        - Memory: Long-term memory injected as SystemMessage
+        - Tools: Tool schemas (calculated)
+        - Messages: Conversation history
+        
+        Note: System prompt is prepended by prompt_runnable, not stored in messages.
+        """
+        messages = state.get("messages", [])
+        if not messages:
+            return
+        
+        # Get the last AI message which should have usage metadata
+        last_message = messages[-1]
+        if not isinstance(last_message, AIMessage):
+            return
+        
+        usage_metadata = getattr(last_message, "usage_metadata", None)
+        if not usage_metadata:
+            return
+        
+        try:
+            # Extract ACTUAL token counts from API
+            input_tokens = usage_metadata.get("input_tokens", 0)
+            output_tokens = usage_metadata.get("output_tokens", 0)
+            total_tokens = usage_metadata.get("total_tokens", 0)
+            
+            # Get detailed breakdowns
+            input_details = usage_metadata.get("input_token_details", {})
+            output_details = usage_metadata.get("output_token_details", {})
+            
+            cache_read = input_details.get("cache_read", 0)
+            reasoning_tokens = output_details.get("reasoning", 0)
+            
+            # Use stored messages that were sent to LLM (from pre_model_hook)
+            llm_input_messages = self._last_llm_input_messages or []
+            
+            # Count tokens using built-in ChatVertexAI method
+            # This gives us accurate token counts for the messages
+            try:
+                # Reuse the same LLM instance to avoid initialization overhead
+                llm = ChatVertexAI(model_name=self._model)
+                
+                # Count system prompt tokens (the main system prompt string)
+                system_prompt_tokens = llm.get_num_tokens(self._system_prompt)
+                logger.debug(f"[Token Usage Debug] System prompt tokens counted: {system_prompt_tokens}")
+                
+                # Separate long-term memory (SystemMessages) from conversation messages
+                memory_messages = [msg for msg in llm_input_messages if isinstance(msg, SystemMessage)]
+                conversation_messages = [msg for msg in llm_input_messages if not isinstance(msg, SystemMessage)]
+                
+                logger.debug(f"[Token Usage Debug] Memory messages: {len(memory_messages)}, Conversation messages: {len(conversation_messages)}")
+                
+                # Count memory tokens (long-term memory SystemMessages)
+                memory_tokens = 0
+                if memory_messages:
+                    memory_tokens = llm.get_num_tokens_from_messages(memory_messages)
+                    logger.debug(f"[Token Usage Debug] Memory tokens counted: {memory_tokens}")
+                
+                # Count conversation tokens
+                conversation_tokens = 0
+                if conversation_messages:
+                    conversation_tokens = llm.get_num_tokens_from_messages(conversation_messages)
+                    logger.debug(f"[Token Usage Debug] Conversation tokens counted: {conversation_tokens}")
+                
+                # Calculate tool schema tokens
+                # Tool tokens = total input - system prompt - memory - conversation
+                tool_tokens = max(0, input_tokens - system_prompt_tokens - memory_tokens - conversation_tokens)
+                logger.debug(f"[Token Usage Debug] Tool tokens calculated: {tool_tokens} = {input_tokens} - {system_prompt_tokens} - {memory_tokens} - {conversation_tokens}")
+                
+            except Exception as e:
+                logger.warning(f"[Token Usage] Could not use built-in counter, using estimates: {e}")
+                # Fallback to character-based estimation
+                system_prompt_tokens = len(self._system_prompt) // 4
+                
+                memory_messages = [msg for msg in llm_input_messages if isinstance(msg, SystemMessage)]
+                conversation_messages = [msg for msg in llm_input_messages if not isinstance(msg, SystemMessage)]
+                
+                memory_tokens = sum(len(str(msg.content)) // 4 for msg in memory_messages)
+                conversation_tokens = sum(len(str(msg.content)) // 4 for msg in conversation_messages)
+                
+                tool_tokens = max(0, input_tokens - system_prompt_tokens - memory_tokens - conversation_tokens)
+            
+            # Log comprehensive breakdown
+            logger.info(
+                f"[Token Usage] TOTAL: {total_tokens:,} tokens | "
+                f"INPUT: {input_tokens:,} | OUTPUT: {output_tokens:,}"
+            )
+            logger.info(
+                f"[Token Usage] Input Breakdown → "
+                f"System Prompt: {system_prompt_tokens:,} | "
+                f"Memory: {memory_tokens:,} | "
+                f"Messages: {conversation_tokens:,} | "
+                f"Tools: {tool_tokens:,}"
+            )
+            
+            if cache_read > 0:
+                logger.info(f"[Token Usage] Implicit Cache (Google): {cache_read:,} tokens read from cache (billed 10x less)")
+            
+            if reasoning_tokens > 0:
+                logger.info(f"[Token Usage] Reasoning: {reasoning_tokens:,} tokens")
+            
+            # Add to OpenTelemetry span
+            if self._tracer:
+                current_span = trace.get_current_span()
+                if current_span and current_span.is_recording():
+                    # Actual token counts from API
+                    current_span.set_attribute("llm.usage.input_tokens", input_tokens)
+                    current_span.set_attribute("llm.usage.output_tokens", output_tokens)
+                    current_span.set_attribute("llm.usage.total_tokens", total_tokens)
+                    
+                    # Breakdown by component
+                    current_span.set_attribute("llm.usage.system_prompt_tokens", system_prompt_tokens)
+                    current_span.set_attribute("llm.usage.memory_tokens", memory_tokens)
+                    current_span.set_attribute("llm.usage.conversation_tokens", conversation_tokens)
+                    current_span.set_attribute("llm.usage.tool_tokens", tool_tokens)
+                    
+                    # Additional details
+                    if cache_read > 0:
+                        current_span.set_attribute("llm.usage.cache_read_tokens", cache_read)
+                    if reasoning_tokens > 0:
+                        current_span.set_attribute("llm.usage.reasoning_tokens", reasoning_tokens)
+                    
+        except Exception as e:
+            logger.error(f"[Token Usage] Error logging token usage: {e}", exc_info=True)
 
     def _combined_post_model_hook(self, state, config=None):
-        # Log tool calls if present
+        # Log token usage from the AI response
+        self._log_token_usage(state, config)
+        
+        # Check if upsert_user_memory tool was called
         messages = state.get("messages", [])
         for msg in reversed(messages):
             if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
