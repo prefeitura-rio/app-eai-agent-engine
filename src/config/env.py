@@ -50,6 +50,6 @@ SHORT_MEMORY_TOKEN_LIMIT = getenv_or_action(
 # VPC Network attachment for accessing MCP server in private network
 NETWORK_ATTACHMENT = getenv_or_action("NETWORK_ATTACHMENT", default="")
 
-# Error Interceptor Configuration
-ERROR_INTERCEPTOR_URL = getenv_or_action("ERROR_INTERCEPTOR_URL")
-ERROR_INTERCEPTOR_TOKEN = getenv_or_action("ERROR_INTERCEPTOR_TOKEN")
+# Error Interceptor Configuration (optional - error reporting will be skipped if not configured)
+ERROR_INTERCEPTOR_URL = getenv_or_action("ERROR_INTERCEPTOR_URL", default="")
+ERROR_INTERCEPTOR_TOKEN = getenv_or_action("ERROR_INTERCEPTOR_TOKEN", default="")
