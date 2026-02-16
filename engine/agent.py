@@ -37,6 +37,31 @@ from vertexai.agent_engines import (
 from engine.custom_react_agent import create_react_agent
 from engine.log import logger
 
+# Error monitoring utilities (safe fallback if not available)
+from engine.utils import (
+    interceptor,
+    extract_thread_id_from_config,
+    make_source,
+    PRE_INVOKE,
+    PRE_INVOKE_SANITIZE,
+    PRE_INVOKE_COMBINED,
+    PRE_INVOKE_TIMESTAMP,
+    PRE_MODEL_HOOK,
+    PRE_MODEL_COMBINED,
+    PRE_MODEL_FILTER_MEMORY,
+    PRE_MODEL_INJECT_MEMORY,
+    PRE_MODEL_INJECT_THREAD_ID,
+    POST_MODEL_HOOK,
+    POST_MODEL_COMBINED,
+    GRAPH_INVOCATION,
+    GRAPH_ASYNC_QUERY,
+    GRAPH_QUERY,
+    GRAPH_ASYNC_STREAM,
+    GRAPH_STREAM,
+    RESPONSE_FILTER,
+    RESPONSE_FILTER_FILTER,
+)
+
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     """
@@ -167,6 +192,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._setup_complete_async = False
         self._setup_complete_sync = False
 
+    @interceptor(
+        source=make_source(PRE_INVOKE, PRE_INVOKE_SANITIZE),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _sanitize_input_messages(self, **kwargs):
         """Sanitizes input messages to prevent Vertex AI errors with integer lists in strings.
 
@@ -210,12 +239,20 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                     pass
         return kwargs
 
+    @interceptor(
+        source=make_source(PRE_INVOKE, PRE_INVOKE_COMBINED),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _combined_pre_invoke_hook(self, **kwargs):
         """Centralizes all manipulations on input arguments before invoking the graph."""
         kwargs = self._add_timestamp_to_input_messages(**kwargs)
         kwargs = self._sanitize_input_messages(**kwargs)
         return kwargs
 
+    @interceptor(
+        source=make_source(PRE_INVOKE, PRE_INVOKE_TIMESTAMP),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _add_timestamp_to_input_messages(self, **kwargs):
         "Adiciona timestamp nas mensagens do usuario antes do invoke"
         msg_datetime = datetime.now(timezone.utc).isoformat()
@@ -404,6 +441,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return complete_messages
 
+    @interceptor(
+        source=make_source(PRE_MODEL_HOOK, PRE_MODEL_FILTER_MEMORY),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _filter_short_term_memory(self, state):
         """Filter messages based on time and token limits for short-term memory.
 
@@ -608,6 +649,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return result
 
+    @interceptor(
+        source=make_source(PRE_MODEL_HOOK, PRE_MODEL_INJECT_MEMORY),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _inject_long_term_memory(self, state, config=None):
         """Inject long-term memory as a SystemMessage.
 
@@ -749,6 +794,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return {"messages": messages}
 
+    @interceptor(
+        source=make_source(PRE_MODEL_HOOK, PRE_MODEL_INJECT_THREAD_ID),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _inject_thread_id_in_user_id_params(self, state, config=None):
         """Hook para injetar thread_id em qualquer parâmetro user_id de tool calls.
 
@@ -797,6 +846,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return {"messages": messages}
 
+    @interceptor(
+        source=make_source(PRE_MODEL_HOOK, PRE_MODEL_COMBINED),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _combined_pre_model_hook(self, state, config=None):
         # Step 1: Add timestamps to new ToolMessages (safe update, modifies in-place)
         # We invoke this for the side-effect on state['messages'], relying on
@@ -829,6 +882,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             # No filtering applied, just inject thread_id normally
             return self._inject_thread_id_in_user_id_params(filtered_state, config)
 
+    @interceptor(
+        source=make_source(POST_MODEL_HOOK, POST_MODEL_COMBINED),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _combined_post_model_hook(self, state, config=None):
         # Log tool calls if present
         messages = state.get("messages", [])
@@ -1003,6 +1060,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._setup_complete_sync = True
         return self._graph
 
+    @interceptor(
+        source=make_source(GRAPH_INVOCATION, GRAPH_ASYNC_QUERY),
+        extract_user_id=extract_thread_id_from_config
+    )
     async def async_query(self, **kwargs) -> dict[str, Any] | Any:
         """Asynchronous query execution with filtered current interaction."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
@@ -1033,6 +1094,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return filtered_result
 
+    @interceptor(
+        source=make_source(GRAPH_INVOCATION, GRAPH_ASYNC_STREAM),
+        extract_user_id=extract_thread_id_from_config
+    )
     async def async_stream_query(self, **kwargs) -> AsyncIterable[Any]:
         """Asynchronous streaming query execution with filtered chunks."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
@@ -1049,6 +1114,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return async_generator()
 
+    @interceptor(
+        source=make_source(GRAPH_INVOCATION, GRAPH_QUERY),
+        extract_user_id=extract_thread_id_from_config
+    )
     def query(self, **kwargs) -> dict[str, Any] | Any:
         """Synchronous query execution with filtered current interaction."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
@@ -1064,6 +1133,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return filtered_result
 
+    @interceptor(
+        source=make_source(GRAPH_INVOCATION, GRAPH_STREAM),
+        extract_user_id=extract_thread_id_from_config
+    )
     def stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
         """Synchronous streaming query execution with filtered chunks."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
@@ -1074,6 +1147,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             filtered_chunk = self._filter_streaming_chunk(chunk)
             yield dumpd(filtered_chunk)
 
+    @interceptor(
+        source=make_source(RESPONSE_FILTER, RESPONSE_FILTER_FILTER),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _filter_current_interaction(self, result: dict) -> dict:
         """Filters response to include only messages from the last human input."""
         if "messages" not in result or not isinstance(result["messages"], list):
@@ -1090,6 +1167,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         filtered_result["messages"] = messages[last_human_index:]
         return filtered_result
 
+    @interceptor(
+        source=make_source(RESPONSE_FILTER, RESPONSE_FILTER_FILTER),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _filter_streaming_chunk(self, chunk: dict) -> dict:
         """Applies interaction filter to a streaming chunk if applicable."""
         if isinstance(chunk, dict) and "messages" in chunk:

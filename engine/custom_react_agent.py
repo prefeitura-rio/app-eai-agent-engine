@@ -44,13 +44,27 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.managed import RemainingSteps
-from langgraph.prebuilt.tool_node import ToolNode
+from langgraph.prebuilt.tool_node import ToolNode as _BaseToolNode
 from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Send
 from langgraph.typing import ContextT
 from langgraph.warnings import LangGraphDeprecatedSinceV10
 from engine.log import logger
+from engine.monitored_tool_node import MonitoredToolNode
+
+# Error monitoring utilities (safe fallback if not available)
+from engine.utils import (
+    interceptor,
+    extract_thread_id_from_config,
+    make_source,
+    AGENT_NODE,
+    AGENT_LLM_CALL_SYNC,
+    AGENT_LLM_CALL_ASYNC,
+)
+
+# Use MonitoredToolNode as the default ToolNode implementation
+ToolNode = MonitoredToolNode
 
 
 StructuredResponse = Union[dict, BaseModel]
@@ -661,6 +675,10 @@ def create_react_agent(
         return state
 
     # Define the function that calls the model
+    @interceptor(
+        source=make_source(AGENT_NODE, AGENT_LLM_CALL_SYNC),
+        extract_user_id=extract_thread_id_from_config
+    )
     def call_model(
         state: StateSchema, runtime: Runtime[ContextT], config: RunnableConfig
     ) -> StateSchema:
@@ -696,6 +714,10 @@ def create_react_agent(
         # We return a list, because this will get added to the existing list
         return {"messages": [response]}
 
+    @interceptor(
+        source=make_source(AGENT_NODE, AGENT_LLM_CALL_ASYNC),
+        extract_user_id=extract_thread_id_from_config
+    )
     async def acall_model(
         state: StateSchema, runtime: Runtime[ContextT], config: RunnableConfig
     ) -> StateSchema:
