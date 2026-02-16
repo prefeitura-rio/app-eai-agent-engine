@@ -110,6 +110,8 @@ def deploy():
             "MCP_EXCLUDED_TOOLS": ",".join(env.MCP_EXCLUDED_TOOLS)
             if env.MCP_EXCLUDED_TOOLS
             else "",
+            "ERROR_INTERCEPTOR_URL": env.ERROR_INTERCEPTOR_URL,
+            "ERROR_INTERCEPTOR_TOKEN": env.ERROR_INTERCEPTOR_TOKEN,
         },
         service_account=service_account,
         psc_interface_config=psc_config,
