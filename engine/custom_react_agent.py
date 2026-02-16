@@ -53,6 +53,15 @@ from langgraph.typing import ContextT
 from langgraph.warnings import LangGraphDeprecatedSinceV10
 from engine.log import logger
 
+from src.utils.error_interceptor import interceptor
+from src.utils.agent_phases import (
+    AGENT_NODE,
+    AGENT_LLM_CALL_SYNC,
+    AGENT_LLM_CALL_ASYNC,
+    extract_thread_id_from_config,
+)
+from engine.monitored_tool_node import MonitoredToolNode
+
 
 StructuredResponse = Union[dict, BaseModel]
 StructuredResponseSchema = Union[dict, type[BaseModel]]
@@ -344,7 +353,7 @@ def create_react_agent(
             Awaitable[Runnable[LanguageModelInput, BaseMessage]],
         ],
     ],
-    tools: Union[Sequence[Union[BaseTool, Callable, dict[str, Any]]], ToolNode],
+    tools: Union[Sequence[Union[BaseTool, Callable, dict[str, Any]]], ToolNode, MonitoredToolNode],
     *,
     prompt: Optional[Prompt] = None,
     response_format: Optional[
@@ -585,12 +594,12 @@ def create_react_agent(
         )
 
     llm_builtin_tools: list[dict] = []
-    if isinstance(tools, ToolNode):
+    if isinstance(tools, (ToolNode, MonitoredToolNode)):
         tool_classes = list(tools.tools_by_name.values())
         tool_node = tools
     else:
         llm_builtin_tools = [t for t in tools if isinstance(t, dict)]
-        tool_node = ToolNode([t for t in tools if not isinstance(t, dict)])
+        tool_node = MonitoredToolNode([t for t in tools if not isinstance(t, dict)])
         tool_classes = list(tool_node.tools_by_name.values())
 
     is_dynamic_model = not isinstance(model, (str, Runnable)) and callable(model)
@@ -692,6 +701,10 @@ def create_react_agent(
         return state
 
     # Define the function that calls the model
+    @interceptor(
+        source={"source": "eai-engine", "phase": AGENT_NODE, "operation": AGENT_LLM_CALL_SYNC},
+        extract_user_id=extract_thread_id_from_config
+    )
     def call_model(
         state: StateSchema, runtime: Runtime[ContextT], config: RunnableConfig
     ) -> StateSchema:
@@ -727,6 +740,10 @@ def create_react_agent(
         # We return a list, because this will get added to the existing list
         return {"messages": [response]}
 
+    @interceptor(
+        source={"source": "eai-engine", "phase": AGENT_NODE, "operation": AGENT_LLM_CALL_ASYNC},
+        extract_user_id=extract_thread_id_from_config
+    )
     async def acall_model(
         state: StateSchema, runtime: Runtime[ContextT], config: RunnableConfig
     ) -> StateSchema:
