@@ -625,6 +625,136 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # This prevents the checkpointer from seeing the filtered messages
         return {"llm_input_messages": filtered_messages}
 
+    def _filter_old_tool_context(self, messages: list) -> list:
+        """Filter out tool_calls and ToolMessages from iterations before the last user message.
+        
+        This reduces LLM context size by removing tool execution details from previous
+        interactions while preserving them in the database for debugging/audit purposes.
+        
+        Strategy:
+        - Keep ALL messages from current iteration (after last HumanMessage)
+        - From previous iterations, remove:
+          * ToolMessages entirely
+          * tool_calls arrays from AIMessages (keep thinking/content)
+        - Keep all other messages (HumanMessage, SystemMessage, tool-free AIMessages)
+        
+        Performance: O(N) with reverse scan + single forward pass
+        
+        Args:
+            messages: Complete message list from database
+            
+        Returns:
+            Filtered message list safe for LLM (reduced context)
+        """
+        if not messages:
+            return messages
+        
+        # Step 1: Find last HumanMessage (reverse scan - typically fast)
+        last_human_index = -1
+        for i in range(len(messages) - 1, -1, -1):
+            if isinstance(messages[i], HumanMessage):
+                last_human_index = i
+                break
+        
+        if last_human_index == -1:
+            # No user message found, keep everything (edge case)
+            logger.debug("[Tool Context Filter] No HumanMessage found, keeping all messages")
+            return messages
+        
+        # Step 2: Filter messages (single forward pass)
+        filtered = []
+        removed_tool_messages = 0
+        stripped_tool_calls = 0
+        current_iteration_tools = 0
+        
+        for i, msg in enumerate(messages):
+            if i < last_human_index:
+                # PREVIOUS ITERATIONS - filter old tool context
+                if isinstance(msg, ToolMessage):
+                    # Remove ToolMessages from previous iterations
+                    removed_tool_messages += 1
+                    logger.debug(
+                        f"[Tool Context Filter] REMOVING ToolMessage: tool={getattr(msg, 'name', 'unknown')}, "
+                        f"call_id={getattr(msg, 'tool_call_id', 'unknown')}"
+                    )
+                    continue
+                elif isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    # Strip tool_calls but keep content (thinking/text)
+                    stripped_tool_calls += 1
+                    tool_names = [tc.get('name', 'unknown') for tc in msg.tool_calls]
+                    logger.debug(
+                        f"[Tool Context Filter] STRIPPING tool_calls from AIMessage: "
+                        f"tools={tool_names}, msg_id={msg.id}"
+                    )
+                    cleaned_msg = AIMessage(
+                        content=msg.content,
+                        id=msg.id,
+                        name=msg.name if hasattr(msg, 'name') else None,
+                        additional_kwargs=msg.additional_kwargs if hasattr(msg, 'additional_kwargs') else {},
+                        response_metadata=msg.response_metadata if hasattr(msg, 'response_metadata') else {},
+                        # Explicitly exclude tool_calls
+                    )
+                    filtered.append(cleaned_msg)
+                else:
+                    # Keep other messages (HumanMessage, SystemMessage, tool-free AIMessages)
+                    filtered.append(msg)
+            else:
+                # CURRENT ITERATION - keep everything including tool context
+                if isinstance(msg, ToolMessage):
+                    current_iteration_tools += 1
+                    logger.debug(
+                        f"[Tool Context Filter] KEEPING ToolMessage (current iteration): "
+                        f"tool={getattr(msg, 'name', 'unknown')}"
+                    )
+                elif isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    current_iteration_tools += len(msg.tool_calls)
+                    tool_names = [tc.get('name', 'unknown') for tc in msg.tool_calls]
+                    logger.debug(
+                        f"[Tool Context Filter] KEEPING tool_calls (current iteration): tools={tool_names}"
+                    )
+                filtered.append(msg)
+        
+        # Logging
+        if removed_tool_messages > 0 or stripped_tool_calls > 0:
+            logger.info(
+                f"[Tool Context Filter] Filtered old tool context: "
+                f"removed {removed_tool_messages} ToolMessages, "
+                f"stripped tool_calls from {stripped_tool_calls} AIMessages"
+            )
+            logger.info(
+                f"[Tool Context Filter] Current iteration keeps {current_iteration_tools} tool context items"
+            )
+            logger.info(
+                f"[Tool Context Filter] Result: {len(filtered)}/{len(messages)} messages sent to LLM"
+            )
+        else:
+            logger.debug("[Tool Context Filter] No old tool context to filter")
+        
+        # Log detailed message list being sent to LLM
+        logger.info("[Tool Context Filter] Messages sent to LLM:")
+        for i, msg in enumerate(filtered, 1):
+            msg_type = msg.__class__.__name__
+            if msg_type == "HumanMessage":
+                content_preview = msg.content[:50] if len(msg.content) > 50 else msg.content
+                logger.info(f"[Tool Context Filter]   {i}. HumanMessage: {content_preview}...")
+            elif msg_type == "AIMessage":
+                has_tools = hasattr(msg, 'tool_calls') and msg.tool_calls
+                if has_tools:
+                    tool_names = [tc.get('name', 'unknown') for tc in msg.tool_calls]
+                    logger.info(f"[Tool Context Filter]   {i}. AIMessage [WITH {len(msg.tool_calls)} tool_calls: {tool_names}]")
+                else:
+                    logger.info(f"[Tool Context Filter]   {i}. AIMessage [no tool_calls]")
+            elif msg_type == "ToolMessage":
+                tool_name = getattr(msg, 'name', 'unknown')
+                logger.info(f"[Tool Context Filter]   {i}. ToolMessage: {tool_name}")
+            elif msg_type == "SystemMessage":
+                content_preview = msg.content[:50] if len(msg.content) > 50 else msg.content
+                logger.info(f"[Tool Context Filter]   {i}. SystemMessage: {content_preview}...")
+            else:
+                logger.info(f"[Tool Context Filter]   {i}. {msg_type}")
+        
+        return filtered
+
     async def _fetch_long_term_memory(self, thread_id: str) -> dict:
         """Fetch long-term memory data from HTTP endpoint.
 
@@ -863,24 +993,23 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # This returns llm_input_messages which should NOT be overwritten
         filtered_state = self._filter_short_term_memory(state)
 
-        # Step 4: Inject thread_id into tool calls
-        # Need to work on llm_input_messages if it exists
-        if "llm_input_messages" in filtered_state:
-            # Create a temporary state with the filtered messages for thread_id injection
-            temp_state = {"messages": filtered_state["llm_input_messages"]}
-            thread_id_state = self._inject_thread_id_in_user_id_params(
-                temp_state, config
-            )
-            # Return both the filtered messages for LLM and keep any other state updates
-            return {
-                "llm_input_messages": thread_id_state["messages"],
-                **{
-                    k: v for k, v in filtered_state.items() if k != "llm_input_messages"
-                },
-            }
-        else:
-            # No filtering applied, just inject thread_id normally
-            return self._inject_thread_id_in_user_id_params(filtered_state, config)
+        # Step 4: Filter old tool context (remove tool messages from previous iterations)
+        # Work on llm_input_messages if it exists (from short-term memory filter)
+        messages_to_filter = filtered_state.get("llm_input_messages", state.get("messages", []))
+        tool_filtered_messages = self._filter_old_tool_context(messages_to_filter)
+
+        # Step 5: Inject thread_id into tool calls
+        # Work on the tool-filtered messages
+        temp_state = {"messages": tool_filtered_messages}
+        thread_id_state = self._inject_thread_id_in_user_id_params(temp_state, config)
+        
+        # Return both the filtered messages for LLM and keep any other state updates
+        return {
+            "llm_input_messages": thread_id_state["messages"],
+            **{
+                k: v for k, v in filtered_state.items() if k != "llm_input_messages"
+            },
+        }
 
     @interceptor(
         source=make_source(POST_MODEL_HOOK, POST_MODEL_COMBINED),
