@@ -24,6 +24,7 @@ dependencies = [
     "psycopg[binary]>=3.2.0",
     "pydantic>=2.11.7",
     "python-dotenv>=1.0.0",
+    "tiktoken>=0.8.0",
 ]
 
 
