@@ -18,6 +18,7 @@ from langchain_core.tools import BaseTool
 from langchain_google_vertexai import ChatVertexAI
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg_pool import AsyncConnectionPool, ConnectionPool
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
@@ -101,7 +102,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         self._graph = None
         self._checkpointer = None  # Store checkpointer instance
-        self._checkpointer_cm = None  # Store checkpointer context manager for cleanup
+        self._conn_pool = None  # Store async connection pool
         self._setup_complete_async = False
         self._setup_complete_sync = False
         self._opentelemetry_setup_complete = False
@@ -1017,10 +1018,20 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # Create connection string for standard Postgres
         conn_string = f"postgresql://{self._database_user}:{self._database_password}@{self._database_host}:{self._database_port}/{self._database_name}"
 
-        # Create checkpointer using from_conn_string (mirrors migrate_checkpoints.py pattern)
-        # Store the context manager so we can properly exit it during cleanup
-        self._checkpointer_cm = AsyncPostgresSaver.from_conn_string(conn_string)
-        checkpointer = await self._checkpointer_cm.__aenter__()
+        # Create persistent connection pool for the agent's lifetime
+        # This prevents "connection closed" errors in deployed environments
+        if self._conn_pool is None:
+            self._conn_pool = AsyncConnectionPool(
+                conninfo=conn_string,
+                min_size=1,
+                max_size=10,
+                timeout=30.0,
+                open=True,  # Auto-open on creation
+            )
+            logger.info("[Agent Setup] ✓ Connection pool created")
+
+        # Create checkpointer with persistent pool
+        checkpointer = AsyncPostgresSaver(conn=self._conn_pool)
         await checkpointer.setup()
         logger.info("[Agent Setup] ✓ Checkpointer connected and setup complete")
 
@@ -1178,16 +1189,16 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         return chunk
 
     async def cleanup(self):
-        """Cleanup resources, including checkpointer connection and telemetry."""
-        # Close checkpointer context manager if it exists
-        if self._checkpointer_cm is not None:
+        """Cleanup resources, including connection pool and telemetry."""
+        # Close connection pool if it exists
+        if self._conn_pool is not None:
             try:
-                await self._checkpointer_cm.__aexit__(None, None, None)
-                logger.info("[Agent Cleanup] Checkpointer connection closed")
+                await self._conn_pool.close()
+                logger.info("[Agent Cleanup] Connection pool closed")
             except Exception as e:
-                logger.warning(f"[Agent Cleanup] Error closing checkpointer: {e}")
+                logger.warning(f"[Agent Cleanup] Error closing connection pool: {e}")
             finally:
-                self._checkpointer_cm = None
+                self._conn_pool = None
         
         # Force flush telemetry spans
         if self._batch_processor:
@@ -1199,5 +1210,5 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         """Ensure cleanup on object destruction."""
         # For async cleanup, we can't directly await in __del__
         # This is just a warning - users should call cleanup() explicitly
-        if self._checkpointer_cm is not None:
-            logger.warning("[Agent Cleanup] Checkpointer not closed. Call cleanup() explicitly.")
+        if self._conn_pool is not None:
+            logger.warning("[Agent Cleanup] Connection pool not closed. Call cleanup() explicitly.")
