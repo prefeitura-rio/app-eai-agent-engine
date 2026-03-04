@@ -49,6 +49,7 @@ dependencies = [
     { name = "opentelemetry-instrumentation-langchain" },
     { name = "opentelemetry-sdk" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "psycopg-pool" },
     { name = "pydantic" },
     { name = "python-dotenv" },
 ]
@@ -72,6 +73,7 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-langchain", specifier = ">=0.45.6" },
     { name = "opentelemetry-sdk", specifier = ">=1.36.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
+    { name = "psycopg-pool", specifier = ">=3.2.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
