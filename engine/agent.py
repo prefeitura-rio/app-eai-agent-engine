@@ -1,17 +1,31 @@
-from typing import Any, Iterator, List, Optional, AsyncIterable
-from langchain.load.dump import dumpd
-from datetime import datetime, timezone
-import json
-import asyncio
 import ast
-from langchain_core.messages import trim_messages
+import asyncio
+import json
+from datetime import datetime, timezone
+from functools import wraps
+from os import getenv
+from typing import Any, AsyncIterable, Iterator, List
 
-# from langgraph.prebuilt import create_react_agent
-# use custom graph without _validate_chat_history
-from engine.custom_react_agent import create_react_agent
-from langchain_google_vertexai import ChatVertexAI
+from langchain_core.load.dump import dumpd
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+    trim_messages,
+)
 from langchain_core.tools import BaseTool
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
+from langchain_google_vertexai import ChatVertexAI
+from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg_pool import AsyncConnectionPool, ConnectionPool
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 from vertexai.agent_engines import (
     AsyncQueryable,
     AsyncStreamQueryable,
@@ -19,22 +33,35 @@ from vertexai.agent_engines import (
     StreamQueryable,
 )
 
-from os import getenv
-from langchain_google_cloud_sql_pg import (
-    PostgresEngine,
-    PostgresSaver,
-)
-
-from opentelemetry import trace
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.trace.sampling import ALWAYS_ON
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-
-from opentelemetry.instrumentation.langchain import LangchainInstrumentor
-
+# from langgraph.prebuilt import create_react_agent
+# use custom graph without _validate_chat_history
+from engine.custom_react_agent import create_react_agent
 from engine.log import logger
+
+# Error monitoring utilities (safe fallback if not available)
+from engine.utils import (
+    interceptor,
+    extract_thread_id_from_config,
+    make_source,
+    PRE_INVOKE,
+    PRE_INVOKE_SANITIZE,
+    PRE_INVOKE_COMBINED,
+    PRE_INVOKE_TIMESTAMP,
+    PRE_MODEL_HOOK,
+    PRE_MODEL_COMBINED,
+    PRE_MODEL_FILTER_MEMORY,
+    PRE_MODEL_INJECT_MEMORY,
+    PRE_MODEL_INJECT_THREAD_ID,
+    POST_MODEL_HOOK,
+    POST_MODEL_COMBINED,
+    GRAPH_INVOCATION,
+    GRAPH_ASYNC_QUERY,
+    GRAPH_QUERY,
+    GRAPH_ASYNC_STREAM,
+    GRAPH_STREAM,
+    RESPONSE_FILTER,
+    RESPONSE_FILTER_FILTER,
+)
 
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
@@ -43,7 +70,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
     Components are initialized lazily on the first query.
 
-    Use engine.init_checkpoint_table() if the table does not exists
+    Database tables are automatically created when needed via checkpointer.setup()
     """
 
     def __init__(
@@ -65,9 +92,8 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._thinking_budget = thinking_budget
         self._otpl_service = otpl_service
         # Database configuration
-        self._project_id = getenv("PROJECT_ID", "")
-        self._region = getenv("LOCATION", "")
-        self._instance_name = getenv("INSTANCE", "")
+        self._database_host = getenv("DATABASE_HOST", "localhost")
+        self._database_port = getenv("DATABASE_PORT", "5432")
         self._database_name = getenv("DATABASE", "")
         self._database_user = getenv("DATABASE_USER", "")
         self._database_password = getenv("DATABASE_PASSWORD", "")
@@ -75,6 +101,8 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._otlp_header = getenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
 
         self._graph = None
+        self._checkpointer = None  # Store checkpointer instance
+        self._conn_pool = None  # Store async connection pool
         self._setup_complete_async = False
         self._setup_complete_sync = False
         self._opentelemetry_setup_complete = False
@@ -165,6 +193,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._setup_complete_async = False
         self._setup_complete_sync = False
 
+    @interceptor(
+        source=make_source(PRE_INVOKE, PRE_INVOKE_SANITIZE),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _sanitize_input_messages(self, **kwargs):
         """Sanitizes input messages to prevent Vertex AI errors with integer lists in strings.
 
@@ -208,12 +240,20 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                     pass
         return kwargs
 
+    @interceptor(
+        source=make_source(PRE_INVOKE, PRE_INVOKE_COMBINED),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _combined_pre_invoke_hook(self, **kwargs):
         """Centralizes all manipulations on input arguments before invoking the graph."""
         kwargs = self._add_timestamp_to_input_messages(**kwargs)
         kwargs = self._sanitize_input_messages(**kwargs)
         return kwargs
 
+    @interceptor(
+        source=make_source(PRE_INVOKE, PRE_INVOKE_TIMESTAMP),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _add_timestamp_to_input_messages(self, **kwargs):
         "Adiciona timestamp nas mensagens do usuario antes do invoke"
         msg_datetime = datetime.now(timezone.utc).isoformat()
@@ -235,7 +275,27 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 and "timestamp" not in message.additional_kwargs
             ):
                 message.additional_kwargs["timestamp"] = current_time
+                
+                # Normalize tool response: extract first item if content is a list
+                if isinstance(message.content, list) and len(message.content) > 0:
+                    message.content = message.content[0]
+                    logger.debug(f"[Tool Execution] Normalized list response to single item for tool: {message.name if hasattr(message, 'name') else 'UNKNOWN'}")
+                
                 updates.append(message)
+                
+                # Log tool execution result
+                logger.info("[Tool Execution] Tool execution completed")
+                logger.info(f"[Tool Execution]   - Tool Call ID: {message.tool_call_id if hasattr(message, 'tool_call_id') else 'UNKNOWN'}")
+                logger.info(f"[Tool Execution]   - Tool Name: {message.name if hasattr(message, 'name') else 'UNKNOWN'}")
+                logger.info(f"[Tool Execution]   - Status: {message.status if hasattr(message, 'status') else 'success'}")
+                
+                # Log the content (result), but limit size for large responses
+                content_str = str(message.content)
+                if len(content_str) > 1000:
+                    logger.info(f"[Tool Execution]   - Result (first 1000 chars): {content_str[:1000]}...")
+                    logger.info(f"[Tool Execution]   - Result length: {len(content_str)} characters")
+                else:
+                    logger.info(f"[Tool Execution]   - Result: {content_str}")
 
         # Retorna APENAS as mensagens modificadas para evitar duplicação no add_messages
         return {"messages": updates} if updates else {}
@@ -382,6 +442,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return complete_messages
 
+    @interceptor(
+        source=make_source(PRE_MODEL_HOOK, PRE_MODEL_FILTER_MEMORY),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _filter_short_term_memory(self, state):
         """Filter messages based on time and token limits for short-term memory.
 
@@ -462,7 +526,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         if not time_filtered_messages:
             # If all messages are filtered out, keep at least the last message
             logger.warning(
-                f"[Short-Term Memory] All messages filtered by time limit, keeping last message"
+                "[Short-Term Memory] All messages filtered by time limit, keeping last message"
             )
             time_filtered_messages = [non_system_messages[-1]]
         else:
@@ -586,6 +650,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return result
 
+    @interceptor(
+        source=make_source(PRE_MODEL_HOOK, PRE_MODEL_INJECT_MEMORY),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _inject_long_term_memory(self, state, config=None):
         """Inject long-term memory as a SystemMessage.
 
@@ -727,6 +795,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return {"messages": messages}
 
+    @interceptor(
+        source=make_source(PRE_MODEL_HOOK, PRE_MODEL_INJECT_THREAD_ID),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _inject_thread_id_in_user_id_params(self, state, config=None):
         """Hook para injetar thread_id em qualquer parâmetro user_id de tool calls.
 
@@ -775,6 +847,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return {"messages": messages}
 
+    @interceptor(
+        source=make_source(PRE_MODEL_HOOK, PRE_MODEL_COMBINED),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _combined_pre_model_hook(self, state, config=None):
         # Step 1: Add timestamps to new ToolMessages (safe update, modifies in-place)
         # We invoke this for the side-effect on state['messages'], relying on
@@ -807,9 +883,25 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             # No filtering applied, just inject thread_id normally
             return self._inject_thread_id_in_user_id_params(filtered_state, config)
 
+    @interceptor(
+        source=make_source(POST_MODEL_HOOK, POST_MODEL_COMBINED),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _combined_post_model_hook(self, state, config=None):
-        # Check if upsert_user_memory tool was called
+        # Log tool calls if present
         messages = state.get("messages", [])
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+                logger.info("[Tool Execution] AI Message with tool calls detected")
+                for i, tool_call in enumerate(msg.tool_calls, 1):
+                    logger.info(f"[Tool Execution] Tool Call #{i}:")
+                    logger.info(f"[Tool Execution]   - Tool Name: {tool_call.get('name', 'UNKNOWN')}")
+                    logger.info(f"[Tool Execution]   - Tool ID: {tool_call.get('id', 'UNKNOWN')}")
+                    logger.info(f"[Tool Execution]   - Tool Args: {tool_call.get('args', {})}")
+                    logger.info(f"[Tool Execution]   - Full Tool Call: {tool_call}")
+                break  # Only log the most recent AI message
+        
+        # Check if upsert_user_memory tool was called
         for msg in reversed(messages):
             if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
                 for tool_call in msg.tool_calls:
@@ -825,7 +917,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return self._inject_thread_id_in_user_id_params(state, config)
 
-    def _create_react_agent(self, checkpointer: Optional[PostgresSaver] = None):
+    def _create_react_agent(
+        self,
+        checkpointer: AsyncPostgresSaver | PostgresSaver | None = None,
+    ):
         """Create and configure the React Agent."""
         llm = ChatVertexAI(
             model_name=self._model,
@@ -835,15 +930,74 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         )
         # llm_with_tools = llm.bind_tools(tools=self._tools, parallel_tool_calls=False)
         llm_with_tools = llm.bind_tools(tools=self._tools)
+        
+        # Wrap tools with logging
+        wrapped_tools = self._wrap_tools_with_logging(self._tools)
 
         self._graph = create_react_agent(
             model=llm_with_tools,
-            tools=self._tools,
+            tools=wrapped_tools,
             prompt=self._system_prompt,
             checkpointer=checkpointer,
             pre_model_hook=self._combined_pre_model_hook,
             post_model_hook=self._combined_post_model_hook,
         )
+    
+    def _wrap_tools_with_logging(self, tools: List[BaseTool]) -> List[BaseTool]:
+        """Wrap each tool with logging to capture invocations."""
+        wrapped_tools = []
+        
+        for tool in tools:
+            # Create a wrapped version of the tool
+            original_invoke = tool._run
+            original_ainvoke = tool._arun
+            
+            def create_sync_wrapper(original_func, tool_name):
+                @wraps(original_func)
+                def sync_wrapper(*args, **kwargs):
+                    logger.info(f"[Tool Invocation] SYNC: Invoking tool: {tool_name}")
+                    logger.info(f"[Tool Invocation]   - Args: {args}")
+                    logger.info(f"[Tool Invocation]   - Kwargs: {kwargs}")
+                    try:
+                        result = original_func(*args, **kwargs)
+                        result_str = str(result)
+                        if len(result_str) > 500:
+                            logger.info(f"[Tool Invocation]   - Result (first 500 chars): {result_str[:500]}...")
+                        else:
+                            logger.info(f"[Tool Invocation]   - Result: {result_str}")
+                        return result
+                    except Exception as e:
+                        logger.error(f"[Tool Invocation]   - ERROR: {type(e).__name__}: {str(e)}", exc_info=True)
+                        raise
+                return sync_wrapper
+            
+            def create_async_wrapper(original_func, tool_name):
+                @wraps(original_func)
+                async def async_wrapper(*args, **kwargs):
+                    logger.info(f"[Tool Invocation] ASYNC: Invoking tool: {tool_name}")
+                    logger.info(f"[Tool Invocation]   - Args: {args}")
+                    logger.info(f"[Tool Invocation]   - Kwargs: {kwargs}")
+                    try:
+                        result = await original_func(*args, **kwargs)
+                        result_str = str(result)
+                        if len(result_str) > 500:
+                            logger.info(f"[Tool Invocation]   - Result (first 500 chars): {result_str[:500]}...")
+                        else:
+                            logger.info(f"[Tool Invocation]   - Result: {result_str}")
+                        return result
+                    except Exception as e:
+                        logger.error(f"[Tool Invocation]   - ERROR: {type(e).__name__}: {str(e)}", exc_info=True)
+                        raise
+                return async_wrapper
+            
+            # Wrap the tool methods
+            tool._run = create_sync_wrapper(original_invoke, tool.name)
+            tool._arun = create_async_wrapper(original_ainvoke, tool.name)
+            
+            wrapped_tools.append(tool)
+        
+        logger.info(f"[Tool Wrapping] Wrapped {len(wrapped_tools)} tools with logging")
+        return wrapped_tools
 
     async def _ensure_async_setup(self):
         """Ensure async components are set up."""
@@ -852,17 +1006,39 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         if self._setup_complete_async:
             return
-        engine = await PostgresEngine.afrom_instance(
-            project_id=self._project_id,
-            region=self._region,
-            instance=self._instance_name,
-            database=self._database_name,
-            user=self._database_user,
-            password=self._database_password,
-            engine_args={"pool_pre_ping": True, "pool_recycle": 300},
-        )
-        checkpointer = await PostgresSaver.create(engine=engine)
+
+        # Load MCP tools at runtime if not already loaded
+        if not self._tools:
+            from engine.mcp_tools import get_mcp_tools
+
+            excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
+            excluded_tools_list = excluded_tools.split(",") if excluded_tools else []
+            self._tools = await get_mcp_tools(exclude_tools=excluded_tools_list)
+
+        # Create connection string for standard Postgres
+        conn_string = f"postgresql://{self._database_user}:{self._database_password}@{self._database_host}:{self._database_port}/{self._database_name}"
+
+        # Create persistent connection pool for the agent's lifetime
+        # This prevents "connection closed" errors in deployed environments
+        if self._conn_pool is None:
+            self._conn_pool = AsyncConnectionPool(
+                conninfo=conn_string,
+                min_size=1,
+                max_size=10,
+                timeout=30.0,
+                open=True,  # Auto-open on creation
+            )
+            logger.info("[Agent Setup] ✓ Connection pool created")
+
+        # Create checkpointer with persistent pool
+        checkpointer = AsyncPostgresSaver(conn=self._conn_pool)
+        await checkpointer.setup()
+        logger.info("[Agent Setup] ✓ Checkpointer connected and setup complete")
+
         self._create_react_agent(checkpointer=checkpointer)
+        logger.info("[Agent Setup] ✓ React agent created successfully (async)")
+        logger.info("[Agent Setup] ========== Agent Setup Complete ==========")
+
         self._setup_complete_async = True
 
     def _ensure_sync_setup(self):
@@ -872,21 +1048,33 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         if self._setup_complete_sync:
             return self._graph
-        engine = PostgresEngine.from_instance(
-            project_id=self._project_id,
-            region=self._region,
-            instance=self._instance_name,
-            database=self._database_name,
-            user=self._database_user,
-            password=self._database_password,
-            engine_args={"pool_pre_ping": True, "pool_recycle": 300},
-        )
 
-        checkpointer = PostgresSaver.create_sync(engine=engine)
+        # Load MCP tools at runtime if not already loaded
+        if not self._tools:
+            import asyncio
+
+            from engine.mcp_tools import get_mcp_tools
+
+            excluded_tools = getenv("MCP_EXCLUDED_TOOLS", "")
+            excluded_tools_list = excluded_tools.split(",") if excluded_tools else []
+            self._tools = asyncio.run(get_mcp_tools(exclude_tools=excluded_tools_list))
+
+        # Create connection string for standard Postgres
+        conn_string = f"postgresql://{self._database_user}:{self._database_password}@{self._database_host}:{self._database_port}/{self._database_name}"
+
+        # Pass the context manager generator directly to create_react_agent
+        checkpointer_ctx = PostgresSaver.from_conn_string(conn_string)
+        checkpointer = checkpointer_ctx.__enter__()
+        checkpointer.setup()
+
         self._create_react_agent(checkpointer=checkpointer)
         self._setup_complete_sync = True
         return self._graph
 
+    @interceptor(
+        source=make_source(GRAPH_INVOCATION, GRAPH_ASYNC_QUERY),
+        extract_user_id=extract_thread_id_from_config
+    )
     async def async_query(self, **kwargs) -> dict[str, Any] | Any:
         """Asynchronous query execution with filtered current interaction."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
@@ -917,6 +1105,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return filtered_result
 
+    @interceptor(
+        source=make_source(GRAPH_INVOCATION, GRAPH_ASYNC_STREAM),
+        extract_user_id=extract_thread_id_from_config
+    )
     async def async_stream_query(self, **kwargs) -> AsyncIterable[Any]:
         """Asynchronous streaming query execution with filtered chunks."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
@@ -933,6 +1125,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return async_generator()
 
+    @interceptor(
+        source=make_source(GRAPH_INVOCATION, GRAPH_QUERY),
+        extract_user_id=extract_thread_id_from_config
+    )
     def query(self, **kwargs) -> dict[str, Any] | Any:
         """Synchronous query execution with filtered current interaction."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
@@ -948,6 +1144,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return filtered_result
 
+    @interceptor(
+        source=make_source(GRAPH_INVOCATION, GRAPH_STREAM),
+        extract_user_id=extract_thread_id_from_config
+    )
     def stream_query(self, **kwargs) -> Iterator[dict[str, Any] | Any]:
         """Synchronous streaming query execution with filtered chunks."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
@@ -958,6 +1158,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             filtered_chunk = self._filter_streaming_chunk(chunk)
             yield dumpd(filtered_chunk)
 
+    @interceptor(
+        source=make_source(RESPONSE_FILTER, RESPONSE_FILTER_FILTER),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _filter_current_interaction(self, result: dict) -> dict:
         """Filters response to include only messages from the last human input."""
         if "messages" not in result or not isinstance(result["messages"], list):
@@ -974,8 +1178,37 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         filtered_result["messages"] = messages[last_human_index:]
         return filtered_result
 
+    @interceptor(
+        source=make_source(RESPONSE_FILTER, RESPONSE_FILTER_FILTER),
+        extract_user_id=extract_thread_id_from_config
+    )
     def _filter_streaming_chunk(self, chunk: dict) -> dict:
         """Applies interaction filter to a streaming chunk if applicable."""
         if isinstance(chunk, dict) and "messages" in chunk:
             return self._filter_current_interaction(chunk)
         return chunk
+
+    async def cleanup(self):
+        """Cleanup resources, including connection pool and telemetry."""
+        # Close connection pool if it exists
+        if self._conn_pool is not None:
+            try:
+                await self._conn_pool.close()
+                logger.info("[Agent Cleanup] Connection pool closed")
+            except Exception as e:
+                logger.warning(f"[Agent Cleanup] Error closing connection pool: {e}")
+            finally:
+                self._conn_pool = None
+        
+        # Force flush telemetry spans
+        if self._batch_processor:
+            self._batch_processor.force_flush(timeout_millis=5000)
+            self._batch_processor.shutdown()
+            logger.info("[Agent Cleanup] Telemetry processor flushed and shutdown")
+
+    def __del__(self):
+        """Ensure cleanup on object destruction."""
+        # For async cleanup, we can't directly await in __del__
+        # This is just a warning - users should call cleanup() explicitly
+        if self._conn_pool is not None:
+            logger.warning("[Agent Cleanup] Connection pool not closed. Call cleanup() explicitly.")

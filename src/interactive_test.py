@@ -30,29 +30,39 @@ vertexai.init(
 )
 
 
-def get_agent():
-    return agent_engines.get(
-        f"projects/{env.PROJECT_NUMBER}/locations/{env.LOCATION}/reasoningEngines/{env.REASONING_ENGINE_ID}"
-    )
-
-
 lista_de_mensagens = gerar_conversa_aleatoria(num_mensagens=10, tamanho_content=100)
 
 user_id = str(uuid.uuid4())  # Unique user ID for the session
 
 
-# Initialize agents
-remote_agent = get_agent()
-prompt_version = prompt_data["version"]
-local_agent = Agent(
-    model="gemini-2.5-flash",
-    system_prompt=prompt_data["prompt"],
-    temperature=0.7,
-    tools=mcp_tools,
-    include_thoughts=True,
-    thinking_budget=-1,
-    otpl_service=f"eai-langgraph-v{prompt_version}",
-)
+# Lazy initialization for agents - only create when needed
+_remote_agent = None
+_local_agent = None
+
+
+def get_remote_agent():
+    global _remote_agent
+    if _remote_agent is None:
+        _remote_agent = agent_engines.get(
+            f"projects/{env.PROJECT_NUMBER}/locations/{env.LOCATION}/reasoningEngines/{env.REASONING_ENGINE_ID}"
+        )
+    return _remote_agent
+
+
+def get_local_agent():
+    global _local_agent
+    if _local_agent is None:
+        prompt_version = prompt_data["version"]
+        _local_agent = Agent(
+            model="gemini-2.5-flash",
+            system_prompt=prompt_data["prompt"],
+            temperature=0.7,
+            tools=mcp_tools,
+            include_thoughts=True,
+            thinking_budget=-1,
+            otpl_service=f"eai-langgraph-v{prompt_version}",
+        )
+    return _local_agent
 
 
 def parse_agent_response(response, is_local=False, start_time=None):
@@ -259,7 +269,7 @@ def parse_agent_response(response, is_local=False, start_time=None):
 
 async def interactive_chat(use_local=False):
     """Start an interactive chat session."""
-    agent = local_agent if use_local else remote_agent
+    agent = get_local_agent() if use_local else get_remote_agent()
     agent_name = "Local Agent" if use_local else "Remote Agent"
 
     print(f"🤖 EAI {agent_name} Interactive Chat")
@@ -315,14 +325,9 @@ async def interactive_chat(use_local=False):
                 start_time = datetime.now(timezone.utc)
 
                 # Use async_query for both agents
-                if use_local:
-                    result = await local_agent.async_query(
-                        input=data, config=config, type=type
-                    )
-                else:
-                    result = await remote_agent.async_query(
-                        input=data, config=config, type=type
-                    )
+                result = await agent.async_query(
+                    input=data, config=config, type=type
+                )
                 # print(result)
                 # Parse and display the result
 
@@ -343,6 +348,13 @@ async def interactive_chat(use_local=False):
             break
         except Exception as e:
             print(f"\n❌ Unexpected error: {str(e)}")
+    
+    # Cleanup agent resources
+    if use_local:
+        local_agent = get_local_agent()
+        if hasattr(local_agent, 'cleanup'):
+            await local_agent.cleanup()
+            print("✅ Agent resources cleaned up")
 
 
 if __name__ == "__main__":

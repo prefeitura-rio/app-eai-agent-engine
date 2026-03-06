@@ -44,13 +44,27 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.managed import RemainingSteps
-from langgraph.prebuilt.tool_node import ToolNode
+from langgraph.prebuilt.tool_node import ToolNode as _BaseToolNode
 from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Send
 from langgraph.typing import ContextT
 from langgraph.warnings import LangGraphDeprecatedSinceV10
 from engine.log import logger
+from engine.monitored_tool_node import MonitoredToolNode
+
+# Error monitoring utilities (safe fallback if not available)
+from engine.utils import (
+    interceptor,
+    extract_thread_id_from_config,
+    make_source,
+    AGENT_NODE,
+    AGENT_LLM_CALL_SYNC,
+    AGENT_LLM_CALL_ASYNC,
+)
+
+# Use MonitoredToolNode as the default ToolNode implementation
+ToolNode = MonitoredToolNode
 
 
 StructuredResponse = Union[dict, BaseModel]
@@ -661,6 +675,10 @@ def create_react_agent(
         return state
 
     # Define the function that calls the model
+    @interceptor(
+        source=make_source(AGENT_NODE, AGENT_LLM_CALL_SYNC),
+        extract_user_id=extract_thread_id_from_config
+    )
     def call_model(
         state: StateSchema, runtime: Runtime[ContextT], config: RunnableConfig
     ) -> StateSchema:
@@ -696,6 +714,10 @@ def create_react_agent(
         # We return a list, because this will get added to the existing list
         return {"messages": [response]}
 
+    @interceptor(
+        source=make_source(AGENT_NODE, AGENT_LLM_CALL_ASYNC),
+        extract_user_id=extract_thread_id_from_config
+    )
     async def acall_model(
         state: StateSchema, runtime: Runtime[ContextT], config: RunnableConfig
     ) -> StateSchema:
@@ -849,11 +871,8 @@ def create_react_agent(
             elif version == "v2":
                 if post_model_hook is not None:
                     return "post_model_hook"
-                tool_calls = [
-                    tool_node.inject_tool_args(call, state, store)  # type: ignore[arg-type]
-                    for call in last_message.tool_calls
-                ]
-                return [Send("tools", [tool_call]) for tool_call in tool_calls]
+                # inject_tool_args doesn't exist in langgraph-prebuilt 1.0.7, pass calls directly
+                return [Send("tools", [tool_call]) for tool_call in last_message.tool_calls]
 
     # Define a new graph
     workflow = StateGraph(
@@ -934,10 +953,7 @@ def create_react_agent(
             ]
 
             if pending_tool_calls:
-                pending_tool_calls = [
-                    tool_node.inject_tool_args(call, state, store)  # type: ignore[arg-type]
-                    for call in pending_tool_calls
-                ]
+                # inject_tool_args doesn't exist in langgraph-prebuilt 1.0.7, pass calls directly
                 return [Send("tools", [tool_call]) for tool_call in pending_tool_calls]
             elif isinstance(messages[-1], ToolMessage):
                 return entrypoint
