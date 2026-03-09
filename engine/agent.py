@@ -64,6 +64,178 @@ from engine.utils import (
 )
 
 
+# ============================================================================
+# Version-Normalizing Checkpointer Wrapper
+# ============================================================================
+class VersionNormalizingAsyncPostgresSaver(AsyncPostgresSaver):
+    """
+    Wrapper around AsyncPostgresSaver that normalizes all string versions to integers.
+    
+    This fixes the TypeError: '>' not supported between instances of 'str' and 'int'
+    that occurs after BYTEA→JSONB migration when LangGraph compares versions.
+    
+    Root cause: After migration, some checkpoint versions are loaded as strings 
+    (e.g., "00000000000000000000000000000182.0.44094642820763663") from JSONB,
+    while others are integers (e.g., 181). When LangGraph tries to compare them,
+    Python raises TypeError.
+    
+    Solution: Normalize ALL versions to integers when loading checkpoints from the database.
+    This ensures LangGraph always sees consistent types and comparisons work correctly.
+    """
+    
+    @staticmethod
+    def _normalize_version(v):
+        """Convert string version to int by removing dots and converting."""
+        if isinstance(v, str):
+            try:
+                # Remove dots from version strings like "182.0.44094642820763663"
+                # Then convert to integer
+                cleaned = v.replace('.', '')
+                return int(cleaned)
+            except (ValueError, TypeError):
+                logger.warning(f"[Version Fix] Could not convert version '{v}' to int, keeping as-is")
+                return v
+        return v
+    
+    @staticmethod
+    def _normalize_checkpoint_versions(checkpoint):
+        """Normalize all version fields in a checkpoint dict."""
+        if not checkpoint or not isinstance(checkpoint, dict):
+            return checkpoint
+        
+        # Normalize channel_versions: {channel_name: version_int}
+        if "channel_versions" in checkpoint and isinstance(checkpoint["channel_versions"], dict):
+            checkpoint["channel_versions"] = {
+                k: VersionNormalizingAsyncPostgresSaver._normalize_version(v)
+                for k, v in checkpoint["channel_versions"].items()
+            }
+        
+        # Normalize versions_seen: {node_name: {channel_name: version_int}}
+        if "versions_seen" in checkpoint and isinstance(checkpoint["versions_seen"], dict):
+            checkpoint["versions_seen"] = {
+                node: {
+                    chan: VersionNormalizingAsyncPostgresSaver._normalize_version(ver)
+                    for chan, ver in channels.items()
+                } if isinstance(channels, dict) else channels
+                for node, channels in checkpoint["versions_seen"].items()
+            }
+        
+        return checkpoint
+    
+    @staticmethod
+    def _normalize_new_versions(new_versions):
+        """Normalize new_versions dict (simple {channel_name: version_int})."""
+        if not new_versions or not isinstance(new_versions, dict):
+            return new_versions
+        
+        return {
+            k: VersionNormalizingAsyncPostgresSaver._normalize_version(v)
+            for k, v in new_versions.items()
+        }
+    
+    def get_next_version(self, current, channel):
+        """
+        Override to return INTEGER versions instead of STRING versions.
+        
+        This prevents type mismatches when comparing versions.
+        LangGraph's default implementation returns strings like "00000000000000000000000000000001.0.47283144811017674",
+        but we need integers for consistent type comparisons.
+        """
+        import random
+        
+        if current is None:
+            current_v = 0
+        elif isinstance(current, int):
+            current_v = current
+        else:
+            # Handle string versions from old data
+            try:
+                current_v = int(current.split(".")[0])
+            except (ValueError, AttributeError):
+                current_v = int(current)
+        
+        next_v = current_v + 1
+        next_h = int(random.random() * 10**16)  # Random hash as integer
+        
+        # Return as integer by combining counter and hash
+        # Format: {next_v}{next_h:016} to preserve uniqueness
+        return int(f"{next_v}{next_h:016}")
+    
+    async def aget_tuple(self, config):
+        """Override to normalize versions after loading from database."""
+        thread_id = config.get('configurable', {}).get('thread_id', 'unknown')
+        result = await super().aget_tuple(config)
+        
+        if result and result.checkpoint:
+            # Log what we loaded from database BEFORE normalization
+            checkpoint_dict = dict(result.checkpoint)
+            if "channel_versions" in checkpoint_dict:
+                sample_versions = list(checkpoint_dict["channel_versions"].items())[:3]
+                logger.info(f"[Version Fix] 🔍 LOADED from DB (thread: {thread_id[:30]})")
+                for k, v in sample_versions:
+                    logger.info(f"    channel_versions['{k}'] = {repr(v)} (type: {type(v).__name__})")
+            
+            # Normalize
+            normalized = self._normalize_checkpoint_versions(checkpoint_dict)
+            result.checkpoint.update(normalized)
+            
+            # Log after normalization
+            if "channel_versions" in normalized:
+                sample_versions = list(normalized["channel_versions"].items())[:3]
+                logger.info(f"[Version Fix] ✅ AFTER normalization:")
+                for k, v in sample_versions:
+                    logger.info(f"    channel_versions['{k}'] = {repr(v)} (type: {type(v).__name__})")
+        
+        return result
+    
+    async def aput(self, config, checkpoint, metadata, new_versions):
+        """Override to log what LangGraph is trying to save AND normalize versions."""
+        thread_id = config.get('configurable', {}).get('thread_id', 'unknown')
+        
+        # Log what LangGraph is trying to save BEFORE normalization
+        logger.info(f"[Version Fix] 💾 SAVING to DB (thread: {thread_id[:30]})")
+        if checkpoint and "channel_versions" in checkpoint:
+            sample_versions = list(checkpoint["channel_versions"].items())[:3]
+            for k, v in sample_versions:
+                logger.info(f"    checkpoint['channel_versions']['{k}'] = {repr(v)} (type: {type(v).__name__})")
+        
+        # Log new_versions parameter
+        if new_versions:
+            logger.info(f"[Version Fix] 💾 new_versions parameter:")
+            for k, v in list(new_versions.items())[:3]:
+                logger.info(f"    new_versions['{k}'] = {repr(v)} (type: {type(v).__name__})")
+        
+        # Normalize checkpoint AND new_versions before saving
+        if checkpoint:
+            checkpoint = self._normalize_checkpoint_versions(checkpoint)
+        
+        if new_versions:
+            new_versions = self._normalize_new_versions(new_versions)
+        
+        logger.info(f"[Version Fix] ✅ Normalized checkpoint AND new_versions BEFORE saving to DB")
+        
+        # Call parent's aput with normalized checkpoint and new_versions
+        return await super().aput(config, checkpoint, metadata, new_versions)
+    
+    async def aget(self, config):
+        """Override to normalize versions after loading from database."""
+        result = await super().aget(config)
+        
+        if result and result.get("checkpoint"):
+            result["checkpoint"] = self._normalize_checkpoint_versions(result["checkpoint"])
+        
+        return result
+    
+    async def alist(self, config, *, filter=None, before=None, limit=None):
+        """Override to normalize versions in all listed checkpoints."""
+        async for item in super().alist(config, filter=filter, before=before, limit=limit):
+            if item.checkpoint:
+                checkpoint_dict = dict(item.checkpoint)
+                normalized = self._normalize_checkpoint_versions(checkpoint_dict)
+                item.checkpoint.update(normalized)
+            yield item
+
+
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     """
     An agent for sync/async/streaming queries with state persisted in PostgreSQL.
@@ -1031,9 +1203,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             logger.info("[Agent Setup] ✓ Connection pool created")
 
         # Create checkpointer with persistent pool
-        checkpointer = AsyncPostgresSaver(conn=self._conn_pool)
+        # Using VersionNormalizingAsyncPostgresSaver to fix string→int version type mismatch
+        checkpointer = VersionNormalizingAsyncPostgresSaver(conn=self._conn_pool)
         await checkpointer.setup()
-        logger.info("[Agent Setup] ✓ Checkpointer connected and setup complete")
+        logger.info("[Agent Setup] ✓ Checkpointer connected and setup complete (with version normalization)")
 
         self._create_react_agent(checkpointer=checkpointer)
         logger.info("[Agent Setup] ✓ React agent created successfully (async)")
