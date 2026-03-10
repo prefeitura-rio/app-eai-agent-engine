@@ -52,6 +52,52 @@ jobs:
           fi
 
       # -----------------------------------------------------------------------
+      # Guard — verify Pre-Deploy Tests passed on the PR's current head SHA.
+      # Prevents deploying when tests are still running or have failed.
+      # -----------------------------------------------------------------------
+      - name: Check pre-deploy tests passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD_SHA=$(gh pr view "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --json headRefOid --jq '.headRefOid')
+          echo "Checking pre-deploy test status for SHA $HEAD_SHA..."
+
+          RUN_STATUS=$(gh api \
+            "repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs" \
+            --jq '.check_runs | map(select(.name == "Pre-Deploy Tests")) | last | .status // "not_found"')
+
+          CONCLUSION=$(gh api \
+            "repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs" \
+            --jq '.check_runs | map(select(.name == "Pre-Deploy Tests")) | last | .conclusion // ""')
+
+          echo "Pre-Deploy Tests: status=$RUN_STATUS conclusion=$CONCLUSION"
+
+          if [ "$RUN_STATUS" = "not_found" ] || [ "$RUN_STATUS" = "null" ]; then
+            gh pr comment "${{ github.event.issue.number }}" \
+              --repo "${{ github.repository }}" \
+              --body "⏳ Pre-Deploy Tests have not run yet on this PR — wait for them to complete before deploying."
+            exit 1
+          fi
+
+          if [ "$RUN_STATUS" != "completed" ]; then
+            gh pr comment "${{ github.event.issue.number }}" \
+              --repo "${{ github.repository }}" \
+              --body "⏳ Pre-Deploy Tests are still **$RUN_STATUS** — comment \`/deploy\` again once they complete."
+            exit 1
+          fi
+
+          if [ "$CONCLUSION" != "success" ]; then
+            gh pr comment "${{ github.event.issue.number }}" \
+              --repo "${{ github.repository }}" \
+              --body "❌ Cannot deploy — Pre-Deploy Tests concluded with **$CONCLUSION**. Fix the failing tests first."
+            exit 1
+          fi
+
+          echo "Pre-Deploy Tests: success ✓"
+
+      # -----------------------------------------------------------------------
       # Acknowledge the command with a reaction and a comment.
       # -----------------------------------------------------------------------
       - name: Acknowledge command
@@ -71,7 +117,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          HEAD_SHA=$(gh pr view "${{ github.event.issue.number }}" --json headRefOid --jq '.headRefOid')
+          HEAD_SHA=$(gh pr view "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --json headRefOid --jq '.headRefOid')
           echo "sha=$HEAD_SHA" >> $GITHUB_OUTPUT
 
       - uses: actions/checkout@v4
