@@ -1,0 +1,157 @@
+name: Deploy on /deploy Command
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  deploy:
+    # Only run when a PR comment matches "/deploy staging" or "/deploy production"
+    if: |
+      github.event.issue.pull_request != null &&
+      (
+        contains(github.event.comment.body, '/deploy staging') ||
+        contains(github.event.comment.body, '/deploy production')
+      )
+
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Permission check — only users with write/admin access may deploy.
+      # -----------------------------------------------------------------------
+      - name: Check commenter permissions
+        id: permission
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PERMISSION=$(gh api \
+            "repos/${{ github.repository }}/collaborators/${{ github.event.comment.user.login }}/permission" \
+            --jq '.permission' 2>/dev/null || echo "none")
+          echo "level=$PERMISSION" >> $GITHUB_OUTPUT
+          if [[ "$PERMISSION" != "write" && "$PERMISSION" != "admin" ]]; then
+            gh pr comment "${{ github.event.issue.number }}" \
+              --body "⛔ @${{ github.event.comment.user.login }} — you need **write** access to trigger a deployment."
+            exit 1
+          fi
+
+      # -----------------------------------------------------------------------
+      # Parse target environment from the comment body.
+      # -----------------------------------------------------------------------
+      - name: Parse environment
+        id: parse
+        run: |
+          BODY="${{ github.event.comment.body }}"
+          if echo "$BODY" | grep -q '/deploy production'; then
+            echo "env=production" >> $GITHUB_OUTPUT
+          else
+            echo "env=staging" >> $GITHUB_OUTPUT
+          fi
+
+      # -----------------------------------------------------------------------
+      # Acknowledge the command with a reaction and a comment.
+      # -----------------------------------------------------------------------
+      - name: Acknowledge command
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Add rocket reaction to the triggering comment
+          gh api \
+            "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content=rocket || true
+          gh pr comment "${{ github.event.issue.number }}" \
+            --body "🚀 Deploy to **${{ steps.parse.outputs.env }}** started by @${{ github.event.comment.user.login }}. [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+      - uses: actions/checkout@v4
+        with:
+          # Check out the PR's head branch, not the base branch
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Resolve PR head ref
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD_SHA=$(gh pr view "${{ github.event.issue.number }}" --json headRefOid --jq '.headRefOid')
+          echo "sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync
+
+      # -----------------------------------------------------------------------
+      # Infisical — fetch all secrets for the target environment.
+      # GCP_SA_KEY must be stored base64-encoded in Infisical under each env.
+      # -----------------------------------------------------------------------
+      - name: Export secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.15
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ steps.parse.outputs.env }}
+          domain: ${{ secrets.INFISICAL_URL }}
+
+      - name: Decode GCP service account key
+        run: |
+          echo "$GCP_SA_KEY" | base64 -d > /tmp/gcp-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> $GITHUB_ENV
+
+      # -----------------------------------------------------------------------
+      # Deploy — capture REASONING_ENGINE_ID from stdout.
+      # -----------------------------------------------------------------------
+      - name: Deploy agent
+        id: deploy
+        run: |
+          uv run python src/deploy.py | tee /tmp/deploy_output.txt
+          ENGINE_ID=$(grep '^REASONING_ENGINE_ID=' /tmp/deploy_output.txt | cut -d= -f2)
+          echo "engine_id=$ENGINE_ID" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # Report results — job summary + PR comment.
+      # -----------------------------------------------------------------------
+      - name: Write job summary
+        run: |
+          ENV="${{ steps.parse.outputs.env }}"
+          ENGINE_ID="${{ steps.deploy.outputs.engine_id }}"
+          echo "## ✅ Deployment complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $ENV" >> $GITHUB_STEP_SUMMARY
+          echo "**REASONING_ENGINE_ID:** \`$ENGINE_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Update this value in Infisical under the \`REASONING_ENGINE_ID\` key for the **$ENV** environment." >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment result on PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ENV="${{ steps.parse.outputs.env }}"
+          ENGINE_ID="${{ steps.deploy.outputs.engine_id }}"
+          gh pr comment "${{ github.event.issue.number }}" --body "✅ **Deployment complete**
+
+**Environment:** $ENV
+**REASONING_ENGINE_ID:** \`$ENGINE_ID\`
+
+Update this value in Infisical under the \`REASONING_ENGINE_ID\` key for the **$ENV** environment."
+
+      # -----------------------------------------------------------------------
+      # On failure — post a failure comment so the PR thread is self-contained.
+      # -----------------------------------------------------------------------
+      - name: Comment failure on PR
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.issue.number }}" \
+            --body "❌ Deployment to **${{ steps.parse.outputs.env }}** failed. [View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
