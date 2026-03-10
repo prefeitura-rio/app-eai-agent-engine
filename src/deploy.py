@@ -107,6 +107,8 @@ def deploy():
             "MCP_API_TOKEN": env.MCP_API_TOKEN,
             "EAI_AGENT_URL": env.EAI_AGENT_URL,
             "EAI_AGENT_TOKEN": env.EAI_AGENT_TOKEN,
+            "EAI_GATEWAY_API_URL": env.EAI_GATEWAY_API_URL,
+            "EAI_GATEWAY_API_TOKEN": env.EAI_GATEWAY_API_TOKEN,
             "SHORT_MEMORY_TOKEN_LIMIT": env.SHORT_MEMORY_TOKEN_LIMIT,
             "SHORT_MEMORY_TIME_LIMIT": env.SHORT_MEMORY_TIME_LIMIT,
             "MCP_EXCLUDED_TOOLS": ",".join(env.MCP_EXCLUDED_TOOLS)
@@ -121,4 +123,6 @@ def deploy():
 
 
 if __name__ == "__main__":
-    deploy()
+    engine = deploy()
+    engine_id = engine.resource_name.split("/")[-1]
+    print(f"REASONING_ENGINE_ID={engine_id}")
