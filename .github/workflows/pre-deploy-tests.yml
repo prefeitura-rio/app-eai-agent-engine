@@ -40,7 +40,7 @@ jobs:
       # GCP_SA_KEY must be stored base64-encoded in Infisical under each env.
       # -----------------------------------------------------------------------
       - name: Export secrets from Infisical
-        uses: Infisical/secrets-action@v1
+        uses: Infisical/secrets-action@v1.0.15
         with:
           serviceToken: ${{ secrets.INFISICAL_SERVICE_TOKEN }}
           projectId: ${{ secrets.INFISICAL_PROJECT_ID }}
