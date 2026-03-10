@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 15
 
     env:
-      TARGET_ENV: staging
+      TARGET_ENV: ${{ github.base_ref == 'master' && 'production' || 'staging' }}
 
     steps:
       - uses: actions/checkout@v4
