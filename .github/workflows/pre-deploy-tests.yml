@@ -95,3 +95,68 @@ jobs:
         run: uv run pytest tests/pre_deploy/ -v
         env:
           DATABASE_HOST: "127.0.0.1"
+
+  # ---------------------------------------------------------------------------
+  # Deploy — only runs on workflow_dispatch after all tests pass.
+  # Does NOT need cloud-sql-proxy: deploy.py talks to Vertex AI, not Postgres.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: pre-deploy-tests
+    if: github.event_name == 'workflow_dispatch'
+
+    env:
+      TARGET_ENV: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Export secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.15
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ env.TARGET_ENV }}
+          domain: ${{ secrets.INFISICAL_URL }}
+
+      - name: Decode GCP service account key
+        run: |
+          echo "$GCP_SA_KEY" | base64 -d > /tmp/gcp-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> $GITHUB_ENV
+
+      - name: Deploy agent
+        id: deploy
+        run: |
+          uv run python src/deploy.py | tee /tmp/deploy_output.txt
+          ENGINE_ID=$(grep '^REASONING_ENGINE_ID=' /tmp/deploy_output.txt | cut -d= -f2)
+          echo "engine_id=$ENGINE_ID" >> $GITHUB_OUTPUT
+
+      - name: Write job summary
+        run: |
+          echo "## Deployment complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $TARGET_ENV" >> $GITHUB_STEP_SUMMARY
+          echo "**REASONING_ENGINE_ID:** \`${{ steps.deploy.outputs.engine_id }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Update this value in Infisical under the \`REASONING_ENGINE_ID\` key for the **$TARGET_ENV** environment." >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment on PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_NUMBER=$(gh pr list --head "${{ github.ref_name }}" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
+            gh pr comment "$PR_NUMBER" --body "$(printf '## Deployment complete\n\n**Environment:** %s\n**REASONING_ENGINE_ID:** `%s`\n\nUpdate this value in Infisical under the `REASONING_ENGINE_ID` key for the **%s** environment.' "$TARGET_ENV" "${{ steps.deploy.outputs.engine_id }}" "$TARGET_ENV")"
+          fi

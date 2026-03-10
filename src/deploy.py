@@ -123,4 +123,6 @@ def deploy():
 
 
 if __name__ == "__main__":
-    deploy()
+    engine = deploy()
+    engine_id = engine.resource_name.split("/")[-1]
+    print(f"REASONING_ENGINE_ID={engine_id}")
