@@ -95,10 +95,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr comment "${{ github.event.pull_request.number }}" --body "✅ All tests passed.
-
-To deploy this branch, comment one of the following:
-- \`/deploy staging\`
-- \`/deploy production\`
-
-Only users with write access to this repository can trigger a deployment."
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --body "$(printf '✅ All tests passed.\n\nTo deploy this branch, comment one of the following:\n- `/deploy staging`\n- `/deploy production`\n\nOnly users with write access to this repository can trigger a deployment.')"

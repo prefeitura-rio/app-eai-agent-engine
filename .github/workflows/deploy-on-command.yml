@@ -138,12 +138,8 @@ jobs:
         run: |
           ENV="${{ steps.parse.outputs.env }}"
           ENGINE_ID="${{ steps.deploy.outputs.engine_id }}"
-          gh pr comment "${{ github.event.issue.number }}" --body "✅ **Deployment complete**
-
-**Environment:** $ENV
-**REASONING_ENGINE_ID:** \`$ENGINE_ID\`
-
-Update this value in Infisical under the \`REASONING_ENGINE_ID\` key for the **$ENV** environment."
+          gh pr comment "${{ github.event.issue.number }}" \
+            --body "$(printf '✅ **Deployment complete**\n\n**Environment:** %s\n**REASONING_ENGINE_ID:** `%s`\n\nUpdate this value in Infisical under the `REASONING_ENGINE_ID` key for the **%s** environment.' "$ENV" "$ENGINE_ID" "$ENV")"
 
       # -----------------------------------------------------------------------
       # On failure — post a failure comment so the PR thread is self-contained.
