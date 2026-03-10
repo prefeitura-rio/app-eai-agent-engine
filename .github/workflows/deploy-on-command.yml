@@ -64,11 +64,6 @@ jobs:
           gh pr comment "${{ github.event.issue.number }}" \
             --body "🚀 Deploy to **${{ steps.parse.outputs.env }}** started by @${{ github.event.comment.user.login }}. [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
 
-      - uses: actions/checkout@v4
-        with:
-          # Check out the PR's head branch, not the base branch
-          ref: ${{ github.event.pull_request.head.sha }}
-
       - name: Resolve PR head ref
         id: pr
         env:
