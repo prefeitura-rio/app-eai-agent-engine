@@ -165,3 +165,5 @@ async def test_fresh_thread(idx, fresh_thread_ids, agent, record_response):
     record_response("fresh", thread_id, "oi", _extract_response(result))
     result = await _send_oi(agent, thread_id)
     _assert_valid_response(result, thread_id)
+
+# Just to trigger github actions
