@@ -45,7 +45,7 @@ jobs:
         run: |
           BODY="${{ github.event.comment.body }}"
           if echo "$BODY" | grep -q '/deploy production'; then
-            echo "env=production" >> $GITHUB_OUTPUT
+            echo "env=prod" >> $GITHUB_OUTPUT
           else
             echo "env=staging" >> $GITHUB_OUTPUT
           fi
@@ -100,7 +100,10 @@ jobs:
 
       - name: Decode GCP service account key
         run: |
-          echo "$GCP_SA_KEY" | base64 -d > /tmp/gcp-key.json
+          set -e
+          printf '%s' "$GCP_SA_KEY" | tr -d '[:space:]' | base64 -d > /tmp/gcp-key.json
+          echo "Key file size: $(wc -c < /tmp/gcp-key.json) bytes"
+          python3 -c "import json; json.load(open('/tmp/gcp-key.json')); print('Key JSON: valid')"
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> $GITHUB_ENV
 
       # -----------------------------------------------------------------------

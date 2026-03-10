@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 15
 
     env:
-      TARGET_ENV: staging
+      TARGET_ENV: ${{ github.base_ref == 'master' && 'prod' || 'staging' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -43,9 +43,20 @@ jobs:
       # GCP credentials — decoded from GCP_SA_KEY injected by Infisical above.
       # cloud-sql-proxy uses this to authenticate to Cloud SQL via IAM.
       # -----------------------------------------------------------------------
+      - name: Verify GCP_SA_KEY is set
+        run: |
+          if [ -z "$GCP_SA_KEY" ]; then
+            echo "ERROR: GCP_SA_KEY is empty — check that it is set in Infisical for the '$TARGET_ENV' environment with exactly this key name."
+            exit 1
+          fi
+          echo "GCP_SA_KEY length: ${#GCP_SA_KEY}"
+
       - name: Decode GCP service account key
         run: |
-          echo "$GCP_SA_KEY" | base64 -d > /tmp/gcp-key.json
+          set -e
+          printf '%s' "$GCP_SA_KEY" | tr -d '[:space:]' | base64 -d > /tmp/gcp-key.json
+          echo "Key file size: $(wc -c < /tmp/gcp-key.json) bytes"
+          python3 -c "import json; json.load(open('/tmp/gcp-key.json')); print('Key JSON: valid')"
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> $GITHUB_ENV
 
       # -----------------------------------------------------------------------
@@ -60,7 +71,7 @@ jobs:
 
       - name: Start cloud-sql-proxy
         run: |
-          if [ "$TARGET_ENV" = "production" ]; then
+          if [ "$TARGET_ENV" = "prod" ]; then
             INSTANCE="rj-superapp:us-central1:postgres"
           else
             INSTANCE="rj-superapp-staging:us-central1:postgres"
