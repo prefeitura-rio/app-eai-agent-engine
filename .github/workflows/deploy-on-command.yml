@@ -33,6 +33,7 @@ jobs:
           echo "level=$PERMISSION" >> $GITHUB_OUTPUT
           if [[ "$PERMISSION" != "write" && "$PERMISSION" != "admin" ]]; then
             gh pr comment "${{ github.event.issue.number }}" \
+              --repo "${{ github.repository }}" \
               --body "⛔ @${{ github.event.comment.user.login }} — you need **write** access to trigger a deployment."
             exit 1
           fi
@@ -62,6 +63,7 @@ jobs:
             "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
             -f content=rocket || true
           gh pr comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
             --body "🚀 Deploy to **${{ steps.parse.outputs.env }}** started by @${{ github.event.comment.user.login }}. [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
 
       - name: Resolve PR head ref
@@ -137,6 +139,7 @@ jobs:
           ENV="${{ steps.parse.outputs.env }}"
           ENGINE_ID="${{ steps.deploy.outputs.engine_id }}"
           gh pr comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
             --body "$(printf '✅ **Deployment complete**\n\n**Environment:** %s\n**REASONING_ENGINE_ID:** `%s`\n\nUpdate this value in Infisical under the `REASONING_ENGINE_ID` key for the **%s** environment.' "$ENV" "$ENGINE_ID" "$ENV")"
 
       # -----------------------------------------------------------------------
@@ -148,4 +151,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh pr comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
             --body "❌ Deployment to **${{ steps.parse.outputs.env }}** failed. [View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
