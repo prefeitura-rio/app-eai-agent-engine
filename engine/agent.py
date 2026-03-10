@@ -1,6 +1,7 @@
 import ast
 import asyncio
 import json
+import random
 from datetime import datetime, timezone
 from functools import wraps
 from os import getenv
@@ -62,6 +63,76 @@ from engine.utils import (
     RESPONSE_FILTER,
     RESPONSE_FILTER_FILTER,
 )
+
+
+class IntVersionPostgresSaver(AsyncPostgresSaver):
+    """
+    Fixes compatibility issues for threads with pre-migration checkpoint history.
+
+    Two problems fixed on load via aget_tuple():
+
+    1. TypeError: '>' not supported between instances of 'str' and 'int'
+       LangGraph's get_next_version() returns strings, but pre-migration checkpoints stored
+       integer versions. Fix: override get_next_version() to always return integers, and
+       normalize any remaining string versions on load.
+
+    2. ValueError: Message dict must contain 'role' and 'content' keys
+       Pre-migration checkpoints stored messages using LangChain's dumpd() serialization
+       format ({"lc": 1, "type": "constructor", "kwargs": {...}}). The new langchain_core
+       no longer handles this format in convert_to_messages. Fix: deserialize those dicts
+       back into proper message objects using langchain_core.load.load() on load.
+    """
+
+    def get_next_version(self, current, channel):
+        if current is None:
+            current_v = 0
+        elif isinstance(current, int):
+            current_v = current
+        else:
+            current_v = int(current.split(".")[0])
+        return int(f"{current_v + 1}{int(random.random() * 10**16):016}")
+
+    async def aget_tuple(self, config):
+        from langchain_core.load import load as lc_load
+
+        result = await super().aget_tuple(config)
+        if result and result.checkpoint:
+            thread_id = config.get("configurable", {}).get("thread_id")
+
+            # Fix 1: normalize legacy string channel versions
+            cv = result.checkpoint.get("channel_versions", {})
+            if any(isinstance(v, str) for v in cv.values()):
+                result.checkpoint["channel_versions"] = {
+                    k: int(v.replace(".", "")) if isinstance(v, str) else v
+                    for k, v in cv.items()
+                }
+                vs = result.checkpoint.get("versions_seen", {})
+                result.checkpoint["versions_seen"] = {
+                    node: {
+                        c: int(ver.replace(".", "")) if isinstance(ver, str) else ver
+                        for c, ver in chans.items()
+                    }
+                    for node, chans in vs.items()
+                }
+                logger.info(f"[Checkpoint] Normalized legacy string versions for thread '{thread_id}'")
+
+            # Fix 2: deserialize legacy LangChain-serialized messages
+            # Pre-migration messages are stored as dumpd() dicts: {"lc": 1, "type": "constructor", ...}
+            # The new langchain_core no longer handles these in convert_to_messages.
+            channel_values = result.checkpoint.get("channel_values", {})
+            messages = channel_values.get("messages", [])
+            legacy_msgs = [m for m in messages if isinstance(m, dict) and m.get("lc") == 1]
+            if legacy_msgs:
+                try:
+                    channel_values["messages"] = [
+                        lc_load(m) if isinstance(m, dict) and m.get("lc") == 1 else m
+                        for m in messages
+                    ]
+                    logger.info(f"[Checkpoint] Deserialized {len(legacy_msgs)} legacy messages for thread '{thread_id}'")
+                except Exception as e:
+                    logger.error(f"[Checkpoint] Failed to deserialize legacy messages for thread '{thread_id}': {e}")
+
+        return result
 
 
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
@@ -956,8 +1027,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 @wraps(original_func)
                 def sync_wrapper(*args, **kwargs):
                     logger.info(f"[Tool Invocation] SYNC: Invoking tool: {tool_name}")
-                    logger.info(f"[Tool Invocation]   - Args: {args}")
-                    logger.info(f"[Tool Invocation]   - Kwargs: {kwargs}")
                     try:
                         result = original_func(*args, **kwargs)
                         result_str = str(result)
@@ -975,8 +1044,6 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 @wraps(original_func)
                 async def async_wrapper(*args, **kwargs):
                     logger.info(f"[Tool Invocation] ASYNC: Invoking tool: {tool_name}")
-                    logger.info(f"[Tool Invocation]   - Args: {args}")
-                    logger.info(f"[Tool Invocation]   - Kwargs: {kwargs}")
                     try:
                         result = await original_func(*args, **kwargs)
                         result_str = str(result)
@@ -1031,7 +1098,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             logger.info("[Agent Setup] ✓ Connection pool created")
 
         # Create checkpointer with persistent pool
-        checkpointer = AsyncPostgresSaver(conn=self._conn_pool)
+        checkpointer = IntVersionPostgresSaver(conn=self._conn_pool)
         await checkpointer.setup()
         logger.info("[Agent Setup] ✓ Checkpointer connected and setup complete")
 

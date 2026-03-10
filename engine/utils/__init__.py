@@ -48,6 +48,8 @@ try:
     ERROR_MONITORING_AVAILABLE = True
 except Exception as e:
     # Error monitoring not available - create no-op implementations
+    import sys
+    print(f"[WARN][EAI] Error monitoring failed to load: {e}", file=sys.stderr)
     ERROR_MONITORING_AVAILABLE = False
     
     # No-op decorator that does nothing

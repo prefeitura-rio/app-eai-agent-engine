@@ -1,0 +1,99 @@
+name: Pre-Deploy Tests
+
+on:
+  pull_request:
+    branches: [master, staging]
+
+jobs:
+  pre-deploy-tests:
+    name: Pre-Deploy Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      TARGET_ENV: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --extra test
+
+      # -----------------------------------------------------------------------
+      # Infisical — runs first so GCP_SA_KEY (and all other secrets) are
+      # available as env vars before cloud-sql-proxy needs credentials.
+      # GCP_SA_KEY must be stored base64-encoded in Infisical under each env.
+      # -----------------------------------------------------------------------
+      - name: Export secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.15
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ env.TARGET_ENV }}
+          domain: ${{ secrets.INFISICAL_URL }}
+
+      # -----------------------------------------------------------------------
+      # GCP credentials — decoded from GCP_SA_KEY injected by Infisical above.
+      # cloud-sql-proxy uses this to authenticate to Cloud SQL via IAM.
+      # -----------------------------------------------------------------------
+      - name: Decode GCP service account key
+        run: |
+          echo "$GCP_SA_KEY" | base64 -d > /tmp/gcp-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> $GITHUB_ENV
+
+      # -----------------------------------------------------------------------
+      # cloud-sql-proxy — always listens on 127.0.0.1:5432.
+      # DATABASE_HOST is overridden to 127.0.0.1 in the pytest step below.
+      # -----------------------------------------------------------------------
+      - name: Download cloud-sql-proxy
+        run: |
+          curl -fsSL -o /tmp/cloud-sql-proxy \
+            https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.1/cloud-sql-proxy.linux.amd64
+          chmod +x /tmp/cloud-sql-proxy
+
+      - name: Start cloud-sql-proxy
+        run: |
+          if [ "$TARGET_ENV" = "production" ]; then
+            INSTANCE="rj-superapp:us-central1:postgres"
+          else
+            INSTANCE="rj-superapp-staging:us-central1:postgres"
+          fi
+          /tmp/cloud-sql-proxy "$INSTANCE" &
+          echo "Started cloud-sql-proxy for $INSTANCE (PID $!)"
+
+      - name: Wait for PostgreSQL port 5432
+        run: |
+          echo "Waiting for port 5432..."
+          for i in $(seq 1 30); do
+            nc -z 127.0.0.1 5432 && echo "Port 5432 is ready after ${i}s" && exit 0
+            sleep 2
+          done
+          echo "Timed out waiting for port 5432" && exit 1
+
+      # -----------------------------------------------------------------------
+      # Tests — DATABASE_HOST is forced to 127.0.0.1, overriding whatever
+      # Infisical returned (which points to the internal private IP).
+      # -----------------------------------------------------------------------
+      - name: Run pre-deploy tests
+        run: uv run pytest tests/pre_deploy/ -v
+        env:
+          DATABASE_HOST: "127.0.0.1"
+
+      # -----------------------------------------------------------------------
+      # Invite deploy — posts a comment on the PR after all tests pass,
+      # telling reviewers how to trigger deployment via slash command.
+      # -----------------------------------------------------------------------
+      - name: Comment deploy instructions on PR
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --body "$(printf '✅ All tests passed.\n\nTo deploy this branch, comment one of the following:\n- `/deploy staging`\n- `/deploy production`\n\nOnly users with write access to this repository can trigger a deployment.')"
