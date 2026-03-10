@@ -42,9 +42,11 @@ jobs:
       - name: Export secrets from Infisical
         uses: Infisical/secrets-action@v1.0.15
         with:
-          serviceToken: ${{ secrets.INFISICAL_SERVICE_TOKEN }}
-          projectId: ${{ secrets.INFISICAL_PROJECT_ID }}
-          envSlug: ${{ env.TARGET_ENV }}
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ env.TARGET_ENV }}
           domain: ${{ secrets.INFISICAL_URL }}
 
       # -----------------------------------------------------------------------
