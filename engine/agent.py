@@ -67,14 +67,20 @@ from engine.utils import (
 
 class IntVersionPostgresSaver(AsyncPostgresSaver):
     """
-    Fixes TypeError when comparing checkpoint versions for threads with pre-migration history.
+    Fixes compatibility issues for threads with pre-migration checkpoint history.
 
-    LangGraph's get_next_version() returns strings (e.g. "000...001.0.xyz"), but checkpoints
-    persisted before the BYTEA→JSONB migration stored integer versions, causing:
-        TypeError: '>' not supported between instances of 'str' and 'int'
+    Two problems fixed on load via aget_tuple():
 
-    Fix: override get_next_version() to return integers; normalize on load for any
-    legacy string versions still in the database.
+    1. TypeError: '>' not supported between instances of 'str' and 'int'
+       LangGraph's get_next_version() returns strings, but pre-migration checkpoints stored
+       integer versions. Fix: override get_next_version() to always return integers, and
+       normalize any remaining string versions on load.
+
+    2. ValueError: Message dict must contain 'role' and 'content' keys
+       Pre-migration checkpoints stored messages using LangChain's dumpd() serialization
+       format ({"lc": 1, "type": "constructor", "kwargs": {...}}). The new langchain_core
+       no longer handles this format in convert_to_messages. Fix: deserialize those dicts
+       back into proper message objects using langchain_core.load.load() on load.
     """
 
     def get_next_version(self, current, channel):
@@ -87,11 +93,15 @@ class IntVersionPostgresSaver(AsyncPostgresSaver):
         return int(f"{current_v + 1}{int(random.random() * 10**16):016}")
 
     async def aget_tuple(self, config):
+        from langchain_core.load import load as lc_load
+
         result = await super().aget_tuple(config)
         if result and result.checkpoint:
+            thread_id = config.get("configurable", {}).get("thread_id")
+
+            # Fix 1: normalize legacy string channel versions
             cv = result.checkpoint.get("channel_versions", {})
             if any(isinstance(v, str) for v in cv.values()):
-                thread_id = config.get("configurable", {}).get("thread_id")
                 result.checkpoint["channel_versions"] = {
                     k: int(v.replace(".", "")) if isinstance(v, str) else v
                     for k, v in cv.items()
@@ -105,6 +115,23 @@ class IntVersionPostgresSaver(AsyncPostgresSaver):
                     for node, chans in vs.items()
                 }
                 logger.info(f"[Checkpoint] Normalized legacy string versions for thread '{thread_id}'")
+
+            # Fix 2: deserialize legacy LangChain-serialized messages
+            # Pre-migration messages are stored as dumpd() dicts: {"lc": 1, "type": "constructor", ...}
+            # The new langchain_core no longer handles these in convert_to_messages.
+            channel_values = result.checkpoint.get("channel_values", {})
+            messages = channel_values.get("messages", [])
+            legacy_msgs = [m for m in messages if isinstance(m, dict) and m.get("lc") == 1]
+            if legacy_msgs:
+                try:
+                    channel_values["messages"] = [
+                        lc_load(m) if isinstance(m, dict) and m.get("lc") == 1 else m
+                        for m in messages
+                    ]
+                    logger.info(f"[Checkpoint] Deserialized {len(legacy_msgs)} legacy messages for thread '{thread_id}'")
+                except Exception as e:
+                    logger.error(f"[Checkpoint] Failed to deserialize legacy messages for thread '{thread_id}': {e}")
+
         return result
 
 
