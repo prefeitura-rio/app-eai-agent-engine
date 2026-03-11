@@ -25,6 +25,28 @@ def _get_env_var(key: str, default: str = "") -> str:
     return os.getenv(key, default)
 
 
+# Mapeamento de prefixos de flowname para nome legível no dashboard (Nome Endpoint).
+# A primeira regra cujo prefixo bater com o início do flowname é usada.
+# Manter em ordem do mais específico para o mais genérico.
+_FLOWNAME_NOME_ENDPOINT: list[tuple[str, str]] = [
+    ("pre_invoke",       "EAI Engine – Pré-Invocação"),
+    ("graph_invocation", "EAI Engine – Invocação do Grafo"),
+    ("pre_model_hook",   "EAI Engine – Pré-Modelo (Hook)"),
+    ("post_model_hook",  "EAI Engine – Pós-Modelo (Hook)"),
+    ("tool_execution",   "EAI Engine – Execução de Ferramenta"),
+    ("response_filter",  "EAI Engine – Filtro de Resposta"),
+    ("agent_node",       "EAI Engine – Nó do Agente (LLM)"),
+]
+
+
+def _resolve_nome_endpoint(flowname: str) -> str:
+    """Resolve a human-readable Nome Endpoint label from a flowname prefix."""
+    for prefix, label in _FLOWNAME_NOME_ENDPOINT:
+        if flowname.startswith(prefix):
+            return label
+    return flowname
+
+
 async def send_error_to_interceptor(
     customer_whatsapp_number: str,
     flowname: str,
@@ -82,9 +104,11 @@ async def send_error_to_interceptor(
     }
     error_response_str = json.dumps(error_response_data, ensure_ascii=False)
 
-    # Serializa source como JSON string se for dicionário (compacto, sem indent)
-    if source is not None:
-        source_str = json.dumps(source, ensure_ascii=False)
+    # Fonte: usa apenas o identificador do sistema — contexto completo vai para input_body
+    if isinstance(source, dict):
+        source_str = source.get("source", "eai-engine")
+    elif source is not None:
+        source_str = str(source)
     else:
         source_str = "eai-engine"
 
@@ -93,6 +117,7 @@ async def send_error_to_interceptor(
         "customer_whatsapp_number": customer_whatsapp_number,
         "source": source_str,
         "flowname": flowname,
+        "nome_endpoint": _resolve_nome_endpoint(flowname),
         "api_endpoint": api_endpoint,
         "input_body": input_body_str,
         "http_status_code": http_status_code,
@@ -170,19 +195,21 @@ async def send_api_error(
     traceback: Optional[str] = None,
 ) -> bool:
     """Envia erros de API HTTP para o interceptor."""
-    # Cria flowname simples a partir do source
+    # Cria flowname: phase.operation (ou tool(workflow) para formato legado)
     if "phase" in source:
-        flowname = source.get("phase", "unknown")
-        if "operation" in source:
-            flowname = f"{flowname}({source['operation']})"
+        phase = source.get("phase", "unknown")
+        operation = source.get("operation", "")
+        flowname = f"{phase}.{operation}" if operation else phase
+        function = source.get("function", "")
+        if function and function != operation:
+            flowname = f"{flowname} > {function}"
     else:
         # Backward compatibility: formato antigo (tool/workflow)
         flowname = source.get("tool", "unknown")
         if "workflow" in source:
             flowname = f"{flowname}({source['workflow']})"
-    
-    if "function" in source:
-        flowname = f"{flowname}.{source['function']}"
+        if "function" in source:
+            flowname = f"{flowname}.{source['function']}"
 
     return await send_error_to_interceptor(
         customer_whatsapp_number=user_id,
@@ -206,24 +233,31 @@ async def send_general_error(
     input_body: Optional[Any] = None,
 ) -> bool:
     """Envia erros gerais (não relacionados a APIs externas) para o interceptor."""
-    # Cria flowname simples a partir do source
+    # Cria flowname: phase.operation (ou tool(workflow) para formato legado)
     if "phase" in source:
-        flowname = source.get("phase", "unknown")
-        if "operation" in source:
-            flowname = f"{flowname}({source['operation']})"
+        phase = source.get("phase", "unknown")
+        operation = source.get("operation", "")
+        flowname = f"{phase}.{operation}" if operation else phase
+        function = source.get("function", "")
+        if function and function != operation:
+            flowname = f"{flowname} > {function}"
+        # Endpoint indica WHERE o erro ocorreu — error_type já está em error_response
+        internal_endpoint = f"internal://{phase}/{operation}" if operation else f"internal://{phase}"
     else:
         # Backward compatibility: formato antigo (tool/workflow)
         flowname = source.get("tool", "unknown")
         if "workflow" in source:
             flowname = f"{flowname}({source['workflow']})"
-    
-    if "function" in source:
-        flowname = f"{flowname}.{source['function']}"
+        if "function" in source:
+            flowname = f"{flowname}.{source['function']}"
+        tool = source.get("tool", "unknown")
+        workflow = source.get("workflow", "")
+        internal_endpoint = f"internal://tool_execution/{tool}({workflow})" if workflow else f"internal://tool_execution/{tool}"
 
     return await send_error_to_interceptor(
         customer_whatsapp_number=user_id,
         flowname=flowname,
-        api_endpoint=f"internal://{error_type}",
+        api_endpoint=internal_endpoint,
         input_body=input_body if input_body is not None else source,
         http_status_code=http_status_code,
         error_message=error_message,
@@ -336,21 +370,35 @@ def interceptor(
                 # Captura traceback
                 error_traceback = tb.format_exc()
 
-                # Captura apenas os nomes e tipos dos parâmetros (nunca valores)
-                # — evita enviar histórico de mensagens ou dados sensíveis ao Discord
+                # Constrói input_body com contexto útil para debugging
                 try:
                     sig = inspect.signature(func)
                     param_names = list(sig.parameters.keys())
-                    input_body = {}
+                    params = {}
                     for i, arg in enumerate(args):
                         if i < len(param_names):
                             param_name = param_names[i]
                             if param_name not in ('self', 'cls'):
-                                input_body[param_name] = f"<{type(arg).__name__}>"
+                                if isinstance(arg, (str, int, float, bool, list, dict, type(None))):
+                                    params[param_name] = arg
+                                else:
+                                    params[param_name] = type(arg).__name__
                     for key, value in kwargs.items():
-                        input_body[key] = f"<{type(value).__name__}>"
+                        if isinstance(value, (str, int, float, bool, list, dict, type(None))):
+                            params[key] = value
+                        else:
+                            params[key] = type(value).__name__
                 except Exception:
-                    input_body = {}
+                    params = {}
+
+                input_body = {
+                    "thread_id": user_id,
+                    "error_class": type(e).__name__,
+                    "function": func.__name__,
+                    "phase": final_source.get("phase", ""),
+                    "operation": final_source.get("operation", ""),
+                    "params": params,
+                }
 
                 # Reporta o erro
                 await send_general_error(
