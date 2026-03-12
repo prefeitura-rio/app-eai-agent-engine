@@ -220,6 +220,42 @@ def test_safe_ns_long_becomes_stable_hash():
     assert result == expected
 
 
+def test_get_next_version_does_not_grow():
+    """get_next_version must not increase the digit count on repeated calls."""
+    from engine.agent import IntVersionPostgresSaver
+
+    saver = IntVersionPostgresSaver.__new__(IntVersionPostgresSaver)
+
+    # Baseline: fresh thread — 17 digits (1-digit counter + 16 random)
+    v = saver.get_next_version(None, "ch")
+    assert len(str(v)) == 17, f"expected 17 digits from None, got {len(str(v))}"
+
+    # Simulate a corrupted production version with 316 digits
+    corrupted = int("3" * 300 + "1234567890123456")  # 316-digit current
+    v2 = saver.get_next_version(corrupted, "ch")
+    v3 = saver.get_next_version(v2, "ch")
+
+    assert len(str(v2)) == len(str(v3)), (
+        f"version grew from {len(str(v2))} to {len(str(v3))} digits — growth not stopped"
+    )
+
+
+def test_safe_version_with_huge_int():
+    """_safe_version must hash values that exceed NS_VERSION_MAX_BYTES bytes."""
+    import hashlib
+    from engine.agent import IntVersionPostgresSaver
+
+    huge = "9" * 2001  # 2001 bytes > default 2000-byte limit
+    result = IntVersionPostgresSaver._safe_version(huge)
+
+    assert result.startswith("hash:"), "hashed version must start with 'hash:'"
+    assert len(result) == 37, f"expected 37-char hash, got {len(result)}"
+    assert result == "hash:" + hashlib.md5(huge.encode()).hexdigest()
+
+    # Short value must pass through unchanged
+    assert IntVersionPostgresSaver._safe_version("12345") == "12345"
+
+
 async def test_checkpoint_blob_deep_ns_does_not_overflow(dsn):
     """
     aput() with a checkpoint_ns > 2500 bytes must not raise
