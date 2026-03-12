@@ -171,6 +171,31 @@ async def test_fresh_thread(idx, fresh_thread_ids, agent, record_response):
 # Scenario 4 — deep checkpoint_ns must not overflow the PK index
 # ---------------------------------------------------------------------------
 
+def test_engine_has_no_src_imports():
+    """
+    engine/ must never import from src because src is not shipped during deploy.
+    Any 'from src' or 'import src' inside engine/ will blow up on Vertex AI.
+    """
+    import re
+    from pathlib import Path
+
+    engine_root = Path(__file__).parent.parent.parent / "engine"
+    pattern = re.compile(r"^\s*(from src[.\s]|import src[.\s])", re.MULTILINE)
+
+    offenders = []
+    for py_file in engine_root.rglob("*.py"):
+        if "__pycache__" in py_file.parts:
+            continue
+        text = py_file.read_text()
+        if pattern.search(text):
+            offenders.append(str(py_file.relative_to(engine_root.parent)))
+
+    assert not offenders, (
+        "engine/ files must not import from src (src is not deployed):\n"
+        + "\n".join(f"  {f}" for f in offenders)
+    )
+
+
 def test_safe_ns_short_is_unchanged():
     """Short namespaces must pass through unchanged."""
     from engine.agent import IntVersionPostgresSaver

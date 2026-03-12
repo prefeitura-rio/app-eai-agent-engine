@@ -87,9 +87,8 @@ class IntVersionPostgresSaver(AsyncPostgresSaver):
     @staticmethod
     def _safe_ns(ns: str) -> str:
         """Return ns unchanged if short enough; otherwise return a stable 37-byte hash."""
-        from src.config import env as _env
-        max_bytes = int(_env.NS_MAX_BYTES)
-        prefix = _env.NS_HASH_PREFIX
+        max_bytes = int(getenv("NS_MAX_BYTES", "2500"))
+        prefix = getenv("NS_HASH_PREFIX", "hash:")
         if len(ns.encode()) > max_bytes:
             return prefix + hashlib.md5(ns.encode()).hexdigest()
         return ns
