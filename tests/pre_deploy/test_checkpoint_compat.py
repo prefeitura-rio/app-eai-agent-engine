@@ -166,4 +166,84 @@ async def test_fresh_thread(idx, fresh_thread_ids, agent, record_response):
     result = await _send_oi(agent, thread_id)
     _assert_valid_response(result, thread_id)
 
-# Just to trigger github actions again
+
+# ---------------------------------------------------------------------------
+# Scenario 4 — deep checkpoint_ns must not overflow the PK index
+# ---------------------------------------------------------------------------
+
+def test_safe_ns_short_is_unchanged():
+    """Short namespaces must pass through unchanged."""
+    from engine.agent import IntVersionPostgresSaver
+    ns = "some_node:abc123|other_node:def456"
+    assert IntVersionPostgresSaver._safe_ns(ns) == ns
+
+
+def test_safe_ns_long_becomes_stable_hash():
+    """Namespaces > 2500 bytes must be replaced with a stable 37-byte hash."""
+    import hashlib
+    from engine.agent import IntVersionPostgresSaver
+
+    deep_ns = ("some_node:" + "x" * 30 + "|") * 70   # ~2800 bytes
+    result = IntVersionPostgresSaver._safe_ns(deep_ns)
+
+    assert result.startswith("hash:"), "hashed ns must start with 'hash:'"
+    assert len(result) == 37, f"expected 37 bytes, got {len(result)}"
+    # Idempotent / stable
+    assert result == IntVersionPostgresSaver._safe_ns(deep_ns)
+    # Correct hash value
+    expected = "hash:" + hashlib.md5(deep_ns.encode()).hexdigest()
+    assert result == expected
+
+
+async def test_checkpoint_blob_deep_ns_does_not_overflow(dsn):
+    """
+    aput() with a checkpoint_ns > 2500 bytes must not raise
+    psycopg.errors.ProgramLimitExceeded on the checkpoint_blobs_pkey or
+    checkpoints_pkey indexes.
+    """
+    import hashlib
+    from psycopg_pool import AsyncConnectionPool
+    from engine.agent import IntVersionPostgresSaver
+
+    # Realistic deeply-nested namespace produced by multi-step subgraph recursion
+    deep_ns = ("some_node:" + "x" * 30 + "|") * 70   # ~2800 bytes
+    thread_id = f"pytest-deep-ns-{uuid.uuid4()}"
+    checkpoint_id = str(uuid.uuid4())
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "checkpoint_ns": deep_ns,
+        }
+    }
+    checkpoint = {
+        "v": 1,
+        "id": checkpoint_id,
+        "ts": "2024-01-01T00:00:00+00:00",
+        "pending_sends": [],
+        "versions_seen": {},
+        "channel_versions": {},
+        "channel_values": {},
+    }
+
+    async with AsyncConnectionPool(conninfo=dsn, min_size=1, max_size=2, open=False) as pool:
+        await pool.open()
+        saver = IntVersionPostgresSaver(conn=pool)
+
+        try:
+            # Must NOT raise ProgramLimitExceeded
+            await saver.aput(config, checkpoint, {}, {})
+
+            # aget_tuple must find the row using the same hashed ns
+            result = await saver.aget_tuple(config)
+            assert result is not None, "aget_tuple returned None for a just-written checkpoint"
+
+        finally:
+            # Always clean up test rows — both the real thread_id column value
+            # and the hashed ns that the fix wrote to the DB.
+            async with pool.connection() as conn:
+                for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+                    await conn.execute(
+                        f"DELETE FROM {table} WHERE thread_id = %s",  # noqa: S608
+                        (thread_id,),
+                    )
