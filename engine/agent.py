@@ -1,5 +1,6 @@
 import ast
 import asyncio
+import hashlib
 import json
 import random
 from datetime import datetime, timezone
@@ -83,6 +84,16 @@ class IntVersionPostgresSaver(AsyncPostgresSaver):
        back into proper message objects using langchain_core.load.load() on load.
     """
 
+    @staticmethod
+    def _safe_ns(ns: str) -> str:
+        """Return ns unchanged if short enough; otherwise return a stable 37-byte hash."""
+        from src.config import env as _env
+        max_bytes = int(_env.NS_MAX_BYTES)
+        prefix = _env.NS_HASH_PREFIX
+        if len(ns.encode()) > max_bytes:
+            return prefix + hashlib.md5(ns.encode()).hexdigest()
+        return ns
+
     def get_next_version(self, current, channel):
         if current is None:
             current_v = 0
@@ -92,10 +103,37 @@ class IntVersionPostgresSaver(AsyncPostgresSaver):
             current_v = int(current.split(".")[0])
         return int(f"{current_v + 1}{int(random.random() * 10**16):016}")
 
+    async def aput(self, config, checkpoint, metadata, new_versions):
+        safe_config = {
+            **config,
+            "configurable": {
+                **config["configurable"],
+                "checkpoint_ns": self._safe_ns(config["configurable"].get("checkpoint_ns", "")),
+            },
+        }
+        return await super().aput(safe_config, checkpoint, metadata, new_versions)
+
+    async def aput_writes(self, config, writes, task_id, task_path=""):
+        safe_config = {
+            **config,
+            "configurable": {
+                **config["configurable"],
+                "checkpoint_ns": self._safe_ns(config["configurable"].get("checkpoint_ns", "")),
+            },
+        }
+        return await super().aput_writes(safe_config, writes, task_id, task_path)
+
     async def aget_tuple(self, config):
         from langchain_core.load import load as lc_load
 
-        result = await super().aget_tuple(config)
+        safe_config = {
+            **config,
+            "configurable": {
+                **config["configurable"],
+                "checkpoint_ns": self._safe_ns(config["configurable"].get("checkpoint_ns", "")),
+            },
+        }
+        result = await super().aget_tuple(safe_config)
         if result and result.checkpoint:
             thread_id = config.get("configurable", {}).get("thread_id")
 
