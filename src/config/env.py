@@ -64,3 +64,4 @@ ERROR_INTERCEPTOR_TOKEN = getenv_or_action("ERROR_INTERCEPTOR_TOKEN", default=""
 # Namespace configuration for checkpoints
 NS_MAX_BYTES = (getenv_or_action("_NS_MAX_BYTES", default="2500"))
 NS_HASH_PREFIX = getenv_or_action("_NS_HASH_PREFIX", default="hash:")
+NS_VERSION_MAX_BYTES = getenv_or_action("_NS_VERSION_MAX_BYTES", default="2000")

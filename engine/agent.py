@@ -87,18 +87,30 @@ class IntVersionPostgresSaver(AsyncPostgresSaver):
     @staticmethod
     def _safe_ns(ns: str) -> str:
         """Return ns unchanged if short enough; otherwise return a stable 37-byte hash."""
-        from src.config import env as _env
-        max_bytes = int(_env.NS_MAX_BYTES)
-        prefix = _env.NS_HASH_PREFIX
+        max_bytes = int(getenv("NS_MAX_BYTES", "2500"))
+        prefix = getenv("NS_HASH_PREFIX", "hash:")
         if len(ns.encode()) > max_bytes:
             return prefix + hashlib.md5(ns.encode()).hexdigest()
         return ns
+
+    @staticmethod
+    def _safe_version(v) -> str:
+        """Return version unchanged if short enough; otherwise return a stable 37-byte hash."""
+        max_bytes = int(getenv("NS_VERSION_MAX_BYTES", "2000"))
+        s = str(v)
+        if len(s.encode()) > max_bytes:
+            return "hash:" + hashlib.md5(s.encode()).hexdigest()
+        return s
 
     def get_next_version(self, current, channel):
         if current is None:
             current_v = 0
         elif isinstance(current, int):
-            current_v = current
+            # Strip the 16-digit random suffix that was appended on the previous write
+            # to recover the logical counter. Without this, every call appends 16 more
+            # digits to an already-giant integer, growing versions without bound.
+            s = str(current)
+            current_v = int(s[:-16]) if len(s) > 16 else current
         else:
             current_v = int(current.split(".")[0])
         return int(f"{current_v + 1}{int(random.random() * 10**16):016}")
@@ -111,7 +123,8 @@ class IntVersionPostgresSaver(AsyncPostgresSaver):
                 "checkpoint_ns": self._safe_ns(config["configurable"].get("checkpoint_ns", "")),
             },
         }
-        return await super().aput(safe_config, checkpoint, metadata, new_versions)
+        safe_new_versions = {k: self._safe_version(v) for k, v in new_versions.items()}
+        return await super().aput(safe_config, checkpoint, metadata, safe_new_versions)
 
     async def aput_writes(self, config, writes, task_id, task_path=""):
         safe_config = {

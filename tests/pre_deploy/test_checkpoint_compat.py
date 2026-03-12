@@ -171,6 +171,31 @@ async def test_fresh_thread(idx, fresh_thread_ids, agent, record_response):
 # Scenario 4 — deep checkpoint_ns must not overflow the PK index
 # ---------------------------------------------------------------------------
 
+def test_engine_has_no_src_imports():
+    """
+    engine/ must never import from src because src is not shipped during deploy.
+    Any 'from src' or 'import src' inside engine/ will blow up on Vertex AI.
+    """
+    import re
+    from pathlib import Path
+
+    engine_root = Path(__file__).parent.parent.parent / "engine"
+    pattern = re.compile(r"^\s*(from src[.\s]|import src[.\s])", re.MULTILINE)
+
+    offenders = []
+    for py_file in engine_root.rglob("*.py"):
+        if "__pycache__" in py_file.parts:
+            continue
+        text = py_file.read_text()
+        if pattern.search(text):
+            offenders.append(str(py_file.relative_to(engine_root.parent)))
+
+    assert not offenders, (
+        "engine/ files must not import from src (src is not deployed):\n"
+        + "\n".join(f"  {f}" for f in offenders)
+    )
+
+
 def test_safe_ns_short_is_unchanged():
     """Short namespaces must pass through unchanged."""
     from engine.agent import IntVersionPostgresSaver
@@ -193,6 +218,42 @@ def test_safe_ns_long_becomes_stable_hash():
     # Correct hash value
     expected = "hash:" + hashlib.md5(deep_ns.encode()).hexdigest()
     assert result == expected
+
+
+def test_get_next_version_does_not_grow():
+    """get_next_version must not increase the digit count on repeated calls."""
+    from engine.agent import IntVersionPostgresSaver
+
+    saver = IntVersionPostgresSaver.__new__(IntVersionPostgresSaver)
+
+    # Baseline: fresh thread — 17 digits (1-digit counter + 16 random)
+    v = saver.get_next_version(None, "ch")
+    assert len(str(v)) == 17, f"expected 17 digits from None, got {len(str(v))}"
+
+    # Simulate a corrupted production version with 316 digits
+    corrupted = int("3" * 300 + "1234567890123456")  # 316-digit current
+    v2 = saver.get_next_version(corrupted, "ch")
+    v3 = saver.get_next_version(v2, "ch")
+
+    assert len(str(v2)) == len(str(v3)), (
+        f"version grew from {len(str(v2))} to {len(str(v3))} digits — growth not stopped"
+    )
+
+
+def test_safe_version_with_huge_int():
+    """_safe_version must hash values that exceed NS_VERSION_MAX_BYTES bytes."""
+    import hashlib
+    from engine.agent import IntVersionPostgresSaver
+
+    huge = "9" * 2001  # 2001 bytes > default 2000-byte limit
+    result = IntVersionPostgresSaver._safe_version(huge)
+
+    assert result.startswith("hash:"), "hashed version must start with 'hash:'"
+    assert len(result) == 37, f"expected 37-char hash, got {len(result)}"
+    assert result == "hash:" + hashlib.md5(huge.encode()).hexdigest()
+
+    # Short value must pass through unchanged
+    assert IntVersionPostgresSaver._safe_version("12345") == "12345"
 
 
 async def test_checkpoint_blob_deep_ns_does_not_overflow(dsn):
