@@ -1330,3 +1330,5 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # This is just a warning - users should call cleanup() explicitly
         if self._conn_pool is not None:
             logger.warning("[Agent Cleanup] Connection pool not closed. Call cleanup() explicitly.")
+
+# trigger actions
