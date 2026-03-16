@@ -57,30 +57,34 @@ async def send_error_to_interceptor(
 
     # Valida se as configurações estão disponíveis
     if not interceptor_url or not interceptor_token:
-        logger.debug(
+        logger.warning(
             "Error Interceptor não configurado (URL ou TOKEN ausente). "
             "Erro não será reportado ao sistema de monitoramento."
         )
         return False
 
-    # Serializa input_body para string JSON se necessário
+    # Serializa input_body para string JSON se necessário (truncado para evitar Discord 400)
     if isinstance(input_body, (dict, list)):
-        input_body_str = json.dumps(input_body, ensure_ascii=False)
+        input_body_str = json.dumps(input_body, ensure_ascii=False)[:300]
     elif input_body is None:
         input_body_str = ""
     else:
-        input_body_str = str(input_body)
+        input_body_str = str(input_body)[:300]
+
+    # Trunca traceback para as últimas 8 linhas (aponta arquivo e linha exata)
+    tb_lines = (traceback or "").strip().splitlines()
+    tb_short = "\n".join(tb_lines[-8:]) if len(tb_lines) > 8 else (traceback or "")
 
     # Prepara error_response como JSON string contendo error_message e traceback
     error_response_data = {
-        "error_message": error_message,
-        "traceback": traceback or ""
+        "error_message": error_message[:300],
+        "traceback": tb_short,
     }
     error_response_str = json.dumps(error_response_data, ensure_ascii=False)
 
-    # Serializa source como JSON string se for dicionário
+    # Serializa source como JSON string se for dicionário (compacto, sem indent)
     if source is not None:
-        source_str = json.dumps(source, indent=2, ensure_ascii=False)
+        source_str = json.dumps(source, ensure_ascii=False)
     else:
         source_str = "eai-engine"
 
@@ -249,28 +253,58 @@ def interceptor(
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
             try:
-                return await func(*args, **kwargs)
+                result = await func(*args, **kwargs)
             except error_types as e:
                 await _handle_error(func, args, kwargs, e)
                 raise
+            # Se a função retornou um async generator (e.g. async_stream_query),
+            # o @interceptor precisa envolver a iteração — erros só ocorrem durante ela.
+            if inspect.isasyncgen(result):
+                captured_args, captured_kwargs = args, kwargs
+                async def _wrap_async_gen():
+                    try:
+                        async for item in result:
+                            yield item
+                    except error_types as e:
+                        await _handle_error(func, captured_args, captured_kwargs, e)
+                        raise
+                return _wrap_async_gen()
+            return result
 
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
             try:
-                return func(*args, **kwargs)
+                result = func(*args, **kwargs)
             except error_types as e:
                 # Para funções sync, executamos o report de forma síncrona via asyncio
                 try:
                     loop = asyncio.get_running_loop()
                     loop.create_task(_handle_error(func, args, kwargs, e))
                 except RuntimeError:
-                    # Não há event loop rodando, tenta criar um
                     try:
                         asyncio.run(_handle_error(func, args, kwargs, e))
                     except Exception as send_error:
-                        # Log silencioso se falhar ao enviar erro
-                        logger.debug(f"Falha ao enviar erro para interceptor: {send_error}")
+                        logger.warning(f"Falha ao enviar erro para interceptor: {send_error}")
                 raise
+            # Se a função retornou um generator (e.g. stream_query),
+            # o @interceptor precisa envolver a iteração — erros só ocorrem durante ela.
+            if inspect.isgenerator(result):
+                captured_args, captured_kwargs = args, kwargs
+                def _wrap_gen():
+                    try:
+                        yield from result
+                    except error_types as e:
+                        try:
+                            loop = asyncio.get_running_loop()
+                            loop.create_task(_handle_error(func, captured_args, captured_kwargs, e))
+                        except RuntimeError:
+                            try:
+                                asyncio.run(_handle_error(func, captured_args, captured_kwargs, e))
+                            except Exception as send_error:
+                                logger.warning(f"Falha ao enviar erro para interceptor: {send_error}")
+                        raise
+                return _wrap_gen()
+            return result
 
         async def _handle_error(func, args, kwargs, e):
             """Handler interno para processar e reportar erros."""
@@ -302,7 +336,8 @@ def interceptor(
                 # Captura traceback
                 error_traceback = tb.format_exc()
 
-                # Captura parâmetros da função para input_body
+                # Captura apenas os nomes e tipos dos parâmetros (nunca valores)
+                # — evita enviar histórico de mensagens ou dados sensíveis ao Discord
                 try:
                     sig = inspect.signature(func)
                     param_names = list(sig.parameters.keys())
@@ -311,24 +346,18 @@ def interceptor(
                         if i < len(param_names):
                             param_name = param_names[i]
                             if param_name not in ('self', 'cls'):
-                                if isinstance(arg, (str, int, float, bool, list, dict, type(None))):
-                                    input_body[param_name] = arg
-                                else:
-                                    input_body[param_name] = str(type(arg).__name__)
+                                input_body[param_name] = f"<{type(arg).__name__}>"
                     for key, value in kwargs.items():
-                        if isinstance(value, (str, int, float, bool, list, dict, type(None))):
-                            input_body[key] = value
-                        else:
-                            input_body[key] = str(type(value).__name__)
+                        input_body[key] = f"<{type(value).__name__}>"
                 except Exception:
-                    input_body = kwargs if kwargs else {}
+                    input_body = {}
 
                 # Reporta o erro
                 await send_general_error(
                     user_id=user_id,
                     source=final_source,
                     error_type=type(e).__name__,
-                    error_message=str(e),
+                    error_message=str(e)[:300],
                     traceback=error_traceback,
                     input_body=input_body,
                 )

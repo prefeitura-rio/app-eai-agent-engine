@@ -30,6 +30,9 @@ REASONING_ENGINE_ID = getenv_or_action("REASONING_ENGINE_ID")
 EAI_AGENT_URL = getenv_or_action("EAI_AGENT_URL")
 EAI_AGENT_TOKEN = getenv_or_action("EAI_AGENT_TOKEN")
 
+EAI_GATEWAY_API_URL = getenv_or_action("EAI_GATEWAY_API_URL", default="")
+EAI_GATEWAY_API_TOKEN = getenv_or_action("EAI_GATEWAY_API_TOKEN", default="")
+
 MCP_EXCLUDED_TOOLS = (
     getenv_or_action("MCP_EXCLUDED_TOOLS").split(",")
     if getenv_or_action("MCP_EXCLUDED_TOOLS", default="")
@@ -57,3 +60,8 @@ NETWORK_ATTACHMENT = getenv_or_action("NETWORK_ATTACHMENT", default="")
 # Error Interceptor configuration (optional)
 ERROR_INTERCEPTOR_URL = getenv_or_action("ERROR_INTERCEPTOR_URL", default="")
 ERROR_INTERCEPTOR_TOKEN = getenv_or_action("ERROR_INTERCEPTOR_TOKEN", default="")
+
+# Namespace configuration for checkpoints
+NS_MAX_BYTES = (getenv_or_action("_NS_MAX_BYTES", default="2500"))
+NS_HASH_PREFIX = getenv_or_action("_NS_HASH_PREFIX", default="hash:")
+NS_VERSION_MAX_BYTES = getenv_or_action("_NS_VERSION_MAX_BYTES", default="2000")

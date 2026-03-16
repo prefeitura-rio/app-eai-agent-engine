@@ -1,0 +1,203 @@
+name: Deploy on /deploy Command
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  deploy:
+    # Only run when a PR comment matches "/deploy staging" or "/deploy production"
+    if: |
+      github.event.issue.pull_request != null &&
+      (
+        contains(github.event.comment.body, '/deploy staging') ||
+        contains(github.event.comment.body, '/deploy production')
+      )
+
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Permission check — only users with write/admin access may deploy.
+      # -----------------------------------------------------------------------
+      - name: Check commenter permissions
+        id: permission
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PERMISSION=$(gh api \
+            "repos/${{ github.repository }}/collaborators/${{ github.event.comment.user.login }}/permission" \
+            --jq '.permission' 2>/dev/null || echo "none")
+          echo "level=$PERMISSION" >> $GITHUB_OUTPUT
+          if [[ "$PERMISSION" != "write" && "$PERMISSION" != "admin" ]]; then
+            gh pr comment "${{ github.event.issue.number }}" \
+              --repo "${{ github.repository }}" \
+              --body "⛔ @${{ github.event.comment.user.login }} — you need **write** access to trigger a deployment."
+            exit 1
+          fi
+
+      # -----------------------------------------------------------------------
+      # Parse target environment from the comment body.
+      # -----------------------------------------------------------------------
+      - name: Parse environment
+        id: parse
+        run: |
+          BODY="${{ github.event.comment.body }}"
+          if echo "$BODY" | grep -q '/deploy production'; then
+            echo "env=prod" >> $GITHUB_OUTPUT
+          else
+            echo "env=staging" >> $GITHUB_OUTPUT
+          fi
+
+      # -----------------------------------------------------------------------
+      # Guard — verify Pre-Deploy Tests passed on the PR's current head SHA.
+      # Prevents deploying when tests are still running or have failed.
+      # -----------------------------------------------------------------------
+      - name: Check pre-deploy tests passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD_SHA=$(gh pr view "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --json headRefOid --jq '.headRefOid')
+          echo "Checking pre-deploy test status for SHA $HEAD_SHA..."
+
+          RUN_STATUS=$(gh api \
+            "repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs" \
+            --jq '.check_runs | map(select(.name == "Pre-Deploy Tests")) | last | .status // "not_found"')
+
+          CONCLUSION=$(gh api \
+            "repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs" \
+            --jq '.check_runs | map(select(.name == "Pre-Deploy Tests")) | last | .conclusion // ""')
+
+          echo "Pre-Deploy Tests: status=$RUN_STATUS conclusion=$CONCLUSION"
+
+          if [ "$RUN_STATUS" = "not_found" ] || [ "$RUN_STATUS" = "null" ]; then
+            gh pr comment "${{ github.event.issue.number }}" \
+              --repo "${{ github.repository }}" \
+              --body "⏳ Pre-Deploy Tests have not run yet on this PR — wait for them to complete before deploying."
+            exit 1
+          fi
+
+          if [ "$RUN_STATUS" != "completed" ]; then
+            gh pr comment "${{ github.event.issue.number }}" \
+              --repo "${{ github.repository }}" \
+              --body "⏳ Pre-Deploy Tests are still **$RUN_STATUS** — comment \`/deploy\` again once they complete."
+            exit 1
+          fi
+
+          if [ "$CONCLUSION" != "success" ]; then
+            gh pr comment "${{ github.event.issue.number }}" \
+              --repo "${{ github.repository }}" \
+              --body "❌ Cannot deploy — Pre-Deploy Tests concluded with **$CONCLUSION**. Fix the failing tests first."
+            exit 1
+          fi
+
+          echo "Pre-Deploy Tests: success ✓"
+
+      # -----------------------------------------------------------------------
+      # Acknowledge the command with a reaction and a comment.
+      # -----------------------------------------------------------------------
+      - name: Acknowledge command
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Add rocket reaction to the triggering comment
+          gh api \
+            "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content=rocket || true
+          gh pr comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "🚀 Deploy to **${{ steps.parse.outputs.env }}** started by @${{ github.event.comment.user.login }}. [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+      - name: Resolve PR head ref
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD_SHA=$(gh pr view "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --json headRefOid --jq '.headRefOid')
+          echo "sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync
+
+      # -----------------------------------------------------------------------
+      # Infisical — fetch all secrets for the target environment.
+      # GCP_SA_KEY must be stored base64-encoded in Infisical under each env.
+      # -----------------------------------------------------------------------
+      - name: Export secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.15
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ steps.parse.outputs.env }}
+          domain: ${{ secrets.INFISICAL_URL }}
+
+      - name: Decode GCP service account key
+        run: |
+          set -e
+          printf '%s' "$GCP_SA_KEY" | tr -d '[:space:]' | base64 -d > /tmp/gcp-key.json
+          echo "Key file size: $(wc -c < /tmp/gcp-key.json) bytes"
+          python3 -c "import json; json.load(open('/tmp/gcp-key.json')); print('Key JSON: valid')"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> $GITHUB_ENV
+
+      # -----------------------------------------------------------------------
+      # Deploy — capture REASONING_ENGINE_ID from stdout.
+      # -----------------------------------------------------------------------
+      - name: Deploy agent
+        id: deploy
+        run: |
+          uv run python src/deploy.py | tee /tmp/deploy_output.txt
+          ENGINE_ID=$(grep '^REASONING_ENGINE_ID=' /tmp/deploy_output.txt | cut -d= -f2)
+          echo "engine_id=$ENGINE_ID" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # Report results — job summary + PR comment.
+      # -----------------------------------------------------------------------
+      - name: Write job summary
+        run: |
+          ENV="${{ steps.parse.outputs.env }}"
+          ENGINE_ID="${{ steps.deploy.outputs.engine_id }}"
+          echo "## ✅ Deployment complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $ENV" >> $GITHUB_STEP_SUMMARY
+          echo "**REASONING_ENGINE_ID:** \`$ENGINE_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Update this value in Infisical under the \`REASONING_ENGINE_ID\` key for the **$ENV** environment." >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment result on PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ENV="${{ steps.parse.outputs.env }}"
+          ENGINE_ID="${{ steps.deploy.outputs.engine_id }}"
+          gh pr comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "$(printf '✅ **Deployment complete**\n\n**Environment:** %s\n**REASONING_ENGINE_ID:** `%s`\n\nUpdate this value in Infisical under the `REASONING_ENGINE_ID` key for the **%s** environment.' "$ENV" "$ENGINE_ID" "$ENV")"
+
+      # -----------------------------------------------------------------------
+      # On failure — post a failure comment so the PR thread is self-contained.
+      # -----------------------------------------------------------------------
+      - name: Comment failure on PR
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "❌ Deployment to **${{ steps.parse.outputs.env }}** failed. [View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
