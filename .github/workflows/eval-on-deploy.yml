@@ -5,10 +5,25 @@ on:
   workflow_run:
     workflows: ["Deploy on /deploy Command"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to comment and fetch deploy info from"
+        required: true
+        type: string
+      engine_id:
+        description: "Optional reasoning engine id (if omitted, will parse from PR comments)"
+        required: false
+        type: string
+      environment:
+        description: "Environment name (only staging runs evals)"
+        required: false
+        default: "staging"
+        type: string
 
 jobs:
   eval-staging:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 150
     permissions:
@@ -27,14 +42,40 @@ jobs:
         run: |
           set -e
           REPO="${{ github.repository }}"
-          SHA="${{ github.event.workflow_run.head_sha }}"
-          PR_NUMBER=$(gh api -H "Accept: application/vnd.github.groot-preview+json" \
-            "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number' || true)
+          EVENT="${{ github.event_name }}"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            PR_NUMBER="${{ inputs.pr_number }}"
+            ENV_INPUT="${{ inputs.environment }}"
+            ENGINE_ID_INPUT="${{ inputs.engine_id }}"
+          else
+            SHA="${{ github.event.workflow_run.head_sha }}"
+            PR_NUMBER=$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")
+            if [ -z "$PR_NUMBER" ]; then
+              PR_NUMBER=$(gh api -H "Accept: application/vnd.github.groot-preview+json" \
+                "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number' || true)
+            fi
+          fi
           if [ -z "$PR_NUMBER" ]; then
-            echo "No PR found for SHA $SHA"
+            if [ "$EVENT" = "workflow_dispatch" ]; then
+              echo "No PR provided for manual run."
+            else
+              echo "No PR found for SHA $SHA"
+            fi
             exit 0
           fi
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+          if [ "$EVENT" = "workflow_dispatch" ] && [ -n "$ENGINE_ID_INPUT" ]; then
+            env="$(echo "${ENV_INPUT:-staging}" | tr '[:upper:]' '[:lower:]')"
+            echo "env=$env" >> "$GITHUB_OUTPUT"
+            echo "engine_id=$ENGINE_ID_INPUT" >> "$GITHUB_OUTPUT"
+            if [ "$env" = "staging" ]; then
+              echo "should_run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
 
           COMMENTS_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100")
           export COMMENTS_JSON
