@@ -1,3 +1,4 @@
+# actionlint disable shellcheck
 name: Evals After Deploy
 
 on:
@@ -33,7 +34,7 @@ jobs:
             echo "No PR found for SHA $SHA"
             exit 0
           fi
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
           COMMENTS_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100")
           export COMMENTS_JSON
@@ -123,8 +124,8 @@ jobs:
           printf '%s' "$GCP_SA_KEY" | tr -d '[:space:]' | base64 -d > /tmp/gcp-key.json
           echo "Key file size: $(wc -c < /tmp/gcp-key.json) bytes"
           python3 -c "import json; json.load(open('/tmp/gcp-key.json')); print('Key JSON: valid')"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> $GITHUB_ENV
-          echo "GCP_SERVICE_ACCOUNT_CREDENTIALS=$GCP_SA_KEY" >> $GITHUB_ENV
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> "$GITHUB_ENV"
+          echo "GCP_SERVICE_ACCOUNT_CREDENTIALS=$GCP_SA_KEY" >> "$GITHUB_ENV"
 
       # -----------------------------------------------------------------------
       # cloud-sql-proxy — listens on 127.0.0.1:5434 for staging
@@ -156,7 +157,7 @@ jobs:
         if: steps.pr.outputs.should_run == 'true'
         id: evals_select
         run: |
-          echo "evals=equipments,disaster,memory,servicos" >> $GITHUB_OUTPUT
+          echo "evals=equipments,disaster,memory,servicos" >> "$GITHUB_OUTPUT"
 
       - name: Resolve prompt versions (from unified history)
         if: steps.pr.outputs.should_run == 'true'
@@ -256,7 +257,7 @@ jobs:
         if: steps.pr.outputs.should_run == 'true' && steps.prev_check.outputs.has_prev_experiments != 'true'
         id: baseline_start
         run: |
-          echo "ts=$(date +%s)" >> $GITHUB_OUTPUT
+          echo "ts=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Run evals baseline (no reasoning engine)
         if: steps.pr.outputs.should_run == 'true' && steps.prev_check.outputs.has_prev_experiments != 'true'
@@ -274,7 +275,7 @@ jobs:
             esac
             for i in 1 2 3; do
               echo "Run $i/3: $eval_name (baseline)"
-              uv run src/evaluations/core/experiments/eai/$script
+              uv run "src/evaluations/core/experiments/eai/$script"
             done
           done
         working-directory: app-eai-agent-evals
@@ -283,7 +284,7 @@ jobs:
         if: steps.pr.outputs.should_run == 'true'
         id: current_start
         run: |
-          echo "ts=$(date +%s)" >> $GITHUB_OUTPUT
+          echo "ts=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Run evals current (with reasoning engine)
         if: steps.pr.outputs.should_run == 'true'
@@ -301,7 +302,7 @@ jobs:
             esac
             for i in 1 2 3; do
               echo "Run $i/3: $eval_name (current)"
-              uv run src/evaluations/core/experiments/eai/$script \
+              uv run "src/evaluations/core/experiments/eai/$script" \
                 --reasoning-engine-id "${REASONING_ENGINE_ID}"
             done
           done
@@ -313,13 +314,13 @@ jobs:
         if: steps.pr.outputs.should_run == 'true'
         id: current_end
         run: |
-          echo "ts=$(date +%s)" >> $GITHUB_OUTPUT
+          echo "ts=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Mark baseline end time
         if: steps.pr.outputs.should_run == 'true' && steps.prev_check.outputs.has_prev_experiments != 'true'
         id: baseline_end
         run: |
-          echo "ts=$(date +%s)" >> $GITHUB_OUTPUT
+          echo "ts=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Fetch previous metrics from BigQuery
         if: steps.pr.outputs.should_run == 'true'
