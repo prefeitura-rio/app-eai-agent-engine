@@ -254,12 +254,12 @@ jobs:
           uv run python - <<'PY'
             import os
             from src.utils.bigquery import get_bigquery_result
-            
+
             EXPERIMENTS_TABLE = "rj-iplanrio.brutos_eai_logs.evaluations_experiments"
-            
+
             prev_version = os.environ.get("PREV_VERSION", "").strip()
             evals_selected = [e.strip() for e in os.environ.get("EVALS_SELECTED", "").split(",") if e.strip()]
-            
+
             dataset_map = {
                 "equipments": "Golden Equipment Test",
                 "disaster": "Disaster Response Questions",
@@ -267,7 +267,7 @@ jobs:
                 "servicos": "EAí - Refactor Tests",
             }
             dataset_names = [dataset_map[e] for e in evals_selected if e in dataset_map]
-            
+
             if not prev_version or not dataset_names:
                 has_prev = "false"
             else:
@@ -287,10 +287,11 @@ jobs:
                 rows = get_bigquery_result(query)
                 cnt = int(rows[0].get("cnt", 0)) if rows else 0
                 has_prev = "true" if cnt > 0 else "false"
-            
+
             with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
                 f.write(f"has_prev_experiments={has_prev}\n")
-          PY        env:
+          PY
+        env:
           PREV_VERSION: ${{ steps.versions.outputs.prev_version_num }}
           EVALS_SELECTED: ${{ steps.evals_select.outputs.evals }}
 
@@ -449,7 +450,7 @@ jobs:
                 agg = defaultdict(list)
                 for run in runs:
                     for k, v in run.items():
-            agg[k].append(v)
+                        agg[k].append(v)
                 return {k: round(sum(vs)/len(vs), 4) for k, vs in agg.items()}
             
             by_dataset = defaultdict(list)
@@ -458,7 +459,7 @@ jobs:
                 for m in row.get("aggregate_metrics", []):
                     stats = m.get("score_statistics") or {}
                     if "average" in stats:
-            metrics[m.get("metric_name")] = stats["average"]
+                        metrics[m.get("metric_name")] = stats["average"]
                 if metrics:
                     by_dataset[row.get("dataset_name")].append(metrics)
             
@@ -467,7 +468,8 @@ jobs:
             os.makedirs("tmp", exist_ok=True)
             with open("tmp/bq_prev_metrics.json", "w", encoding="utf-8") as f:
                 json.dump({"prev_version": prev_version, "averages": averages}, f, indent=2, ensure_ascii=False)
-          PY        env:
+          PY
+        env:
           PREV_VERSION: ${{ steps.versions.outputs.prev_version_num }}
           EVALS_SELECTED: ${{ steps.evals_select.outputs.evals }}
           HAS_PREV: ${{ steps.prev_check.outputs.has_prev_experiments }}
@@ -536,7 +538,7 @@ jobs:
                 agg = defaultdict(list)
                 for run in runs:
                     for k, v in run.items():
-            agg[k].append(v)
+                        agg[k].append(v)
                 return {k: round(sum(vs)/len(vs), 4) for k, vs in agg.items()}
             
             by_dataset = defaultdict(list)
@@ -545,7 +547,7 @@ jobs:
                 for m in row.get("aggregate_metrics", []):
                     stats = m.get("score_statistics") or {}
                     if "average" in stats:
-            metrics[m.get("metric_name")] = stats["average"]
+                        metrics[m.get("metric_name")] = stats["average"]
                 if metrics:
                     by_dataset[row.get("dataset_name")].append(metrics)
             
@@ -554,7 +556,8 @@ jobs:
             os.makedirs("tmp", exist_ok=True)
             with open("tmp/bq_current_metrics.json", "w", encoding="utf-8") as f:
                 json.dump({"current_version": current_version, "averages": averages}, f, indent=2, ensure_ascii=False)
-          PY        env:
+          PY
+        env:
           CURRENT_VERSION: ${{ steps.versions.outputs.current_version_num }}
           EVALS_SELECTED: ${{ steps.evals_select.outputs.evals }}
           CURRENT_START: ${{ steps.current_start.outputs.ts }}
@@ -610,10 +613,10 @@ jobs:
                     continue
                 for metric, cur_val in sorted(cur.items()):
                     if metric in prv:
-            diff = round(cur_val - prv[metric], 4)
-            lines.append(f"- {metric}: current={cur_val} previous={prv[metric]} diff={diff}")
+                        diff = round(cur_val - prv[metric], 4)
+                        lines.append(f"- {metric}: current={cur_val} previous={prv[metric]} diff={diff}")
                     else:
-            lines.append(f"- {metric}: current={cur_val} previous=NA diff=NA")
+                        lines.append(f"- {metric}: current={cur_val} previous=NA diff=NA")
                 lines.append("")
             
             summary = "\n".join(lines).strip() or "No comparable metrics found."
