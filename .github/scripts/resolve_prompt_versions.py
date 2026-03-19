@@ -33,14 +33,19 @@ def resolve_version(item):
         item.get("version_display", ""),
         item.get("version", ""),
         item.get("prompt_version", ""),
+        item.get("version_number", ""),
         item.get("version_id", ""),
         item.get("id", ""),
     ]
+    if isinstance(item.get("metadata"), dict):
+        candidates.append(item["metadata"].get("version_display", ""))
     for val in candidates:
         if isinstance(val, str):
             num = extract_version_number(val)
             if num:
                 return val, num
+        elif isinstance(val, int):
+            return str(val), str(val)
     return "", ""
 
 
