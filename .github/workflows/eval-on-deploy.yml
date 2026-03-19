@@ -35,6 +35,9 @@ jobs:
       DATABASE_PORT: "5434"
 
     steps:
+      - name: Checkout repo (for workflow scripts)
+        uses: actions/checkout@v4
+
       - name: Resolve PR and deploy info
         id: pr
         env:
