@@ -1,0 +1,718 @@
+# actionlint disable shellcheck
+name: Evals After Deploy
+
+on:
+  workflow_run:
+    workflows: ["Deploy on /deploy Command"]
+    types: [completed]
+
+jobs:
+  eval-staging:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    env:
+      DATABASE_HOST: "127.0.0.1"
+      DATABASE_PORT: "5434"
+
+    steps:
+      - name: Resolve PR and deploy info
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          REPO="${{ github.repository }}"
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          PR_NUMBER=$(gh api -H "Accept: application/vnd.github.groot-preview+json" \
+            "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number' || true)
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR found for SHA $SHA"
+            exit 0
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+          COMMENTS_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100")
+          export COMMENTS_JSON
+          python3 - <<'PY'
+                      import json, os, re, sys
+                      
+                      comments = json.loads(os.environ["COMMENTS_JSON"])
+                      for c in sorted(comments, key=lambda x: x.get("created_at", ""), reverse=True):
+              body = c.get("body") or ""
+              if "REASONING_ENGINE_ID" not in body:
+                  continue
+              m_env = re.search(r"Environment[^a-zA-Z0-9]*([a-zA-Z0-9_-]+)", body, re.IGNORECASE)
+              m_id = re.search(r"REASONING_ENGINE_ID:\\s*`([^`]+)`", body)
+              if not m_id:
+                  continue
+              env = (m_env.group(1) if m_env else "").strip().lower()
+              engine_id = m_id.group(1).strip()
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+                  f.write(f"env={env}\n")
+                  f.write(f"engine_id={engine_id}\n")
+                  f.write(f"should_run={'true' if env == 'staging' else 'false'}\n")
+              sys.exit(0)
+                      
+                      print("No deploy comment with REASONING_ENGINE_ID found.")
+                      sys.exit(1)
+          PY
+      - name: Stop if not staging
+        if: steps.pr.outputs.should_run != 'true'
+        run: |
+          echo "Skipping evals: env is '${{ steps.pr.outputs.env }}'"
+          exit 0
+
+      - name: Comment evals started on PR
+        if: steps.pr.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+        run: |
+          gh pr comment "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --body "🧪 **Evals started** to *staging*. I'll comment on the results here when done."
+
+      - uses: actions/checkout@v4
+        if: steps.pr.outputs.should_run == 'true'
+        with:
+          repository: prefeitura-rio/app-eai-agent-evals
+          path: app-eai-agent-evals
+
+      - name: Set up uv
+        if: steps.pr.outputs.should_run == 'true'
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        if: steps.pr.outputs.should_run == 'true'
+        run: uv sync
+        working-directory: app-eai-agent-evals
+
+      # -----------------------------------------------------------------------
+      # Infisical + GCP credentials (needed for Cloud SQL proxy auth + BigQuery)
+      # -----------------------------------------------------------------------
+      - name: Export secrets from Infisical
+        if: steps.pr.outputs.should_run == 'true'
+        uses: Infisical/secrets-action@v1.0.15
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG_EVALS }}
+          env-slug: staging
+          domain: ${{ secrets.INFISICAL_URL }}
+
+      - name: Verify GCP_SA_KEY is set
+        if: steps.pr.outputs.should_run == 'true'
+        run: |
+          if [ -z "$GCP_SA_KEY" ]; then
+            echo "ERROR: GCP_SA_KEY is empty — check Infisical for 'staging'."
+            exit 1
+          fi
+          echo "GCP_SA_KEY length: ${#GCP_SA_KEY}"
+
+      - name: Decode GCP service account key
+        if: steps.pr.outputs.should_run == 'true'
+        run: |
+          set -e
+          printf '%s' "$GCP_SA_KEY" | tr -d '[:space:]' | base64 -d > /tmp/gcp-key.json
+          echo "Key file size: $(wc -c < /tmp/gcp-key.json) bytes"
+          python3 -c "import json; json.load(open('/tmp/gcp-key.json')); print('Key JSON: valid')"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> "$GITHUB_ENV"
+          echo "GCP_SERVICE_ACCOUNT_CREDENTIALS=$GCP_SA_KEY" >> "$GITHUB_ENV"
+
+      # -----------------------------------------------------------------------
+      # cloud-sql-proxy — listens on 127.0.0.1:5434 for staging
+      # -----------------------------------------------------------------------
+      - name: Download cloud-sql-proxy
+        if: steps.pr.outputs.should_run == 'true'
+        run: |
+          curl -fsSL -o /tmp/cloud-sql-proxy \
+            https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.1/cloud-sql-proxy.linux.amd64
+          chmod +x /tmp/cloud-sql-proxy
+
+      - name: Start cloud-sql-proxy
+        if: steps.pr.outputs.should_run == 'true'
+        run: |
+          /tmp/cloud-sql-proxy "rj-superapp-staging:us-central1:postgres" --port 5434 &
+          echo "Started cloud-sql-proxy (PID $!)"
+
+      - name: Wait for PostgreSQL port 5434
+        if: steps.pr.outputs.should_run == 'true'
+        run: |
+          echo "Waiting for port 5434..."
+          for i in $(seq 1 30); do
+            nc -z 127.0.0.1 5434 && echo "Port 5434 is ready after ${i}s" && exit 0
+            sleep 2
+          done
+          echo "Timed out waiting for port 5434" && exit 1
+
+      - name: Select evals
+        if: steps.pr.outputs.should_run == 'true'
+        id: evals_select
+        run: |
+          echo "evals=equipments,disaster,memory,servicos" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve prompt versions (from unified history)
+        if: steps.pr.outputs.should_run == 'true'
+        id: versions
+        working-directory: app-eai-agent-evals
+        run: |
+          uv run python - <<'PY'
+            import os
+            import re
+            import httpx
+            
+            def fetch_unified_history(limit: int = 2):
+                base_url = os.environ.get("EAI_AGENT_URL", "").rstrip("/")
+                if not base_url:
+                    raise RuntimeError("EAI_AGENT_URL is not set.")
+                url = f"{base_url}/api/v1/unified-history?agent_type=agentic_search&limit={limit}"
+                token = os.environ.get("EAI_AGENT_TOKEN", "")
+                headers = {"Authorization": f"Bearer {token}"} if token else {}
+                with httpx.Client(timeout=30.0) as client:
+                    resp = client.get(url, headers=headers)
+                    resp.raise_for_status()
+                    return resp.json()
+            
+            def extract_version_number(version_display: str) -> str:
+                m = re.search(r"-v(\\d+)$", version_display or "")
+                return m.group(1) if m else ""
+            
+            data = fetch_unified_history(limit=2)
+            items = data.get("items", [])
+            if not items:
+                raise RuntimeError("Unified history is empty.")
+            
+            current_display = items[0].get("version_display", "")
+            current_num = extract_version_number(current_display)
+            
+            prev_display = items[1].get("version_display", "") if len(items) > 1 else ""
+            prev_num = extract_version_number(prev_display)
+            
+            if not current_num:
+                raise RuntimeError(f"Could not parse current version from '{current_display}'")
+            
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+                f.write(f"current_version_display={current_display}\n")
+                f.write(f"current_version_num={current_num}\n")
+                f.write(f"prev_version_display={prev_display}\n")
+                f.write(f"prev_version_num={prev_num}\n")
+          PY
+      - name: Check previous experiments in BigQuery
+        if: steps.pr.outputs.should_run == 'true'
+        id: prev_check
+        working-directory: app-eai-agent-evals
+        run: |
+          uv run python - <<'PY'
+            import os
+            from src.utils.bigquery import get_bigquery_result
+            
+            EXPERIMENTS_TABLE = "rj-iplanrio.brutos_eai_logs.evaluations_experiments"
+            
+            prev_version = os.environ.get("PREV_VERSION", "").strip()
+            evals_selected = [e.strip() for e in os.environ.get("EVALS_SELECTED", "").split(",") if e.strip()]
+            
+            dataset_map = {
+                "equipments": "Golden Equipment Test",
+                "disaster": "Disaster Response Questions",
+                "memory": "Multi-Turn Memory Test",
+                "servicos": "EAí - Refactor Tests",
+            }
+            dataset_names = [dataset_map[e] for e in evals_selected if e in dataset_map]
+            
+            if not prev_version or not dataset_names:
+                has_prev = "false"
+            else:
+                names_sql = ", ".join([f"'{n}'" for n in dataset_names])
+                query = f"""
+                WITH base AS (
+                  SELECT
+                    dataset_name,
+                    REGEXP_REPLACE(REGEXP_EXTRACT(experiment_name, r'([^-]+)$'), r'^v', '') AS version_norm
+                  FROM `{EXPERIMENTS_TABLE}`
+                )
+                SELECT COUNT(1) AS cnt
+                FROM base
+                WHERE version_norm = '{prev_version}'
+                  AND dataset_name IN ({names_sql})
+                """
+                rows = get_bigquery_result(query)
+                cnt = int(rows[0].get("cnt", 0)) if rows else 0
+                has_prev = "true" if cnt > 0 else "false"
+            
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+                f.write(f"has_prev_experiments={has_prev}\n")
+          PY        env:
+          PREV_VERSION: ${{ steps.versions.outputs.prev_version_num }}
+          EVALS_SELECTED: ${{ steps.evals_select.outputs.evals }}
+
+      - name: Mark baseline start time
+        if: steps.pr.outputs.should_run == 'true' && steps.prev_check.outputs.has_prev_experiments != 'true'
+        id: baseline_start
+        run: |
+          echo "ts=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Run evals baseline (no reasoning engine)
+        if: steps.pr.outputs.should_run == 'true' && steps.prev_check.outputs.has_prev_experiments != 'true'
+        run: |
+          EVALS="${{ steps.evals_select.outputs.evals }}"
+          IFS=',' read -ra ITEMS <<< "$EVALS"
+          for eval_name in "${ITEMS[@]}"; do
+            eval_name="$(echo "$eval_name" | xargs)"
+            case "$eval_name" in
+              equipments) script="run_equipments.py" ;;
+              disaster) script="run_disaster_eval.py" ;;
+              memory) script="run_memory_experiment.py" ;;
+              servicos) script="run_servicos.py" ;;
+              *) echo "Unknown eval: $eval_name" && exit 1 ;;
+            esac
+            for i in 1 2 3; do
+              echo "Run $i/3: $eval_name (baseline)"
+              uv run "src/evaluations/core/experiments/eai/$script"
+            done
+          done
+        working-directory: app-eai-agent-evals
+
+      - name: Mark current start time
+        if: steps.pr.outputs.should_run == 'true'
+        id: current_start
+        run: |
+          echo "ts=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Run evals current (with reasoning engine)
+        if: steps.pr.outputs.should_run == 'true'
+        run: |
+          EVALS="${{ steps.evals_select.outputs.evals }}"
+          IFS=',' read -ra ITEMS <<< "$EVALS"
+          for eval_name in "${ITEMS[@]}"; do
+            eval_name="$(echo "$eval_name" | xargs)"
+            case "$eval_name" in
+              equipments) script="run_equipments.py" ;;
+              disaster) script="run_disaster_eval.py" ;;
+              memory) script="run_memory_experiment.py" ;;
+              servicos) script="run_servicos.py" ;;
+              *) echo "Unknown eval: $eval_name" && exit 1 ;;
+            esac
+            for i in 1 2 3; do
+              echo "Run $i/3: $eval_name (current)"
+              uv run "src/evaluations/core/experiments/eai/$script" \
+                --reasoning-engine-id "${REASONING_ENGINE_ID}"
+            done
+          done
+        env:
+          REASONING_ENGINE_ID: ${{ steps.pr.outputs.engine_id }}
+        working-directory: app-eai-agent-evals
+
+      - name: Mark current end time
+        if: steps.pr.outputs.should_run == 'true'
+        id: current_end
+        run: |
+          echo "ts=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Mark baseline end time
+        if: steps.pr.outputs.should_run == 'true' && steps.prev_check.outputs.has_prev_experiments != 'true'
+        id: baseline_end
+        run: |
+          echo "ts=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch previous metrics from BigQuery
+        if: steps.pr.outputs.should_run == 'true'
+        working-directory: app-eai-agent-evals
+        run: |
+          uv run python - <<'PY'
+            import os
+            import json
+            from collections import defaultdict
+            from src.utils.bigquery import get_bigquery_result
+            
+            EXPERIMENTS_TABLE = "rj-iplanrio.brutos_eai_logs.evaluations_experiments"
+            
+            prev_version = os.environ.get("PREV_VERSION", "").strip()
+            evals_selected = [e.strip() for e in os.environ.get("EVALS_SELECTED", "").split(",") if e.strip()]
+            has_prev = os.environ.get("HAS_PREV", "false") == "true"
+            baseline_start = os.environ.get("BASELINE_START")
+            baseline_end = os.environ.get("BASELINE_END")
+            
+            dataset_map = {
+                "equipments": "Golden Equipment Test",
+                "disaster": "Disaster Response Questions",
+                "memory": "Multi-Turn Memory Test",
+                "servicos": "EAí - Refactor Tests",
+            }
+            
+            dataset_names = [dataset_map[e] for e in evals_selected if e in dataset_map]
+            if not dataset_names:
+                raise RuntimeError("No dataset names resolved from EVALS_SELECTED.")
+            
+            names_sql = ", ".join([f"'{n}'" for n in dataset_names])
+            
+            if has_prev:
+                if not prev_version:
+                    raise RuntimeError("PREV_VERSION is empty.")
+                query = f"""
+                WITH base AS (
+                  SELECT
+                    experiment_name,
+                    experiment_timestamp,
+                    dataset_name,
+                    aggregate_metrics,
+                    REGEXP_REPLACE(REGEXP_EXTRACT(experiment_name, r'([^-]+)$'), r'^v', '') AS version_norm
+                  FROM `{EXPERIMENTS_TABLE}`
+                )
+                SELECT experiment_name, experiment_timestamp, dataset_name, aggregate_metrics
+                FROM (
+                  SELECT *,
+                    ROW_NUMBER() OVER (PARTITION BY dataset_name ORDER BY experiment_timestamp DESC) AS rn
+                  FROM base
+                  WHERE version_norm = '{prev_version}'
+                    AND dataset_name IN ({names_sql})
+                )
+                WHERE rn <= 3
+                ORDER BY dataset_name, experiment_timestamp DESC
+                """
+            else:
+                if not baseline_start or not baseline_end:
+                    raise RuntimeError("Baseline time window is missing.")
+                query = f"""
+                WITH base AS (
+                  SELECT
+                    experiment_name,
+                    experiment_timestamp,
+                    dataset_name,
+                    aggregate_metrics
+                  FROM `{EXPERIMENTS_TABLE}`
+                  WHERE dataset_name IN ({names_sql})
+                    AND experiment_timestamp >= TIMESTAMP_SECONDS({baseline_start})
+                    AND experiment_timestamp <= TIMESTAMP_SECONDS({baseline_end})
+                )
+                SELECT experiment_name, experiment_timestamp, dataset_name, aggregate_metrics
+                FROM (
+                  SELECT *,
+                    ROW_NUMBER() OVER (PARTITION BY dataset_name ORDER BY experiment_timestamp DESC) AS rn
+                  FROM base
+                )
+                WHERE rn <= 3
+                ORDER BY dataset_name, experiment_timestamp DESC
+                """
+            
+            rows = get_bigquery_result(query)
+            
+            def avg_metrics(runs):
+                agg = defaultdict(list)
+                for run in runs:
+                    for k, v in run.items():
+            agg[k].append(v)
+                return {k: round(sum(vs)/len(vs), 4) for k, vs in agg.items()}
+            
+            by_dataset = defaultdict(list)
+            for row in rows:
+                metrics = {}
+                for m in row.get("aggregate_metrics", []):
+                    stats = m.get("score_statistics") or {}
+                    if "average" in stats:
+            metrics[m.get("metric_name")] = stats["average"]
+                if metrics:
+                    by_dataset[row.get("dataset_name")].append(metrics)
+            
+            averages = {k: avg_metrics(v) for k, v in by_dataset.items()}
+            
+            os.makedirs("tmp", exist_ok=True)
+            with open("tmp/bq_prev_metrics.json", "w", encoding="utf-8") as f:
+                json.dump({"prev_version": prev_version, "averages": averages}, f, indent=2, ensure_ascii=False)
+          PY        env:
+          PREV_VERSION: ${{ steps.versions.outputs.prev_version_num }}
+          EVALS_SELECTED: ${{ steps.evals_select.outputs.evals }}
+          HAS_PREV: ${{ steps.prev_check.outputs.has_prev_experiments }}
+          BASELINE_START: ${{ steps.baseline_start.outputs.ts }}
+          BASELINE_END: ${{ steps.baseline_end.outputs.ts }}
+
+      - name: Fetch current metrics from BigQuery
+        if: steps.pr.outputs.should_run == 'true'
+        working-directory: app-eai-agent-evals
+        run: |
+          uv run python - <<'PY'
+            import os
+            import json
+            from collections import defaultdict
+            from src.utils.bigquery import get_bigquery_result
+            
+            EXPERIMENTS_TABLE = "rj-iplanrio.brutos_eai_logs.evaluations_experiments"
+            
+            current_version = os.environ.get("CURRENT_VERSION", "").strip()
+            evals_selected = [e.strip() for e in os.environ.get("EVALS_SELECTED", "").split(",") if e.strip()]
+            current_start = os.environ.get("CURRENT_START")
+            current_end = os.environ.get("CURRENT_END")
+            
+            dataset_map = {
+                "equipments": "Golden Equipment Test",
+                "disaster": "Disaster Response Questions",
+                "memory": "Multi-Turn Memory Test",
+                "servicos": "EAí - Refactor Tests",
+            }
+            
+            dataset_names = [dataset_map[e] for e in evals_selected if e in dataset_map]
+            if not dataset_names:
+                raise RuntimeError("No dataset names resolved from EVALS_SELECTED.")
+            if not current_start or not current_end:
+                raise RuntimeError("Current time window is missing.")
+            
+            names_sql = ", ".join([f"'{n}'" for n in dataset_names])
+            
+            query = f"""
+            WITH base AS (
+              SELECT
+                experiment_name,
+                experiment_timestamp,
+                dataset_name,
+                aggregate_metrics,
+                REGEXP_REPLACE(REGEXP_EXTRACT(experiment_name, r'([^-]+)$'), r'^v', '') AS version_norm
+              FROM `{EXPERIMENTS_TABLE}`
+              WHERE dataset_name IN ({names_sql})
+                AND experiment_timestamp >= TIMESTAMP_SECONDS({current_start})
+                AND experiment_timestamp <= TIMESTAMP_SECONDS({current_end})
+            )
+            SELECT experiment_name, experiment_timestamp, dataset_name, aggregate_metrics
+            FROM (
+              SELECT *,
+                ROW_NUMBER() OVER (PARTITION BY dataset_name ORDER BY experiment_timestamp DESC) AS rn
+              FROM base
+              WHERE version_norm = '{current_version}'
+            )
+            WHERE rn <= 3
+            ORDER BY dataset_name, experiment_timestamp DESC
+            """
+            
+            rows = get_bigquery_result(query)
+            
+            def avg_metrics(runs):
+                agg = defaultdict(list)
+                for run in runs:
+                    for k, v in run.items():
+            agg[k].append(v)
+                return {k: round(sum(vs)/len(vs), 4) for k, vs in agg.items()}
+            
+            by_dataset = defaultdict(list)
+            for row in rows:
+                metrics = {}
+                for m in row.get("aggregate_metrics", []):
+                    stats = m.get("score_statistics") or {}
+                    if "average" in stats:
+            metrics[m.get("metric_name")] = stats["average"]
+                if metrics:
+                    by_dataset[row.get("dataset_name")].append(metrics)
+            
+            averages = {k: avg_metrics(v) for k, v in by_dataset.items()}
+            
+            os.makedirs("tmp", exist_ok=True)
+            with open("tmp/bq_current_metrics.json", "w", encoding="utf-8") as f:
+                json.dump({"current_version": current_version, "averages": averages}, f, indent=2, ensure_ascii=False)
+          PY        env:
+          CURRENT_VERSION: ${{ steps.versions.outputs.current_version_num }}
+          EVALS_SELECTED: ${{ steps.evals_select.outputs.evals }}
+          CURRENT_START: ${{ steps.current_start.outputs.ts }}
+          CURRENT_END: ${{ steps.current_end.outputs.ts }}
+
+      - name: Compare averages and write summary
+        if: steps.pr.outputs.should_run == 'true'
+        env:
+          CURRENT_VERSION: ${{ steps.versions.outputs.current_version_display }}
+          PREV_VERSION: ${{ steps.versions.outputs.prev_version_display }}
+          HAS_PREV: ${{ steps.prev_check.outputs.has_prev_experiments }}
+          EVALS_SELECTED: ${{ steps.evals_select.outputs.evals }}
+        run: |
+          python3 - <<'PY'
+            import json
+            import os
+            from pathlib import Path
+            from collections import defaultdict
+            
+            DATASET_TO_EVAL = {
+                "Golden Equipment Test": "equipments",
+                "Disaster Response Questions": "disaster",
+                "Multi-Turn Memory Test": "memory",
+                "EAí - Refactor Tests": "servicos",
+            }
+            
+            def load_bq_metrics(path: Path):
+                with path.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                averages = {}
+                for dataset_name, metrics in data.get("averages", {}).items():
+                    eval_name = DATASET_TO_EVAL.get(dataset_name, "unknown")
+                    averages[eval_name] = metrics
+                return averages
+            
+            evals_selected = [e.strip() for e in os.environ.get("EVALS_SELECTED", "").split(",") if e.strip()]
+            
+            current = load_bq_metrics(Path("tmp/bq_current_metrics.json"))
+            prev = load_bq_metrics(Path("tmp/bq_prev_metrics.json"))
+            
+            lines = []
+            lines.append(f"**Current prompt version:** `{os.environ.get('CURRENT_VERSION', '')}`")
+            prev_label = os.environ.get("PREV_VERSION", "") or "baseline (no RE)"
+            lines.append(f"**Previous reference:** `{prev_label}`")
+            lines.append("")
+            
+            for eval_name in evals_selected:
+                cur = current.get(eval_name, {})
+                prv = prev.get(eval_name, {})
+                lines.append(f"### {eval_name}")
+                if not cur:
+                    lines.append("- No current metrics found.")
+                    continue
+                for metric, cur_val in sorted(cur.items()):
+                    if metric in prv:
+            diff = round(cur_val - prv[metric], 4)
+            lines.append(f"- {metric}: current={cur_val} previous={prv[metric]} diff={diff}")
+                    else:
+            lines.append(f"- {metric}: current={cur_val} previous=NA diff=NA")
+                lines.append("")
+            
+            summary = "\n".join(lines).strip() or "No comparable metrics found."
+            with open(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout"), "a", encoding="utf-8") as f:
+                f.write("\\n## Eval comparison (current vs previous)\\n")
+                f.write(summary + "\\n")
+          PY
+      - name: Comment eval results on PR
+        if: steps.pr.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          CURRENT_VERSION: ${{ steps.versions.outputs.current_version_display }}
+          PREV_VERSION: ${{ steps.versions.outputs.prev_version_display }}
+          EVALS_SELECTED: ${{ steps.evals_select.outputs.evals }}
+        run: |
+          python3 - <<'PY'
+            import json
+            import os
+            from pathlib import Path
+            
+            DATASET_TO_EVAL = {
+                "Golden Equipment Test": "equipments",
+                "Disaster Response Questions": "disaster",
+                "Multi-Turn Memory Test": "memory",
+                "EAí - Refactor Tests": "servicos",
+            }
+            
+            def load_bq_metrics(path: Path):
+                with path.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                averages = {}
+                for dataset_name, metrics in data.get("averages", {}).items():
+                    eval_name = DATASET_TO_EVAL.get(dataset_name, "unknown")
+                    averages[eval_name] = metrics
+                return averages
+            
+            def pct_change_value(baseline, current):
+                if baseline == 0:
+                    return None
+                return ((current - baseline) / baseline) * 100.0
+            
+            def pct_change_str(baseline, current):
+                if baseline == 0:
+                    return "NA"
+                return f"{pct_change_value(baseline, current):.2f}%"
+            
+            current = load_bq_metrics(Path("tmp/bq_current_metrics.json"))
+            baseline = load_bq_metrics(Path("tmp/bq_prev_metrics.json"))
+            
+            evals_selected = [e.strip() for e in os.environ.get("EVALS_SELECTED", "").split(",") if e.strip()]
+            current_version = os.environ.get("CURRENT_VERSION", "")
+            prev_version = os.environ.get("PREV_VERSION", "") or "baseline (no RE)"
+            
+            lines = []
+            lines.append("✅ **Evals finalizados**")
+            lines.append("")
+            lines.append(f"**Baseline:** `{prev_version}`")
+            lines.append(f"**Versão atual:** `{current_version}`")
+            lines.append("")
+            
+            failures = []
+            
+            for eval_name in evals_selected:
+                cur = current.get(eval_name, {})
+                base = baseline.get(eval_name, {})
+                lines.append(f"**Eval {eval_name}**")
+                lines.append("")
+                lines.append("| métrica | baseline | versão atual | variacao % |")
+                lines.append("|---|---|---|---|")
+                if not cur:
+                    lines.append("| _sem métricas_ | - | - | - |")
+                    failures.append({"eval": eval_name, "metric": "_sem métricas_", "reason": "no_current_metrics"})
+                else:
+                    for metric, cur_val in sorted(cur.items()):
+            base_val = base.get(metric)
+            if base_val is None:
+                lines.append(f"| {metric} | NA | {cur_val} | NA |")
+                failures.append({"eval": eval_name, "metric": metric, "reason": "no_baseline"})
+            else:
+                variation = pct_change_value(base_val, cur_val)
+                lines.append(f"| {metric} | {base_val} | {cur_val} | {pct_change_str(base_val, cur_val)} |")
+                if variation is not None and variation < -5.0:
+                    failures.append({
+                        "eval": eval_name,
+                        "metric": metric,
+                        "baseline": base_val,
+                        "current": cur_val,
+                        "variation_pct": variation,
+                    })
+                lines.append("")
+            
+            if failures:
+                lines.append("❌ **Resultado final:** Reprovado (métricas > 5% pior)")
+            else:
+                lines.append("✅ **Resultado final:** Aprovado (todas as métricas dentro de 5%)")
+            
+            comment = "\\n".join(lines).strip() + "\\n"
+            Path("tmp/pr_comment.md").write_text(comment, encoding="utf-8")
+            Path("tmp/eval_failures.json").write_text(json.dumps(failures, indent=2, ensure_ascii=False), encoding="utf-8")
+          PY
+          gh pr comment "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --body-file tmp/pr_comment.md
+
+      - name: Comment eval failure on PR
+        if: failure() && steps.pr.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+        run: |
+          gh pr comment "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --body "❌ **Evals failed**. See the action logs for details."
+
+      - name: Fail workflow on regressions > 5%
+        if: steps.pr.outputs.should_run == 'true'
+        run: |
+          python3 - <<'PY'
+            import json
+            from pathlib import Path
+            
+            failures_path = Path("tmp/eval_failures.json")
+            if not failures_path.exists():
+                raise SystemExit(0)
+            
+            failures = json.loads(failures_path.read_text(encoding="utf-8"))
+            if not failures:
+                raise SystemExit(0)
+            
+            print("Regressions > 5% detected:")
+            for f in failures:
+                if f.get("reason") == "no_current_metrics":
+                    print(f"- {f['eval']}: no current metrics")
+                elif f.get("reason") == "no_baseline":
+                    print(f"- {f['eval']} / {f['metric']}: no baseline metric")
+                else:
+                    print(
+            f"- {f['eval']} / {f['metric']}: baseline={f['baseline']} current={f['current']} "
+            f"variation={f['variation_pct']:.2f}%"
+                    )
+            raise SystemExit(1)
+          PY
