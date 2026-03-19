@@ -66,6 +66,16 @@ jobs:
           echo "Skipping evals: env is '${{ steps.pr.outputs.env }}'"
           exit 0
 
+      - name: Comment evals started on PR
+        if: steps.pr.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+        run: |
+          gh pr comment "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --body "🧪 **Evals started** to *staging*. I'll comment on the results here when done."
+
       - uses: actions/checkout@v4
         if: steps.pr.outputs.should_run == 'true'
         with:
@@ -666,6 +676,16 @@ jobs:
           gh pr comment "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
             --body-file tmp/pr_comment.md
+
+      - name: Comment eval failure on PR
+        if: failure() && steps.pr.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+        run: |
+          gh pr comment "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --body "❌ **Evals failed**. See the action logs for details."
 
       - name: Fail workflow on regressions > 5%
         if: steps.pr.outputs.should_run == 'true'
