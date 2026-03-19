@@ -16,8 +16,10 @@ def fetch_unified_history(limit: int = 2):
         return resp.json()
 
 
-def extract_version_number(version_display: str) -> str:
-    m = re.search(r"-v(\d+)$", version_display or "")
+def extract_version_number(value: str) -> str:
+    if not value:
+        return ""
+    m = re.search(r"(?:^|[-_])v(\d+)$", value)
     return m.group(1) if m else ""
 
 
@@ -26,14 +28,32 @@ items = data.get("items", [])
 if not items:
     raise RuntimeError("Unified history is empty.")
 
-current_display = items[0].get("version_display", "")
-current_num = extract_version_number(current_display)
+def resolve_version(item):
+    candidates = [
+        item.get("version_display", ""),
+        item.get("version", ""),
+        item.get("prompt_version", ""),
+        item.get("version_id", ""),
+        item.get("id", ""),
+    ]
+    for val in candidates:
+        if isinstance(val, str):
+            num = extract_version_number(val)
+            if num:
+                return val, num
+    return "", ""
 
-prev_display = items[1].get("version_display", "") if len(items) > 1 else ""
-prev_num = extract_version_number(prev_display)
+
+current_display, current_num = resolve_version(items[0])
+prev_display, prev_num = ("", "")
+if len(items) > 1:
+    prev_display, prev_num = resolve_version(items[1])
 
 if not current_num:
-    raise RuntimeError(f"Could not parse current version from '{current_display}'")
+    keys = ", ".join(sorted(items[0].keys()))
+    raise RuntimeError(
+        f"Could not parse current version from unified history item. keys=[{keys}] item={items[0]}"
+    )
 
 with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
     f.write(f"current_version_display={current_display}\n")
