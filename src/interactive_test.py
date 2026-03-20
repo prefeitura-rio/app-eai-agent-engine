@@ -224,7 +224,6 @@ def parse_agent_response(response, is_local=False, start_time=None):
                         print(f"      📋 Arguments: {json.dumps(tool_args, indent=8)}")
 
                 # Show AI content if any
-                # Show AI content if any
                 thinking_content = ""
                 final_content = ""
                 if content:
