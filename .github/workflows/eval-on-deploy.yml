@@ -5,36 +5,24 @@ on:
   workflow_run:
     workflows: ["Deploy on /deploy Command"]
     types: [completed]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: "PR number to comment and fetch deploy info from"
-        required: true
-        type: string
-      engine_id:
-        description: "Optional reasoning engine id (if omitted, will parse from PR comments)"
-        required: false
-        type: string
-      environment:
-        description: "Environment name (only staging runs evals)"
-        required: false
-        default: "staging"
-        type: string
 
 jobs:
   eval-staging:
-    if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 150
     permissions:
       contents: read
-      pull-requests: read
-      issues: read
+      pull-requests: write
+      issues: write
     env:
       DATABASE_HOST: "127.0.0.1"
       DATABASE_PORT: "5434"
 
     steps:
+      - name: Checkout repo (for workflow scripts)
+        uses: actions/checkout@v4
+
       - name: Resolve PR and deploy info
         id: pr
         env:
@@ -42,40 +30,17 @@ jobs:
         run: |
           set -e
           REPO="${{ github.repository }}"
-          EVENT="${{ github.event_name }}"
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            PR_NUMBER="${{ inputs.pr_number }}"
-            ENV_INPUT="${{ inputs.environment }}"
-            ENGINE_ID_INPUT="${{ inputs.engine_id }}"
-          else
-            SHA="${{ github.event.workflow_run.head_sha }}"
-            PR_NUMBER=$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")
-            if [ -z "$PR_NUMBER" ]; then
-              PR_NUMBER=$(gh api -H "Accept: application/vnd.github.groot-preview+json" \
-                "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number' || true)
-            fi
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          PR_NUMBER=$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")
+          if [ -z "$PR_NUMBER" ]; then
+            PR_NUMBER=$(gh api -H "Accept: application/vnd.github.groot-preview+json" \
+              "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number' || true)
           fi
           if [ -z "$PR_NUMBER" ]; then
-            if [ "$EVENT" = "workflow_dispatch" ]; then
-              echo "No PR provided for manual run."
-            else
-              echo "No PR found for SHA $SHA"
-            fi
+            echo "No PR found for SHA $SHA"
             exit 0
           fi
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-
-          if [ "$EVENT" = "workflow_dispatch" ] && [ -n "$ENGINE_ID_INPUT" ]; then
-            env="$(echo "${ENV_INPUT:-staging}" | tr '[:upper:]' '[:lower:]')"
-            echo "env=$env" >> "$GITHUB_OUTPUT"
-            echo "engine_id=$ENGINE_ID_INPUT" >> "$GITHUB_OUTPUT"
-            if [ "$env" = "staging" ]; then
-              echo "should_run=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "should_run=false" >> "$GITHUB_OUTPUT"
-            fi
-            exit 0
-          fi
 
           COMMENTS_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100")
           export COMMENTS_JSON
@@ -100,6 +65,7 @@ jobs:
         if: steps.pr.outputs.should_run == 'true'
         with:
           repository: prefeitura-rio/app-eai-agent-evals
+          ref: staging
           path: app-eai-agent-evals
 
       - name: Set up uv
@@ -127,24 +93,24 @@ jobs:
           env-slug: staging
           domain: ${{ secrets.INFISICAL_URL }}
 
-      - name: Verify GCP_SA_KEY is set
+      - name: Verify GCP_SERVICE_ACCOUNT_CREDENTIALS is set
         if: steps.pr.outputs.should_run == 'true'
         run: |
-          if [ -z "$GCP_SA_KEY" ]; then
-            echo "ERROR: GCP_SA_KEY is empty — check Infisical for 'staging'."
+          if [ -z "$GCP_SERVICE_ACCOUNT_CREDENTIALS" ]; then
+            echo "ERROR: GCP_SERVICE_ACCOUNT_CREDENTIALS is empty — check Infisical for 'staging'."
             exit 1
           fi
-          echo "GCP_SA_KEY length: ${#GCP_SA_KEY}"
+          echo "GCP_SERVICE_ACCOUNT_CREDENTIALS length: ${#GCP_SERVICE_ACCOUNT_CREDENTIALS}"
 
       - name: Decode GCP service account key
         if: steps.pr.outputs.should_run == 'true'
         run: |
           set -e
-          printf '%s' "$GCP_SA_KEY" | tr -d '[:space:]' | base64 -d > /tmp/gcp-key.json
+          printf '%s' "$GCP_SERVICE_ACCOUNT_CREDENTIALS" | tr -d '[:space:]' | base64 -d > /tmp/gcp-key.json
           echo "Key file size: $(wc -c < /tmp/gcp-key.json) bytes"
           python3 -c "import json; json.load(open('/tmp/gcp-key.json')); print('Key JSON: valid')"
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> "$GITHUB_ENV"
-          echo "GCP_SERVICE_ACCOUNT_CREDENTIALS=$GCP_SA_KEY" >> "$GITHUB_ENV"
+          echo "GCP_SERVICE_ACCOUNT_CREDENTIALS=$GCP_SERVICE_ACCOUNT_CREDENTIALS" >> "$GITHUB_ENV"
 
       # -----------------------------------------------------------------------
       # cloud-sql-proxy — listens on 127.0.0.1:5434 for staging

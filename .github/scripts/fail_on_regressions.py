@@ -18,6 +18,6 @@ for f in failures:
     else:
         print(
             f"- {f['eval']} / {f['metric']}: baseline={f['baseline']} current={f['current']} "
-            f"variation={f['variation_pct']:.2f}%"
+            f"delta={f['delta']}"
         )
 raise SystemExit(1)

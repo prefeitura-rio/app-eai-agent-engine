@@ -20,16 +20,16 @@ def load_bq_metrics(path: Path):
     return averages
 
 
-def pct_change_value(baseline, current):
-    if baseline == 0:
-        return None
-    return ((current - baseline) / baseline) * 100.0
-
-
-def pct_change_str(baseline, current):
-    if baseline == 0:
-        return "NA"
-    return f"{pct_change_value(baseline, current):.2f}%"
+# def pct_change_value(baseline, current):
+#     if baseline == 0:
+#         return None
+#     return ((current - baseline) / baseline) * 100.0
+#
+#
+# def pct_change_str(baseline, current):
+#     if baseline == 0:
+#         return "NA"
+#     return f"{pct_change_value(baseline, current):.2f}%"
 
 
 current = load_bq_metrics(Path("tmp/bq_current_metrics.json"))
@@ -53,7 +53,7 @@ for eval_name in evals_selected:
     base = baseline.get(eval_name, {})
     lines.append(f"**Eval {eval_name}**")
     lines.append("")
-    lines.append("| métrica | baseline | versão atual | variacao % |")
+    lines.append(f"| métrica | {prev_version} | {current_version} | diferença (abs) |")
     lines.append("|---|---|---|---|")
     if not cur:
         lines.append("| _sem métricas_ | - | - | - |")
@@ -65,26 +65,28 @@ for eval_name in evals_selected:
                 lines.append(f"| {metric} | NA | {cur_val} | NA |")
                 failures.append({"eval": eval_name, "metric": metric, "reason": "no_baseline"})
             else:
-                variation = pct_change_value(base_val, cur_val)
+                delta = round(cur_val - base_val, 4)
                 lines.append(
-                    f"| {metric} | {base_val} | {cur_val} | {pct_change_str(base_val, cur_val)} |"
+                    f"| {metric} | {base_val} | {cur_val} | {delta} |"
                 )
-                if variation is not None and variation < -5.0:
+                if delta <= -0.05:
                     failures.append(
                         {
                             "eval": eval_name,
                             "metric": metric,
                             "baseline": base_val,
                             "current": cur_val,
-                            "variation_pct": variation,
+                            "delta": delta,
                         }
                     )
     lines.append("")
 
 if failures:
-    lines.append("❌ **Resultado final:** Reprovado (métricas > 5% pior)")
+    lines.append(
+        f"❌ **Resultado final:** Reprovado ({len(failures)} uma ou mais métricas ficaram abaixo do limite de 5% em relação à baseline)"
+    )
 else:
-    lines.append("✅ **Resultado final:** Aprovado (todas as métricas dentro de 5%)")
+    lines.append("✅ **Resultado final:** Aprovado (todas as métricas dentro do limite)")
 
 comment = "\n".join(lines).strip() + "\n"
 Path("tmp/pr_comment.md").write_text(comment, encoding="utf-8")
