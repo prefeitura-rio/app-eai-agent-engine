@@ -103,6 +103,7 @@ jobs:
         if: steps.pr.outputs.should_run == 'true'
         with:
           repository: prefeitura-rio/app-eai-agent-evals
+          ref: staging
           path: app-eai-agent-evals
 
       - name: Set up uv
@@ -148,42 +149,6 @@ jobs:
           python3 -c "import json; json.load(open('/tmp/gcp-key.json')); print('Key JSON: valid')"
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> "$GITHUB_ENV"
           echo "GCP_SERVICE_ACCOUNT_CREDENTIALS=$GCP_SERVICE_ACCOUNT_CREDENTIALS" >> "$GITHUB_ENV"
-
-      - name: Debug gateway DNS/connectivity
-        if: steps.pr.outputs.should_run == 'true'
-        run: |
-          set +e
-          echo "EAI_GATEWAY_API_URL=$EAI_GATEWAY_API_URL"
-          echo "EAI_AGENT_URL=$EAI_AGENT_URL"
-          echo "EAI_GATEWAY_API_URL host:"
-          python3 - <<'PY'
-          import os, socket, urllib.parse
-          url = os.environ.get("EAI_GATEWAY_API_URL", "")
-          host = urllib.parse.urlparse(url).hostname or url
-          print("host:", host or "<empty>")
-          if host:
-              try:
-                  print("dns:", socket.getaddrinfo(host, None))
-              except Exception as e:
-                  print("dns_error:", repr(e))
-          PY
-          echo "EAI_AGENT_URL host:"
-          python3 - <<'PY'
-          import os, socket, urllib.parse
-          url = os.environ.get("EAI_AGENT_URL", "")
-          host = urllib.parse.urlparse(url).hostname or url
-          print("host:", host or "<empty>")
-          if host:
-              try:
-                  print("dns:", socket.getaddrinfo(host, None))
-              except Exception as e:
-                  print("dns_error:", repr(e))
-          PY
-          echo "resolv.conf:"
-          cat /etc/resolv.conf || true
-          echo "hosts:"
-          cat /etc/hosts || true
-          set -e
 
       # -----------------------------------------------------------------------
       # cloud-sql-proxy — listens on 127.0.0.1:5434 for staging
