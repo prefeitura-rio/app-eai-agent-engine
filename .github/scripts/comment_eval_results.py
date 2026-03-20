@@ -9,6 +9,10 @@ DATASET_TO_EVAL = {
     "EAí - Refactor Tests": "servicos",
 }
 
+LOWER_IS_BETTER = {
+    "search_calls_after_second_question",
+    "hallucination_flag",
+}
 
 def load_bq_metrics(path: Path):
     with path.open("r", encoding="utf-8") as f:
@@ -16,20 +20,26 @@ def load_bq_metrics(path: Path):
     averages = {}
     for dataset_name, metrics in data.get("averages", {}).items():
         eval_name = DATASET_TO_EVAL.get(dataset_name, "unknown")
-        averages[eval_name] = metrics
+        rounded = {}
+        for key, val in metrics.items():
+            if isinstance(val, (int, float)):
+                rounded[key] = round(val, 2)
+            else:
+                rounded[key] = val
+        averages[eval_name] = rounded
     return averages
 
 
-# def pct_change_value(baseline, current):
-#     if baseline == 0:
-#         return None
-#     return ((current - baseline) / baseline) * 100.0
-#
-#
-# def pct_change_str(baseline, current):
-#     if baseline == 0:
-#         return "NA"
-#     return f"{pct_change_value(baseline, current):.2f}%"
+def pct_change_value(baseline, current):
+    if baseline == 0:
+        return None
+    return ((current - baseline) / baseline) * 100.0
+
+
+def pct_change_str(baseline, current):
+    if baseline == 0:
+        return "NA"
+    return f"{pct_change_value(baseline, current):.2f}%"
 
 
 current = load_bq_metrics(Path("tmp/bq_current_metrics.json"))
@@ -42,8 +52,8 @@ prev_version = os.environ.get("PREV_VERSION", "") or "baseline (no RE)"
 lines = []
 lines.append("✅ **Evals finalizados**")
 lines.append("")
-lines.append(f"**Baseline:** `{prev_version}`")
-lines.append(f"**Versão atual:** `{current_version}`")
+lines.append(f"**Baseline:** `v{prev_version}`")
+lines.append(f"**Versão atual:** `v{current_version}`")
 lines.append("")
 
 failures = []
@@ -53,32 +63,64 @@ for eval_name in evals_selected:
     base = baseline.get(eval_name, {})
     lines.append(f"**Eval {eval_name}**")
     lines.append("")
-    lines.append(f"| métrica | {prev_version} | {current_version} | diferença (abs) |")
-    lines.append("|---|---|---|---|")
+    lines.append(
+        f"| métrica | v{prev_version} | v{current_version} | diferença (abs) | variação % |"
+    )
+    lines.append("|---|---|---|---|---|")
     if not cur:
-        lines.append("| _sem métricas_ | - | - | - |")
+        lines.append("| _sem métricas_ | - | - | - | - |")
         failures.append({"eval": eval_name, "metric": "_sem métricas_", "reason": "no_current_metrics"})
     else:
         for metric, cur_val in sorted(cur.items()):
             base_val = base.get(metric)
             if base_val is None:
-                lines.append(f"| {metric} | NA | {cur_val} | NA |")
+                lines.append(f"| {metric} | NA | {cur_val} | NA | NA |")
                 failures.append({"eval": eval_name, "metric": metric, "reason": "no_baseline"})
             else:
-                delta = round(cur_val - base_val, 4)
+                is_percent_metric = metric in {"token_usage_total", "search_calls_after_second_question", "equipments_speed"}
+                delta = round(cur_val - base_val, 2)
+                variation_str = pct_change_str(base_val, cur_val) if is_percent_metric else "NA"
                 lines.append(
-                    f"| {metric} | {base_val} | {cur_val} | {delta} |"
+                    f"| {metric} | {base_val} | {cur_val} | {delta} | {variation_str} |"
                 )
-                if delta <= -0.05:
-                    failures.append(
-                        {
-                            "eval": eval_name,
-                            "metric": metric,
-                            "baseline": base_val,
-                            "current": cur_val,
-                            "delta": delta,
-                        }
-                    )
+                if is_percent_metric:
+                    variation = pct_change_value(base_val, cur_val)
+                    if variation is not None:
+                        if metric in LOWER_IS_BETTER:
+                            # piora = aumento
+                            if variation > 5.0:
+                                failures.append(
+                                    {
+                                        "eval": eval_name,
+                                        "metric": metric,
+                                        "baseline": base_val,
+                                        "current": cur_val,
+                                        "variation_pct": variation,
+                                    }
+                                )
+                        else:
+                            # piora = diminuição
+                            if variation < -5.0:
+                                failures.append(
+                                    {
+                                        "eval": eval_name,
+                                        "metric": metric,
+                                        "baseline": base_val,
+                                        "current": cur_val,
+                                        "variation_pct": variation,
+                                    }
+                                )
+                else:
+                    if delta <= -0.05:
+                        failures.append(
+                            {
+                                "eval": eval_name,
+                                "metric": metric,
+                                "baseline": base_val,
+                                "current": cur_val,
+                                "delta": delta,
+                            }
+                        )
     lines.append("")
 
 if failures:

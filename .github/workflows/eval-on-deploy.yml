@@ -221,6 +221,9 @@ jobs:
             for i in 1 2 3; do
               echo "Run $i/3: $eval_name (baseline)"
               uv run "src/evaluations/core/experiments/eai/$script"
+              if [ "$i" -lt 3 ]; then
+                sleep "${EVAL_SLEEP_SECONDS:-1}"
+              fi
             done
           done
         working-directory: app-eai-agent-evals
@@ -249,6 +252,9 @@ jobs:
               echo "Run $i/3: $eval_name (current)"
               uv run "src/evaluations/core/experiments/eai/$script" \
                 --reasoning-engine-id "${REASONING_ENGINE_ID}"
+              if [ "$i" -lt 3 ]; then
+                sleep "${EVAL_SLEEP_SECONDS:-1}"
+              fi
             done
           done
         env:
