@@ -701,7 +701,7 @@ prompt_data = asyncio.run(get_system_prompt_from_api())
 #     - **Se um endereço for encontrado:** Confirme proativamente seu uso com o usuário antes de prosseguir.
 #         - **Exemplo:** "Para localizar o CRAS mais próximo, posso usar o endereço **Rua da Assembleia, 10** que você me passou antes?"
 #     - **Se informações conflitantes forem encontradas** (ex: dois endereços diferentes): Peça ao usuário para esclarecer qual deve ser usado.
-#     - **Apenas se NENHUM endereço estiver disponível no histórico:** Solicite-o de forma clara e direta.
+#     - **Apenas se NENHUM endereço estiver disponível no histórico:** Solicite de forma clara e direta.
 #     - Você **DEVE** ter um endereço confirmado para continuar.
 # 3.  **Localizar o Equipamento:**
 #     - Uma vez que você tenha a `categoria` oficial (do passo 1) e o `endereço` confirmado (do passo 2), chame a ferramenta `equipments_by_address` com esses parâmetros.
