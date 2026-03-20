@@ -17,6 +17,11 @@ jobs:
     name: Deploy
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: write
 
     steps:
       # -----------------------------------------------------------------------
@@ -153,7 +158,11 @@ jobs:
           HEAD_SHA=$(gh pr view "${{ github.event.issue.number }}" \
             --repo "${{ github.repository }}" \
             --json headRefOid --jq '.headRefOid')
+          HEAD_REF=$(gh pr view "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --json headRefName --jq '.headRefName')
           echo "sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "ref=$HEAD_REF" >> $GITHUB_OUTPUT
 
       - uses: actions/checkout@v4
         with:
@@ -198,6 +207,10 @@ jobs:
           uv run python src/deploy.py | tee /tmp/deploy_output.txt
           ENGINE_ID=$(grep '^REASONING_ENGINE_ID=' /tmp/deploy_output.txt | cut -d= -f2)
           echo "engine_id=$ENGINE_ID" >> $GITHUB_OUTPUT
+          if [ -z "$ENGINE_ID" ]; then
+            echo "ERROR: REASONING_ENGINE_ID not found in deploy output."
+            exit 1
+          fi
 
       # -----------------------------------------------------------------------
       # Report results — job summary + PR comment.
@@ -214,6 +227,7 @@ jobs:
           echo "Update this value in Infisical under the \`REASONING_ENGINE_ID\` key for the **$ENV** environment." >> $GITHUB_STEP_SUMMARY
 
       - name: Comment result on PR
+        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -222,6 +236,22 @@ jobs:
           gh pr comment "${{ github.event.issue.number }}" \
             --repo "${{ github.repository }}" \
             --body "$(printf '✅ **Deployment complete**\n\n**Environment:** %s\n**REASONING_ENGINE_ID:** `%s`\n\nUpdate this value in Infisical under the `REASONING_ENGINE_ID` key for the **%s** environment.' "$ENV" "$ENGINE_ID" "$ENV")"
+
+      # -----------------------------------------------------------------------
+      # Trigger evals automatically after successful staging deploy.
+      # -----------------------------------------------------------------------
+      - name: Trigger evals after staging deploy
+        if: success() && steps.parse.outputs.env == 'staging'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            -X POST \
+            "repos/${{ github.repository }}/actions/workflows/eval-on-deploy.yml/dispatches" \
+            -f ref="${{ steps.pr.outputs.ref }}" \
+            -f inputs[pr_number]="${{ github.event.issue.number }}" \
+            -f inputs[engine_id]="${{ steps.deploy.outputs.engine_id }}" \
+            -f inputs[environment]="staging"
 
       # -----------------------------------------------------------------------
       # On failure — post a failure comment so the PR thread is self-contained.
