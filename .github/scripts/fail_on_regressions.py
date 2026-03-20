@@ -16,8 +16,14 @@ for f in failures:
     elif f.get("reason") == "no_baseline":
         print(f"- {f['eval']} / {f['metric']}: no baseline metric")
     else:
-        print(
-            f"- {f['eval']} / {f['metric']}: baseline={f['baseline']} current={f['current']} "
-            f"delta={f['delta']}"
-        )
+        if "variation_pct" in f:
+            print(
+                f"- {f['eval']} / {f['metric']}: baseline={f['baseline']} current={f['current']} "
+                f"variation={f['variation_pct']:.2f}%"
+            )
+        else:
+            print(
+                f"- {f['eval']} / {f['metric']}: baseline={f['baseline']} current={f['current']} "
+                f"delta={f['delta']}"
+            )
 raise SystemExit(1)
