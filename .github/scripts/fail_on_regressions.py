@@ -9,21 +9,26 @@ failures = json.loads(failures_path.read_text(encoding="utf-8"))
 if not failures:
     raise SystemExit(0)
 
-print("Regressions > 5% detected:")
+print("Regressions detected:")
+
 for f in failures:
+    eval_name = f.get("eval")
+    metric = f.get("metric")
+
     if f.get("reason") == "no_current_metrics":
-        print(f"- {f['eval']}: no current metrics")
-    elif f.get("reason") == "no_baseline":
-        print(f"- {f['eval']} / {f['metric']}: no baseline metric")
-    else:
-        if "variation_pct" in f:
-            print(
-                f"- {f['eval']} / {f['metric']}: baseline={f['baseline']} current={f['current']} "
-                f"variation={f['variation_pct']:.2f}%"
-            )
-        else:
-            print(
-                f"- {f['eval']} / {f['metric']}: baseline={f['baseline']} current={f['current']} "
-                f"delta={f['delta']}"
-            )
+        print(f"- {eval_name}: no current metrics")
+        continue
+
+    if f.get("reason") == "no_baseline":
+        print(f"- {eval_name} / {metric}: no baseline metric")
+        continue
+
+    base = f.get("baseline")
+    cur = f.get("current")
+    reason = f.get("reason", "")
+
+    print(
+        f"- {eval_name} / {metric}: baseline={base} current={cur} -> {reason}"
+    )
+
 raise SystemExit(1)
