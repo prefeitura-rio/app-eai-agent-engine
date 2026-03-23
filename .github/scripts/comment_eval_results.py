@@ -123,8 +123,12 @@ def is_regression(metric, base_val, cur_val):
     # -------------------------
     # MÉTRICAS PADRÃO (0–1)
     # -------------------------
-    if delta < DEFAULT_SCORE_DELTA:
-        return True, f"delta {delta:.2f} < {DEFAULT_SCORE_DELTA}"
+    if metric in LOWER_IS_BETTER:
+        if delta > abs(DEFAULT_SCORE_DELTA):
+            return True, f"delta {delta:.2f} > {abs(DEFAULT_SCORE_DELTA)}"
+    else:
+        if delta < DEFAULT_SCORE_DELTA:
+            return True, f"delta {delta:.2f} < {DEFAULT_SCORE_DELTA}"
 
     return False, None
 
