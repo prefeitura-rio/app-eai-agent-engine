@@ -204,9 +204,88 @@ jobs:
         run: |
           echo "ts=$(date +%s)" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare eval retry helper
+        if: steps.pr.outputs.should_run == 'true'
+        run: |
+          cat > "$RUNNER_TEMP/run_eval_with_prompt_retry.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          eval_name="$1"
+          run_mode="$2"
+          script_path="$3"
+          shift 3
+
+          max_prompt_retries="${PROMPT_FETCH_MAX_RETRIES:-3}"
+          retry_sleep_seconds="${PROMPT_FETCH_RETRY_SLEEP_SECONDS:-2}"
+          error_file="${PROMPT_ERROR_FILE:-$RUNNER_TEMP/system_prompt_error.txt}"
+
+          rm -f "$error_file"
+
+          for attempt in $(seq 1 "$max_prompt_retries"); do
+            log_file="$RUNNER_TEMP/${eval_name}_${run_mode}_prompt_attempt_${attempt}.log"
+            pipe_file="$RUNNER_TEMP/${eval_name}_${run_mode}_prompt_attempt_${attempt}.pipe"
+            prompt_error_line=""
+            killed_for_prompt_error=0
+
+            echo "Prompt fetch attempt ${attempt}/${max_prompt_retries}: ${eval_name} (${run_mode})"
+
+            rm -f "$pipe_file"
+            mkfifo "$pipe_file"
+
+            set +e
+            stdbuf -oL -eL uv run "$script_path" "$@" > "$pipe_file" 2>&1 &
+            cmd_pid=$!
+
+            while IFS= read -r line; do
+              echo "$line"
+              printf '%s\n' "$line" >> "$log_file"
+
+              if [ "$killed_for_prompt_error" -eq 0 ] && printf '%s\n' "$line" | grep -Eq 'Erro ao obter system prompt via API|Falha ao obter system prompt via API após'; then
+                prompt_error_line="$line"
+                killed_for_prompt_error=1
+                kill "$cmd_pid" 2>/dev/null || true
+              fi
+            done < "$pipe_file"
+
+            wait "$cmd_pid"
+            cmd_status=$?
+            set -e
+            rm -f "$pipe_file"
+
+            if [ -n "$prompt_error_line" ]; then
+              {
+                echo "Eval: $eval_name"
+                echo "Execução: $run_mode"
+                echo "Tentativa: $attempt/$max_prompt_retries"
+                echo "Erro: $prompt_error_line"
+              } > "$error_file"
+
+              if [ "$attempt" -lt "$max_prompt_retries" ]; then
+                echo "System prompt indisponível. Tentando novamente em ${retry_sleep_seconds}s..."
+                sleep "$retry_sleep_seconds"
+                continue
+              fi
+
+              echo "System prompt indisponível após ${max_prompt_retries} tentativas."
+              exit 1
+            fi
+
+            if [ "$cmd_status" -ne 0 ]; then
+              exit "$cmd_status"
+            fi
+
+            rm -f "$error_file"
+            exit 0
+          done
+          EOF
+
+          chmod +x "$RUNNER_TEMP/run_eval_with_prompt_retry.sh"
+
       - name: Run evals baseline (no reasoning engine)
         if: steps.pr.outputs.should_run == 'true' && steps.prev_check.outputs.has_prev_experiments != 'true'
         run: |
+          set -euo pipefail
           EVALS="${{ steps.evals_select.outputs.evals }}"
           IFS=',' read -ra ITEMS <<< "$EVALS"
           for eval_name in "${ITEMS[@]}"; do
@@ -220,7 +299,10 @@ jobs:
             esac
             for i in 1 2 3; do
               echo "Run $i/3: $eval_name (baseline)"
-              uv run "src/evaluations/core/experiments/eai/$script"
+              "$RUNNER_TEMP/run_eval_with_prompt_retry.sh" \
+                "$eval_name" \
+                "baseline_run_${i}" \
+                "src/evaluations/core/experiments/eai/$script"
               if [ "$i" -lt 3 ]; then
                 sleep "${EVAL_SLEEP_SECONDS:-1}"
               fi
@@ -237,6 +319,7 @@ jobs:
       - name: Run evals current (with reasoning engine)
         if: steps.pr.outputs.should_run == 'true'
         run: |
+          set -euo pipefail
           EVALS="${{ steps.evals_select.outputs.evals }}"
           IFS=',' read -ra ITEMS <<< "$EVALS"
           for eval_name in "${ITEMS[@]}"; do
@@ -250,7 +333,10 @@ jobs:
             esac
             for i in 1 2 3; do
               echo "Run $i/3: $eval_name (current)"
-              uv run "src/evaluations/core/experiments/eai/$script" \
+              "$RUNNER_TEMP/run_eval_with_prompt_retry.sh" \
+                "$eval_name" \
+                "current_run_${i}" \
+                "src/evaluations/core/experiments/eai/$script" \
                 --reasoning-engine-id "${REASONING_ENGINE_ID}"
               if [ "$i" -lt 3 ]; then
                 sleep "${EVAL_SLEEP_SECONDS:-1}"
@@ -327,9 +413,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
         run: |
+          ERROR_FILE="$RUNNER_TEMP/system_prompt_error.txt"
+          COMMENT_FILE="$RUNNER_TEMP/eval_failure_comment.md"
+
+          if [ -f "$ERROR_FILE" ]; then
+            {
+              echo "❌ **Evals interrompidos**."
+              echo
+              echo "Falha ao obter o system prompt via API após 3 tentativas."
+              echo
+              echo '```'
+              cat "$ERROR_FILE"
+              echo '```'
+              echo
+              echo "Veja os logs da action para mais detalhes."
+            } > "$COMMENT_FILE"
+          else
+            echo "❌ **Evals failed**. See the action logs for details." > "$COMMENT_FILE"
+          fi
+
           gh pr comment "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
-            --body "❌ **Evals failed**. See the action logs for details."
+            --body-file "$COMMENT_FILE"
 
       - name: Fail workflow on regressions > 5%
         if: steps.pr.outputs.should_run == 'true'
