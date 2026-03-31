@@ -198,13 +198,88 @@ jobs:
           python3 -c "import json; json.load(open('/tmp/gcp-key.json')); print('Key JSON: valid')"
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> $GITHUB_ENV
 
+      - name: Prepare deploy retry helper
+        run: |
+          cat > "$RUNNER_TEMP/run_deploy_with_prompt_retry.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          max_prompt_retries="${PROMPT_FETCH_MAX_RETRIES:-3}"
+          retry_sleep_seconds="${PROMPT_FETCH_RETRY_SLEEP_SECONDS:-2}"
+          error_file="${PROMPT_ERROR_FILE:-$RUNNER_TEMP/system_prompt_error.txt}"
+          deploy_output_file="${DEPLOY_OUTPUT_FILE:-/tmp/deploy_output.txt}"
+
+          rm -f "$error_file" "$deploy_output_file"
+
+          for attempt in $(seq 1 "$max_prompt_retries"); do
+            log_file="$RUNNER_TEMP/deploy_prompt_attempt_${attempt}.log"
+            pipe_file="$RUNNER_TEMP/deploy_prompt_attempt_${attempt}.pipe"
+            prompt_error_line=""
+            killed_for_prompt_error=0
+
+            echo "Deploy prompt fetch attempt ${attempt}/${max_prompt_retries}"
+
+            rm -f "$pipe_file"
+            mkfifo "$pipe_file"
+
+            set +e
+            stdbuf -oL -eL uv run python src/deploy.py > "$pipe_file" 2>&1 &
+            cmd_pid=$!
+
+            while IFS= read -r line; do
+              echo "$line"
+              printf '%s\n' "$line" >> "$log_file"
+              printf '%s\n' "$line" >> "$deploy_output_file"
+
+              if [ "$killed_for_prompt_error" -eq 0 ] && printf '%s\n' "$line" | grep -Eq 'Erro ao obter system prompt via API|Falha ao obter system prompt via API após'; then
+                prompt_error_line="$line"
+                killed_for_prompt_error=1
+                kill "$cmd_pid" 2>/dev/null || true
+              fi
+            done < "$pipe_file"
+
+            wait "$cmd_pid"
+            cmd_status=$?
+            set -e
+            rm -f "$pipe_file"
+
+            if [ -n "$prompt_error_line" ]; then
+              {
+                echo "Fluxo: deploy"
+                echo "Tentativa: $attempt/$max_prompt_retries"
+                echo "Erro: $prompt_error_line"
+              } > "$error_file"
+
+              if [ "$attempt" -lt "$max_prompt_retries" ]; then
+                echo "System prompt indisponível. Tentando novamente em ${retry_sleep_seconds}s..."
+                rm -f "$deploy_output_file"
+                sleep "$retry_sleep_seconds"
+                continue
+              fi
+
+              echo "System prompt indisponível após ${max_prompt_retries} tentativas."
+              exit 1
+            fi
+
+            if [ "$cmd_status" -ne 0 ]; then
+              exit "$cmd_status"
+            fi
+
+            rm -f "$error_file"
+            exit 0
+          done
+          EOF
+
+          chmod +x "$RUNNER_TEMP/run_deploy_with_prompt_retry.sh"
+
       # -----------------------------------------------------------------------
       # Deploy — capture REASONING_ENGINE_ID from stdout.
       # -----------------------------------------------------------------------
       - name: Deploy agent
         id: deploy
         run: |
-          uv run python src/deploy.py | tee /tmp/deploy_output.txt
+          set -euo pipefail
+          "$RUNNER_TEMP/run_deploy_with_prompt_retry.sh"
           ENGINE_ID=$(grep '^REASONING_ENGINE_ID=' /tmp/deploy_output.txt | cut -d= -f2)
           echo "engine_id=$ENGINE_ID" >> $GITHUB_OUTPUT
           if [ -z "$ENGINE_ID" ]; then
@@ -261,6 +336,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          ERROR_FILE="$RUNNER_TEMP/system_prompt_error.txt"
+          COMMENT_FILE="$RUNNER_TEMP/deploy_failure_comment.md"
+
+          if [ -f "$ERROR_FILE" ]; then
+            {
+              echo "❌ **Deployment interrompido** para **${{ steps.parse.outputs.env }}**."
+              echo
+              echo "Falha ao obter o system prompt via API após 3 tentativas."
+              echo
+              echo '```'
+              cat "$ERROR_FILE"
+              echo '```'
+              echo
+              echo "[View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            } > "$COMMENT_FILE"
+          else
+            echo "❌ Deployment to **${{ steps.parse.outputs.env }}** failed. [View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" > "$COMMENT_FILE"
+          fi
+
           gh pr comment "${{ github.event.issue.number }}" \
             --repo "${{ github.repository }}" \
-            --body "❌ Deployment to **${{ steps.parse.outputs.env }}** failed. [View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            --body-file "$COMMENT_FILE"
