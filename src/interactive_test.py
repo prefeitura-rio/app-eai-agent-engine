@@ -273,6 +273,8 @@ async def interactive_chat(use_local=False):
 
     print(f"🤖 EAI {agent_name} Interactive Chat")
     print("=" * 60)
+    if not use_local:
+        print(f"🌐 Using Remote Agent | reasoning_engine_id: {env.REASONING_ENGINE_ID}")
     print("Type 'quit' to exit, 'help' for commands")
     print()
 
