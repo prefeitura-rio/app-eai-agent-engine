@@ -242,7 +242,7 @@ jobs:
               printf '%s\n' "$line" >> "$log_file"
 
               if [ "$killed_for_prompt_error" -eq 0 ] && printf '%s\n' "$line" | grep -Eq 'Erro ao obter system prompt via API|Falha ao obter system prompt via API após'; then
-                prompt_error_line="$line"
+                prompt_error_line="$(printf '%s\n' "$line" | perl -pe 's/\e\[[0-9;]*[[:alpha:]]//g')"
                 killed_for_prompt_error=1
                 kill "$cmd_pid" 2>/dev/null || true
               fi
