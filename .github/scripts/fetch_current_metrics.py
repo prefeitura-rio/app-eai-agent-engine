@@ -76,8 +76,8 @@ def count_general_errors(experiment_runs):
     for run in experiment_runs or []:
         one_turn = run.get("one_turn_analysis") or {}
         multi_turn = run.get("multi_turn_analysis") or {}
-        total += int(bool(one_turn.get("has_error")))
-        total += int(bool(multi_turn.get("has_error")))
+        if one_turn.get("has_error") or multi_turn.get("has_error"):
+            total += 1
     return total
 
 
@@ -86,6 +86,8 @@ def count_metric_errors(experiment_runs):
     for run in experiment_runs or []:
         for analysis_key in ["one_turn_analysis", "multi_turn_analysis"]:
             analysis = run.get(analysis_key) or {}
+            if analysis.get("has_error"):
+                continue
             for evaluation in analysis.get("evaluations", []) or []:
                 if evaluation.get("has_error"):
                     counts[evaluation.get("metric_name", "unknown")] += 1
@@ -94,6 +96,7 @@ def count_metric_errors(experiment_runs):
 
 by_dataset_metric_runs = defaultdict(list)
 by_dataset_general_errors = defaultdict(int)
+by_dataset_total_examples = defaultdict(int)
 by_dataset_metric_errors = defaultdict(lambda: [dict(), dict(), dict()])
 by_dataset_run_index = defaultdict(int)
 
@@ -106,12 +109,14 @@ for row in rows:
     if metrics:
         by_dataset_metric_runs[dataset_name].append(metrics)
 
-    by_dataset_general_errors[dataset_name] += count_general_errors(row.get("runs", []))
+    experiment_runs = row.get("runs", []) or []
+    by_dataset_general_errors[dataset_name] += count_general_errors(experiment_runs)
+    by_dataset_total_examples[dataset_name] += len(experiment_runs)
 
     run_index = by_dataset_run_index[dataset_name]
     if run_index < 3:
         by_dataset_metric_errors[dataset_name][run_index] = count_metric_errors(
-            row.get("runs", [])
+            experiment_runs
         )
         by_dataset_run_index[dataset_name] += 1
 
@@ -120,6 +125,7 @@ payload = {
     "averages": {k: avg_metrics(v) for k, v in by_dataset_metric_runs.items()},
     "metric_errors_by_run": dict(by_dataset_metric_errors),
     "general_errors": dict(by_dataset_general_errors),
+    "total_examples": dict(by_dataset_total_examples),
 }
 
 os.makedirs("tmp", exist_ok=True)

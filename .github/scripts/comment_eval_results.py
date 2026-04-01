@@ -53,6 +53,7 @@ def load_bq_metrics(path: Path):
     averages = {}
     metric_errors_by_run = {}
     general_errors = {}
+    total_examples = {}
 
     for dataset_name, metrics in data.get("averages", {}).items():
         eval_name = DATASET_TO_EVAL.get(dataset_name, "unknown")
@@ -72,10 +73,15 @@ def load_bq_metrics(path: Path):
         eval_name = DATASET_TO_EVAL.get(dataset_name, "unknown")
         general_errors[eval_name] = int(error_count)
 
+    for dataset_name, example_count in data.get("total_examples", {}).items():
+        eval_name = DATASET_TO_EVAL.get(dataset_name, "unknown")
+        total_examples[eval_name] = int(example_count)
+
     return {
         "averages": averages,
         "metric_errors_by_run": metric_errors_by_run,
         "general_errors": general_errors,
+        "total_examples": total_examples,
     }
 
 
@@ -159,6 +165,12 @@ def metric_error_for_run(run_error_list, run_index, metric_name):
     return int((run_error_list[run_index] or {}).get(metric_name, 0))
 
 
+def general_error_rate_str(error_count, total_examples):
+    if total_examples <= 0:
+        return "NA"
+    return f"{(error_count / total_examples) * 100:.1f}%"
+
+
 # -------------------------
 # MAIN
 # -------------------------
@@ -170,6 +182,7 @@ current = current_data["averages"]
 baseline = baseline_data["averages"]
 current_metric_errors = current_data["metric_errors_by_run"]
 current_general_errors = current_data["general_errors"]
+current_total_examples = current_data["total_examples"]
 
 evals_selected = [
     e.strip() for e in os.environ.get("EVALS_SELECTED", "").split(",") if e.strip()
@@ -190,8 +203,12 @@ for eval_name in evals_selected:
     base = baseline.get(eval_name, {})
     run_errors = current_metric_errors.get(eval_name, [{}, {}, {}])
     general_errors = int(current_general_errors.get(eval_name, 0))
+    total_examples = int(current_total_examples.get(eval_name, 0))
+    general_error_rate = general_error_rate_str(general_errors, total_examples)
 
-    lines.append(f"**Eval {eval_name} | erros gerais v{current_version}: {general_errors}**\n")
+    lines.append(
+        f"**Eval {eval_name} | erros gerais v{current_version}: {general_errors} ({general_error_rate} dos {total_examples} exemplos)**\n"
+    )
     lines.append(
         f"| métrica | v{prev_version} | v{current_version} | delta | variação % | err r1 | err r2 | err r3 |"
     )
