@@ -224,7 +224,6 @@ def parse_agent_response(response, is_local=False, start_time=None):
                         print(f"      📋 Arguments: {json.dumps(tool_args, indent=8)}")
 
                 # Show AI content if any
-                # Show AI content if any
                 thinking_content = ""
                 final_content = ""
                 if content:
@@ -274,6 +273,8 @@ async def interactive_chat(use_local=False):
 
     print(f"🤖 EAI {agent_name} Interactive Chat")
     print("=" * 60)
+    if not use_local:
+        print(f"🌐 Using Remote Agent | reasoning_engine_id: {env.REASONING_ENGINE_ID}")
     print("Type 'quit' to exit, 'help' for commands")
     print()
 

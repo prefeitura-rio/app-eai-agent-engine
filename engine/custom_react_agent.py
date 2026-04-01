@@ -1,4 +1,5 @@
 import inspect
+import datetime
 from typing import (
     Any,
     Awaitable,
@@ -126,20 +127,50 @@ def _get_state_value(state: StateSchema, key: str, default: Any = None) -> Any:
 
 
 def _get_prompt_runnable(prompt: Optional[Prompt]) -> Runnable:
+    import datetime
+    
     prompt_runnable: Runnable
     if prompt is None:
         prompt_runnable = RunnableCallable(
             lambda state: _get_state_value(state, "messages"), name=PROMPT_RUNNABLE_NAME
         )
     elif isinstance(prompt, str):
-        _system_message: BaseMessage = SystemMessage(content=prompt)
+        def _create_timestamped_system_message(state) -> list[BaseMessage]:
+            # Create timestamp in Brazilian timezone
+            current_timestamp = datetime.datetime.now(
+                tz=datetime.timezone(datetime.timedelta(hours=-3))
+            ).strftime("%d-%m-%Y às %H:%M")
+            
+            # Add timestamp to the prompt
+            timestamped_content = f"Data e Horário: {current_timestamp}\n{prompt}"
+            _system_message = SystemMessage(content=timestamped_content)
+            
+            logger.info(f"[PROMPT DEBUG] Created timestamped system message: {current_timestamp}")
+            logger.info(f"[PROMPT DEBUG] Full system message: {timestamped_content[0:100]}...")
+            
+            return [_system_message] + _get_state_value(state, "messages")
+            
         prompt_runnable = RunnableCallable(
-            lambda state: [_system_message] + _get_state_value(state, "messages"),
+            _create_timestamped_system_message,
             name=PROMPT_RUNNABLE_NAME,
         )
     elif isinstance(prompt, SystemMessage):
+        def _create_timestamped_system_message_from_obj(state) -> list[BaseMessage]:
+            # Create timestamp in Brazilian timezone
+            current_timestamp = datetime.datetime.now(
+                tz=datetime.timezone(datetime.timedelta(hours=-3))
+            ).strftime("%d-%m-%Y às %H:%M")
+            
+            # Add timestamp to the existing SystemMessage content
+            timestamped_content = f"Data e Horário: {current_timestamp}\n{prompt.content}"
+            timestamped_message = SystemMessage(content=timestamped_content, id=getattr(prompt, 'id', None))
+            
+            logger.info(f"[PROMPT DEBUG] Updated SystemMessage with timestamp: {current_timestamp}")
+            
+            return [timestamped_message] + _get_state_value(state, "messages")
+            
         prompt_runnable = RunnableCallable(
-            lambda state: [prompt] + _get_state_value(state, "messages"),
+            _create_timestamped_system_message_from_obj,
             name=PROMPT_RUNNABLE_NAME,
         )
     elif inspect.iscoroutinefunction(prompt):
