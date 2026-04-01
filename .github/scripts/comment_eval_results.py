@@ -49,7 +49,11 @@ DEFAULT_SCORE_DELTA = -0.05
 def load_bq_metrics(path: Path):
     with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
+
     averages = {}
+    metric_errors_by_run = {}
+    general_errors = {}
+
     for dataset_name, metrics in data.get("averages", {}).items():
         eval_name = DATASET_TO_EVAL.get(dataset_name, "unknown")
         rounded = {}
@@ -59,7 +63,20 @@ def load_bq_metrics(path: Path):
             else:
                 rounded[key] = val
         averages[eval_name] = rounded
-    return averages
+
+    for dataset_name, run_errors in data.get("metric_errors_by_run", {}).items():
+        eval_name = DATASET_TO_EVAL.get(dataset_name, "unknown")
+        metric_errors_by_run[eval_name] = run_errors
+
+    for dataset_name, error_count in data.get("general_errors", {}).items():
+        eval_name = DATASET_TO_EVAL.get(dataset_name, "unknown")
+        general_errors[eval_name] = int(error_count)
+
+    return {
+        "averages": averages,
+        "metric_errors_by_run": metric_errors_by_run,
+        "general_errors": general_errors,
+    }
 
 
 def pct_change_value(baseline, current):
@@ -75,7 +92,9 @@ def pct_change_str(baseline, current):
 
 
 def is_regression(metric, base_val, cur_val):
-    delta = cur_val - base_val
+    # Compare using the same 2-decimal precision shown in the report so
+    # threshold-edge values do not fail because of floating-point noise.
+    delta = round(cur_val - base_val, 2)
 
     # -------------------------
     # REGRA CRÍTICA (casos especiais)
@@ -95,6 +114,7 @@ def is_regression(metric, base_val, cur_val):
         variation = pct_change_value(base_val, cur_val)
         if variation is None:
             return False, None
+        variation = round(variation, 2)
 
         if metric in LOWER_IS_BETTER:
             if variation > PERCENT_THRESHOLD:
@@ -133,12 +153,23 @@ def is_regression(metric, base_val, cur_val):
     return False, None
 
 
+def metric_error_for_run(run_error_list, run_index, metric_name):
+    if run_index >= len(run_error_list):
+        return 0
+    return int((run_error_list[run_index] or {}).get(metric_name, 0))
+
+
 # -------------------------
 # MAIN
 # -------------------------
 
-current = load_bq_metrics(Path("tmp/bq_current_metrics.json"))
-baseline = load_bq_metrics(Path("tmp/bq_prev_metrics.json"))
+current_data = load_bq_metrics(Path("tmp/bq_current_metrics.json"))
+baseline_data = load_bq_metrics(Path("tmp/bq_prev_metrics.json"))
+
+current = current_data["averages"]
+baseline = baseline_data["averages"]
+current_metric_errors = current_data["metric_errors_by_run"]
+current_general_errors = current_data["general_errors"]
 
 evals_selected = [
     e.strip() for e in os.environ.get("EVALS_SELECTED", "").split(",") if e.strip()
@@ -157,21 +188,31 @@ failures = []
 for eval_name in evals_selected:
     cur = current.get(eval_name, {})
     base = baseline.get(eval_name, {})
+    run_errors = current_metric_errors.get(eval_name, [{}, {}, {}])
+    general_errors = int(current_general_errors.get(eval_name, 0))
 
-    lines.append(f"**Eval {eval_name}**\n")
-    lines.append(f"| métrica | v{prev_version} | v{current_version} | delta | variação % |")
-    lines.append("|---|---|---|---|---|")
+    lines.append(f"**Eval {eval_name} | erros gerais v{current_version}: {general_errors}**\n")
+    lines.append(
+        f"| métrica | v{prev_version} | v{current_version} | delta | variação % | err r1 | err r2 | err r3 |"
+    )
+    lines.append("|---|---|---|---|---|---|---|---|")
 
     if not cur:
-        lines.append("| _sem métricas_ | - | - | - | - |")
+        lines.append("| _sem métricas_ | - | - | - | - | - | - | - |")
         failures.append({"eval": eval_name, "reason": "no_current_metrics"})
+        lines.append("")
         continue
 
     for metric, cur_val in sorted(cur.items()):
         base_val = base.get(metric)
+        err_r1 = metric_error_for_run(run_errors, 0, metric)
+        err_r2 = metric_error_for_run(run_errors, 1, metric)
+        err_r3 = metric_error_for_run(run_errors, 2, metric)
 
         if base_val is None:
-            lines.append(f"| {metric} | NA | {cur_val} | NA | NA |")
+            lines.append(
+                f"| {metric} | NA | {cur_val} | NA | NA | {err_r1} | {err_r2} | {err_r3} |"
+            )
             failures.append({"eval": eval_name, "metric": metric, "reason": "no_baseline"})
             continue
 
@@ -183,11 +224,10 @@ for eval_name in evals_selected:
         )
 
         lines.append(
-            f"| {metric} | {base_val} | {cur_val} | {delta} | {variation_str} |"
+            f"| {metric} | {base_val} | {cur_val} | {delta} | {variation_str} | {err_r1} | {err_r2} | {err_r3} |"
         )
 
         is_fail, reason = is_regression(metric, base_val, cur_val)
-
         if is_fail:
             failures.append(
                 {
