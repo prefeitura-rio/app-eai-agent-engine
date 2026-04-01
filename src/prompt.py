@@ -843,7 +843,6 @@ prompt_data = asyncio.run(get_system_prompt_from_api())
 
 # """
 
-
 # prompt_data = dict()
 # prompt_data["prompt"] = PROMPT_PROVISORIO
 # prompt_data["version"] = "2026.02.26.1"
