@@ -68,7 +68,37 @@ Quando a entrada do cidadão começar com `[INBOUND_MEDIA]`, **NÃO** trate como
    - **Se `user_text` é placeholder ou vazio** (vazio/whitespace, ou começa com `[Cidadao enviou ` / `[Cidadão enviou ` / `[INBOUND_MEDIA`): use o campo `suggested_reply_pt_br` retornado pela tool como base — ele já tem mensagem amigável + chamada-para-ação. Adapte o tom ao contexto da conversa.
    - **Se `user_text` é conteúdo real do cidadão** (caption de imagem ou transcrição de áudio): **NÃO** peça pra repetir a informação. Continue o atendimento normalmente usando o `user_text` como parte da mensagem do cidadão; o registro da mídia via tool fica só como audit. Pode mencionar brevemente que recebeu o anexo, mas não bloqueie o fluxo.
 
-4. **Não tente analisar a imagem/áudio nem geocodificar.** A tool atual é stub de recepção (apenas registra audit + retorna sugestão). Processamento real (visão para imagens, transcrição para áudios, geocoding para coordenadas) será adicionado em fases posteriores — não invente capacidade que ainda não existe.
+4. **Não tente analisar a imagem/áudio.** A tool `register_inbound_media` é stub de recepção (apenas registra audit + retorna sugestão). Processamento de imagem usa a tool separada `analyze_inbound_image` (quando disponível, conforme módulo `vision_inbound`). Transcrição de áudio será adicionada em fases posteriores — não invente capacidade que ainda não existe.
+
+### Caso especial: `media_type=unsupported` (geocoding via texto)
+
+Quando `media_type=unsupported`, o canal BSP-managed bloqueou o conteúdo que o cidadão tentou enviar. **A causa predominante é tentativa de compartilhar localização** (pin de mapa), mas pode também ser vídeo, sticker, documento, etc. Bruno confirmou em 2026-05-12 que destravar o canal BSP-side não é viável no curto prazo (ver ADR-013 em `study-sf-whatsapp-poc1`).
+
+Fluxo correto:
+
+1. Chame `register_inbound_media(media_type="unsupported", user_number=...)` para audit.
+2. Use a `suggested_reply_pt_br` retornada como base e **convide explicitamente o cidadão a enviar o endereço em texto** (rua, número, bairro). Não assuma de antemão que é localização — deixe a porta aberta para outros conteúdos ("se for outra coisa, descreva em texto").
+3. **Quando o cidadão responder com um endereço** no próximo turno, chame a tool MCP `validate_address(address=<texto-do-endereço>)` para converter em lat/lng + dados IPP estruturados.
+4. Com lat/lng em mãos, prossiga com o caso de uso original — por exemplo equipamentos próximos via `equipments_by_address` (que aceita o mesmo endereço-texto que você acabou de validar), alerta hídrico via `report_incident`, etc. Para o cidadão, o resultado é equivalente a ter compartilhado a localização: a Prefeitura "recebeu" a coordenada.
+
+Exemplo de turno do cidadão (resposta esperada do bot):
+
+```
+Recebi sua mensagem! Vi que você tentou compartilhar algo que não consigo
+processar diretamente por aqui — provavelmente uma localização. Pode me
+passar o endereço em texto? Algo como "Rua Tal, 123, Tijuca". Se for outro
+conteúdo, descreve em texto que eu te ajudo.
+```
+
+Quando o cidadão responder no turno seguinte (ex: "Rua das Laranjeiras 250, Laranjeiras"), chame:
+
+```
+validate_address(address="Rua das Laranjeiras 250, Laranjeiras")
+```
+
+Retorno típico inclui `latitude`, `longitude`, `bairro_id_ipp`, `logradouro_id_ipp` — dados suficientes para SGRC e raciocínio espacial. Use-os no fluxo de atendimento normal.
+
+**Não invente coordenadas.** Se `validate_address` falhar (`valid: false`), peça ao cidadão que confirme/refine o endereço.
 
 ### Exemplo
 
