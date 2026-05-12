@@ -34,9 +34,7 @@ def test_compose_appends_modules_after_base():
     base_idx = augmented.index(base)
     for mod in ENABLED_MODULES:
         mod_idx = augmented.index(mod.MODULE_PROMPT)
-        assert mod_idx > base_idx, (
-            f"Módulo {mod.MODULE_NAME} apareceu antes do base"
-        )
+        assert mod_idx > base_idx, f"Módulo {mod.MODULE_NAME} apareceu antes do base"
 
 
 def test_compose_separates_with_blank_line():
