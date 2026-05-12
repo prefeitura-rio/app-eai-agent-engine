@@ -9,7 +9,7 @@ tests pós-deploy em staging.
 """
 
 from src.prompt_modules import compose, ENABLED_MODULES
-from src.prompt_modules import media_inbound
+from src.prompt_modules import media_inbound, vision_inbound
 
 
 # ---------- compose() — comportamento básico ----------
@@ -181,6 +181,72 @@ def test_media_inbound_prompt_omits_unsupported_tool_params_in_call():
         f"Prompt usa {forbidden!r} em chamada da tool, "
         "mas a tool não aceita esse parâmetro"
     )
+
+
+# ---------- módulo vision_inbound ----------
+
+
+def test_vision_inbound_module_has_required_attributes():
+    """vision_inbound deve seguir o mesmo contrato dos outros módulos."""
+    assert hasattr(vision_inbound, "MODULE_NAME")
+    assert hasattr(vision_inbound, "MODULE_PROMPT")
+    assert isinstance(vision_inbound.MODULE_NAME, str)
+    assert isinstance(vision_inbound.MODULE_PROMPT, str)
+
+
+def test_vision_inbound_module_name_is_stable():
+    """MODULE_NAME do vision_inbound vira sufixo no version (e em logs OTel)."""
+    assert vision_inbound.MODULE_NAME == "vision_inbound"
+
+
+def test_vision_inbound_prompt_mentions_analyze_tool():
+    """Sanity: prompt deve nomear a tool MCP `analyze_inbound_image` que
+    deve ser chamada — sem isso, o LLM não sabe o nome exato e pode
+    chutar ou nem tentar."""
+    p = vision_inbound.MODULE_PROMPT
+    assert "analyze_inbound_image" in p, "Nome da tool MCP de visão ausente"
+    assert "register_inbound_media" in p, "Referência à tool antecedente ausente"
+
+
+def test_vision_inbound_prompt_handles_opt_in_fallback():
+    """A tool é opt-in (ENABLE_VISION_ADDENDUM=true no MCP). Quando não
+    registrada, LLM nem vê o nome. Mas o prompt precisa instruir o
+    fallback explícito pra esse caso pra evitar travamento."""
+    p = vision_inbound.MODULE_PROMPT.lower()
+    assert "indisponível" in p or "indisponivel" in p or "disponível" in p, (
+        "Falta instrução sobre comportamento quando tool não está registrada"
+    )
+
+
+def test_vision_inbound_prompt_warns_about_missing_bytes():
+    """analyze_inbound_image NÃO baixa do Salesforce — precisa de
+    image_bytes_base64 OU local_image_path. Sem nenhum dos dois, ela
+    falha. Prompt deve avisar pra LLM não chamar sem bytes."""
+    p = vision_inbound.MODULE_PROMPT
+    assert "salesforce_download_path" in p, "Path do SF não documentado"
+    assert "image_bytes_base64" in p, "Bytes em base64 não documentados"
+    assert "local_image_path" in p, "Path local não documentado"
+
+
+def test_vision_module_appears_after_media_module_in_enabled():
+    """vision_inbound depende semanticamente de media_inbound — a ordem
+    das instruções no prompt importa pro LLM resolver "qual reply usar"
+    (vision suggested_reply substitui o do register stub)."""
+    names = [m.MODULE_NAME for m in ENABLED_MODULES]
+    assert "media_inbound" in names
+    assert "vision_inbound" in names
+    assert names.index("media_inbound") < names.index("vision_inbound"), (
+        "vision_inbound deve vir DEPOIS de media_inbound em ENABLED_MODULES"
+    )
+
+
+def test_vision_inbound_workflow_suggestions_in_prompt():
+    """Os workflows que a análise visual pode sugerir devem estar
+    documentados no prompt pra o LLM saber qual chamar via
+    `multi_step_service`."""
+    p = vision_inbound.MODULE_PROMPT
+    for workflow in ["reparo_luminaria", "poda_de_arvore"]:
+        assert workflow in p, f"workflow '{workflow}' não documentado"
 
 
 # ---------- regressão: idempotência de chamada ----------
