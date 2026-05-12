@@ -1,4 +1,5 @@
 from src.config import env
+from src.prompt_modules import compose as compose_modules
 from loguru import logger
 import httpx
 import asyncio
@@ -45,7 +46,31 @@ async def get_system_prompt_from_api(agent_type: str = "agentic_search") -> dict
         }
 
 
-prompt_data = asyncio.run(get_system_prompt_from_api())
+def _load_composed_prompt_data() -> dict:
+    """Busca o prompt base via API e aplica os módulos enabled em código.
+
+    Encapsula a composição em função pra (1) facilitar testes que precisam
+    injetar prompt base stub via monkeypatch sem mexer no estado de módulo,
+    (2) deixar a intenção explícita no top-level.
+
+    Returns:
+        dict no mesmo schema que ``get_system_prompt_from_api`` retorna
+        (``{"prompt": str, "version": str}``), mas com ``prompt`` e
+        ``version`` aumentados pelos módulos de ``src.prompt_modules``.
+    """
+    base = asyncio.run(get_system_prompt_from_api())
+    augmented_prompt, augmented_version = compose_modules(
+        base["prompt"], base["version"]
+    )
+    if augmented_version != base["version"]:
+        logger.info(
+            f"Prompt composto com módulos: version base={base['version']} "
+            f"→ augmented={augmented_version} (delta+{len(augmented_prompt) - len(base['prompt'])} chars)"
+        )
+    return {**base, "prompt": augmented_prompt, "version": augmented_version}
+
+
+prompt_data = _load_composed_prompt_data()
 
 # PROMPT_PROVISORIO = """
 # # Persona, Tom e Estilo de Comunicação
