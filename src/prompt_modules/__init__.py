@@ -30,19 +30,21 @@ específicas que devem viver ao lado do código de tools.
 
 from typing import Tuple
 
-from src.prompt_modules import media_inbound, vision_inbound
+from src.prompt_modules import audio_inbound, media_inbound, vision_inbound
 
 # Ordem importa — define a sequência em que cada módulo aparece no prompt
 # final. Pra desabilitar um módulo, removê-lo desta lista (não comentar
 # import, pra evitar drift).
 #
-# vision_inbound depende semanticamente de media_inbound (refere o protocolo
-# do ``[INBOUND_MEDIA]`` definido lá), portanto vem DEPOIS. O suggested_reply
-# do analyze_inbound_image substitui o do register_inbound_media — a ordem
-# das instruções no prompt importa pro LLM resolver o "qual usar".
+# vision_inbound e audio_inbound dependem semanticamente de media_inbound
+# (referem o protocolo do ``[INBOUND_MEDIA]`` definido lá), portanto vêm
+# DEPOIS. O suggested_reply de analyze_inbound_image/_audio substitui o do
+# register_inbound_media — a ordem das instruções no prompt importa pro LLM
+# resolver o "qual usar".
 ENABLED_MODULES = [
     media_inbound,
     vision_inbound,
+    audio_inbound,
 ]
 
 

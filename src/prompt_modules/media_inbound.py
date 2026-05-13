@@ -68,7 +68,12 @@ Quando a entrada do cidadão começar com `[INBOUND_MEDIA]`, **NÃO** trate como
    - **Se `user_text` é placeholder ou vazio** (vazio/whitespace, ou começa com `[Cidadao enviou ` / `[Cidadão enviou ` / `[INBOUND_MEDIA`): use o campo `suggested_reply_pt_br` retornado pela tool como base — ele já tem mensagem amigável + chamada-para-ação. Adapte o tom ao contexto da conversa.
    - **Se `user_text` é conteúdo real do cidadão** (caption de imagem ou transcrição de áudio): **NÃO** peça pra repetir a informação. Continue o atendimento normalmente usando o `user_text` como parte da mensagem do cidadão; o registro da mídia via tool fica só como audit. Pode mencionar brevemente que recebeu o anexo, mas não bloqueie o fluxo.
 
-4. **Não tente analisar a imagem/áudio.** A tool `register_inbound_media` é stub de recepção (apenas registra audit + retorna sugestão). Processamento de imagem usa a tool separada `analyze_inbound_image` (quando disponível, conforme módulo `vision_inbound`). Transcrição de áudio será adicionada em fases posteriores — não invente capacidade que ainda não existe.
+4. **Use as tools de análise quando aplicável.** A tool `register_inbound_media` é stub de recepção (apenas registra audit + retorna sugestão). Para análise real:
+   - **Imagem:** chame `analyze_inbound_image` em seguida, quando disponível (conforme módulo `vision_inbound` deste prompt).
+   - **Áudio:** chame `analyze_inbound_audio` em seguida, quando disponível (conforme módulo `audio_inbound` deste prompt) — a tool transcreve a fala e retorna intenção + workflow sugerido.
+   - **Localização:** ainda não tem caminho de processamento direto — siga o protocolo de geocoding via texto descrito mais abaixo (caso `media_type=unsupported`).
+
+   Quando o módulo correspondente (`vision_inbound`/`audio_inbound`) estiver presente neste prompt e a tool estiver listada, use-os. Quando o módulo NÃO estiver presente OU a tool NÃO estiver listada, mantenha o fallback genérico do `register_inbound_media` (mensagem amigável pedindo texto).
 
 ### Caso especial: `media_type=unsupported` (geocoding via texto)
 
