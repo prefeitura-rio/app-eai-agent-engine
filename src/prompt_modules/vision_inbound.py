@@ -52,11 +52,19 @@ chamá-la ou não segue a árvore abaixo:
     (opt-in via ``ENABLE_VISION_ADDENDUM=true`` no MCP — se a tool não
     estiver listada, ela não está disponível).
 
-(b) Você tem acesso aos bytes da imagem em uma destas formas:
-    - ``image_bytes_base64`` no contexto da mensagem (modo produção
-      fase 2, quando Engine pré-baixar do Salesforce)
+(b) Você tem ao menos UMA destas fontes de bytes da imagem
+    (em ordem de preferência):
+
+    - ``salesforce_download_path`` no JSON do prefix ``[INBOUND_MEDIA]``
+      (campo ``media.download_path``). **Caminho preferido em produção**
+      — a tool autentica via OAuth Client Credentials e baixa direto do
+      Salesforce REST API, sem truncation de strings longas em tool
+      args.
+    - ``image_bytes_base64`` no contexto da mensagem (raro em produção
+      porque o LLM trunca strings >~10KB em tool args; útil só pra
+      testes manuais).
     - ``local_image_path`` no JSON do prefix ``[INBOUND_MEDIA]`` (modo
-      teste local com upload manual)
+      teste local com upload manual em ``/tmp``, ``IS_LOCAL=true``).
 
 **Se qualquer uma das 2 condições falhar, NÃO chame a tool.** Volte
 inteiramente ao protocolo do módulo "Recepção de mídia" — ele já trata
@@ -64,9 +72,10 @@ corretamente a distinção entre placeholder (use ``suggested_reply_pt_br``
 do registro) vs caption real (use o ``user_text`` como mensagem do
 cidadão, sem pedir pra repetir). Não há regressão nesse caminho.
 
-> ``salesforce_download_path`` sozinho NÃO basta — ``analyze_inbound_image``
-> não baixa do Salesforce. Chamar a tool sem ``image_bytes_base64`` nem
-> ``local_image_path`` causa erro/análise vazia; melhor pular.
+> Em produção, **sempre passe ``salesforce_download_path``** quando ele
+> estiver presente no prefix ``[INBOUND_MEDIA]``. A tool baixa bytes via
+> SF REST sem você precisar copiar string longa via args (que o modelo
+> tende a truncar).
 
 ### Quando AS DUAS condições passam, executar análise
 
@@ -76,7 +85,10 @@ cidadão, sem pedir pra repetir). Não há regressão nesse caminho.
    - ``file_extension``: do campo ``media.file_extension``
    - ``message_id``: do prefix se disponível (audit cross-ref)
    - ``content_version_id``: do campo ``media.content_version_id``
-   - ``image_bytes_base64`` OU ``local_image_path`` (pelo menos um)
+   - **PREFIRA** ``salesforce_download_path`` (do campo
+     ``media.download_path``) — tool faz download via SF REST sozinha.
+   - Fallbacks: ``image_bytes_base64`` ou ``local_image_path`` se
+     ``salesforce_download_path`` não estiver presente no prefix.
 
 2. **Usar a resposta da análise.** O retorno contém ``analysis`` com:
 
@@ -121,7 +133,7 @@ analyze_inbound_image(
     user_number="5521989091014",
     file_extension="jpg",
     content_version_id="0688800000Bgd3T",
-    image_bytes_base64="<bytes do contexto>",
+    salesforce_download_path="/services/data/v62.0/sobjects/ContentVersion/0688800000Bgd3T/VersionData",
 )
 ```
 
