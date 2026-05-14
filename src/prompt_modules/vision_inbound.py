@@ -55,11 +55,15 @@ chamá-la ou não segue a árvore abaixo:
 (b) Você tem ao menos UMA destas fontes de bytes da imagem
     (em ordem de preferência):
 
+    - ``meta_media_id`` no JSON do prefix ``[INBOUND_MEDIA]`` (campo
+      ``media.meta_media_id``). **Caminho canônico atual em produção
+      (ADR-017)** — cidadão veio via Meta webhook direto pro Mule.
+      A tool faz 2 GETs no Graph API (metadata + signed CDN URL) com
+      ``WA_TOKEN``, sem precisar do Salesforce.
     - ``salesforce_download_path`` no JSON do prefix ``[INBOUND_MEDIA]``
-      (campo ``media.download_path``). **Caminho preferido em produção**
-      — a tool autentica via OAuth Client Credentials e baixa direto do
-      Salesforce REST API, sem truncation de strings longas em tool
-      args.
+      (campo ``media.download_path``). Caminho UWC legacy — cidadão veio
+      via Salesforce UWC. A tool autentica via OAuth Client Credentials
+      e baixa direto do Salesforce REST API.
     - ``image_bytes_base64`` no contexto da mensagem (raro em produção
       porque o LLM trunca strings >~10KB em tool args; útil só pra
       testes manuais).
@@ -82,13 +86,26 @@ cidadão, sem pedir pra repetir). Não há regressão nesse caminho.
 1. **Chamar ``analyze_inbound_image``** logo após o ``register_inbound_media``:
 
    - ``user_number``: mesmo valor extraído do prefix ``[INBOUND_MEDIA]``
-   - ``file_extension``: do campo ``media.file_extension``
    - ``message_id``: do prefix se disponível (audit cross-ref)
-   - ``content_version_id``: do campo ``media.content_version_id``
-   - **PREFIRA** ``salesforce_download_path`` (do campo
-     ``media.download_path``) — tool faz download via SF REST sozinha.
-   - Fallbacks: ``image_bytes_base64`` ou ``local_image_path`` se
-     ``salesforce_download_path`` não estiver presente no prefix.
+   - **Caminho A — Meta webhook direto (ADR-017, canal canônico):**
+     quando o JSON ``media`` tem ``meta_media_id`` (cidadão veio via
+     ``/meta/webhook`` no Mule), passe APENAS:
+     - ``meta_media_id``: do campo ``media.meta_media_id``
+     - ``file_extension`` (opcional): a tool deriva do MIME real
+       retornado pelo Graph API. Pode omitir.
+     Não passe ``content_version_id`` nem ``salesforce_download_path``
+     nesse caminho — não existem no payload Meta direto.
+   - **Caminho B — UWC legacy (Salesforce ContentVersion):** quando o
+     JSON ``media`` tem ``content_version_id``/``download_path`` (sem
+     ``meta_media_id``):
+     - ``file_extension``: do campo ``media.file_extension`` (obrigatório
+       aqui)
+     - ``content_version_id``: do campo ``media.content_version_id``
+     - **PREFIRA** ``salesforce_download_path`` (do campo
+       ``media.download_path``) — tool faz download via SF REST sozinha.
+     - Fallbacks: ``image_bytes_base64`` ou ``local_image_path`` se
+       ``salesforce_download_path`` não estiver presente no prefix.
+   - **Quando ambos presentes:** prefira Caminho A.
 
 2. **Usar a resposta da análise.** O retorno contém ``analysis`` com:
 
