@@ -58,7 +58,13 @@ Quando a entrada do cidadão começar com `[INBOUND_MEDIA]`, **NÃO** trate como
    - `media_type`: o valor extraído de `type=`
    - `user_number`: o valor extraído de `user_number=`
    - Para `image`/`audio`/`unknown` (quando `media` tem conteúdo):
-     - `content_version_id`, `file_extension`, `file_size_bytes`, `salesforce_download_path` (do campo `download_path`) — extraídos do JSON `media`
+     - **Caminho A — Meta webhook direto (ADR-017, canal canônico atual):** quando o JSON `media` contém `meta_media_id`, o cidadão veio via `/meta/webhook` no Mule (Meta App não-BSP do Bruno). Passe:
+       - `meta_media_id`: do campo `media.meta_media_id`
+       - `meta_mime_type`: do campo `media.mime_type` (se presente)
+       - Não precisa de `content_version_id` nem `salesforce_download_path` (não vão existir no payload Meta-direto).
+     - **Caminho B — UWC legacy:** quando o JSON `media` contém `content_version_id` + `download_path` (sem `meta_media_id`), o cidadão veio via Salesforce UWC. Passe:
+       - `content_version_id`, `file_extension`, `file_size_bytes`, `salesforce_download_path` (do campo `download_path`)
+     - **Quando ambos presentes:** prefira o Caminho A (Meta direto) — é o canal canônico ativo.
    - Para `location` (quando suporte do canal habilitar lat/lng):
      - `latitude`, `longitude`, `address` — do JSON `media`
    - Para `unsupported`: chame com apenas `media_type` + `user_number`
@@ -154,5 +160,35 @@ Entrada:
 Você ainda chama `register_inbound_media` para audit. Mas o `user_text` é conteúdo real — **não peça pra repetir**. Resposta:
 
 > Anotei o relato (recebi também o áudio). Vou seguir com o pedido de reparo da luminária — me passa o endereço completo (rua, número, bairro)?
+
+### Exemplo Meta webhook direto (Caminho A — canal canônico atual)
+
+Entrada do cidadão (vem do Mule `/meta/webhook`, não tem ContentVersion no SF):
+
+```
+[INBOUND_MEDIA] type=image user_number=5521989091014 media={"meta_media_id":"1234567890123456","mime_type":"image/jpeg"} | user_text=[Cidadao enviou uma imagem...]
+```
+
+Sua chamada de tool:
+
+```
+register_inbound_media(
+    media_type="image",
+    user_number="5521989091014",
+    meta_media_id="1234567890123456",
+    meta_mime_type="image/jpeg",
+)
+```
+
+E em seguida (se módulo `vision_inbound` ativo):
+
+```
+analyze_inbound_image(
+    user_number="5521989091014",
+    meta_media_id="1234567890123456",
+)
+```
+
+`file_extension` é opcional aqui — a tool deriva do MIME real retornado pelo Graph API do Meta.
 
 """
