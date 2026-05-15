@@ -16,7 +16,9 @@ jobs:
 
     name: Deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 45min cap = ~15min SDK poll + ~15min recovery list-loop (src/deploy.py)
+    # + ~15min headroom for non-deploy steps (checkout, secrets, comment).
+    timeout-minutes: 45
     permissions:
       contents: read
       pull-requests: write
