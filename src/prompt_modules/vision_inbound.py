@@ -83,29 +83,20 @@ cidadão, sem pedir pra repetir). Não há regressão nesse caminho.
 
 ### Quando AS DUAS condições passam, executar análise
 
-1. **Chamar ``analyze_inbound_image``** logo após o ``register_inbound_media``:
+1. **Chamar ``analyze_inbound_image``** logo após o ``register_inbound_media``. **OBRIGATÓRIO** — sem isso o cidadão recebe apenas o fallback genérico "não consigo analisar fotos" do `register_inbound_media`, que NÃO É a resposta desejada quando há foto real:
 
    - ``user_number``: mesmo valor extraído do prefix ``[INBOUND_MEDIA]``
    - ``message_id``: do prefix se disponível (audit cross-ref)
-   - **Caminho A — Meta webhook direto (ADR-017, canal canônico):**
-     quando o JSON ``media`` tem ``meta_media_id`` (cidadão veio via
-     ``/meta/webhook`` no Mule), passe APENAS:
-     - ``meta_media_id``: do campo ``media.meta_media_id``
-     - ``file_extension`` (opcional): a tool deriva do MIME real
-       retornado pelo Graph API. Pode omitir.
-     Não passe ``content_version_id`` nem ``salesforce_download_path``
-     nesse caminho — não existem no payload Meta direto.
-   - **Caminho B — UWC legacy (Salesforce ContentVersion):** quando o
-     JSON ``media`` tem ``content_version_id``/``download_path`` (sem
-     ``meta_media_id``):
-     - ``file_extension``: do campo ``media.file_extension`` (obrigatório
-       aqui)
-     - ``content_version_id``: do campo ``media.content_version_id``
-     - **PREFIRA** ``salesforce_download_path`` (do campo
-       ``media.download_path``) — tool faz download via SF REST sozinha.
-     - Fallbacks: ``image_bytes_base64`` ou ``local_image_path`` se
-       ``salesforce_download_path`` não estiver presente no prefix.
-   - **Quando ambos presentes:** prefira Caminho A.
+   - **SE o JSON ``media`` tem ``meta_media_id``** (canal canônico Meta direto, ADR-017):
+     - ``meta_media_id``: o valor (string) do campo ``media.meta_media_id``
+     - Não precisa de ``file_extension`` (tool deriva do MIME real do Graph API)
+   - **SE o JSON ``media`` tem ``content_version_id``** (UWC legacy):
+     - ``content_version_id``: ``media.content_version_id``
+     - ``file_extension``: ``media.file_extension``
+     - ``salesforce_download_path``: ``media.download_path``
+   - **SE ambos presentes**: passe ``meta_media_id`` (a tool prioriza esse caminho).
+
+   **REGRA CRÍTICA:** Quando o prefix `[INBOUND_MEDIA] type=image` chegar, você TEM que chamar `analyze_inbound_image` ALÉM de `register_inbound_media`. Chamar APENAS `register_inbound_media` resulta em resposta genérica "não consigo analisar fotos" — isso é regressão, não comportamento esperado.
 
 2. **Usar a resposta da análise.** O retorno contém ``analysis`` com:
 

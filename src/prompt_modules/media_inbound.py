@@ -53,21 +53,21 @@ Quando a entrada do cidadão começar com `[INBOUND_MEDIA]`, **NÃO** trate como
      - **Considere placeholder/sem-conteúdo-real** quando: (a) string vazia/só whitespace, (b) começa com `[Cidadao enviou ` (sem acento), (c) começa com `[Cidadão enviou ` (com acento), (d) começa com `[INBOUND_MEDIA`. Ignore para fins de raciocínio. (O Mule envia atualmente sem acento; o pattern com acento fica reservado pra evolução futura do gateway.)
      - Caso contrário, trate como mensagem real do cidadão associada à mídia.
 
-2. **Chame imediatamente a tool `register_inbound_media`** com:
+2. **Chame imediatamente a tool `register_inbound_media`** passando TODOS os campos disponíveis no JSON `media`. **OBRIGATÓRIO**:
 
    - `media_type`: o valor extraído de `type=`
    - `user_number`: o valor extraído de `user_number=`
-   - Para `image`/`audio`/`unknown` (quando `media` tem conteúdo):
-     - **Caminho A — Meta webhook direto (ADR-017, canal canônico atual):** quando o JSON `media` contém `meta_media_id`, o cidadão veio via `/meta/webhook` no Mule (Meta App não-BSP do Bruno). Passe:
-       - `meta_media_id`: do campo `media.meta_media_id`
-       - `meta_mime_type`: do campo `media.mime_type` (se presente)
-       - Não precisa de `content_version_id` nem `salesforce_download_path` (não vão existir no payload Meta-direto).
-     - **Caminho B — UWC legacy:** quando o JSON `media` contém `content_version_id` + `download_path` (sem `meta_media_id`), o cidadão veio via Salesforce UWC. Passe:
-       - `content_version_id`, `file_extension`, `file_size_bytes`, `salesforce_download_path` (do campo `download_path`)
-     - **Quando ambos presentes:** prefira o Caminho A (Meta direto) — é o canal canônico ativo.
-   - Para `location` (quando suporte do canal habilitar lat/lng):
-     - `latitude`, `longitude`, `address` — do JSON `media`
-   - Para `unsupported`: chame com apenas `media_type` + `user_number`
+   - **SE o JSON `media` contém `meta_media_id`** (caminho Meta direto, ADR-017):
+     - `meta_media_id`: o valor do campo `media.meta_media_id` (string, ex: `"864820469982533"`)
+     - `meta_mime_type`: o valor do campo `media.mime_type` se presente (ex: `"image/jpeg"`)
+   - **SE o JSON `media` contém `content_version_id`** (caminho UWC legacy):
+     - `content_version_id`, `file_extension`, `file_size_bytes` do JSON
+     - `salesforce_download_path`: do campo `media.download_path`
+   - **SE o JSON `media` contém ambos** (`meta_media_id` E `content_version_id`): passe os dois — tool prioriza `meta_media_id`.
+   - Para `location`: `latitude`, `longitude`, `address` do JSON `media`.
+   - Para `unsupported`: apenas `media_type` + `user_number`.
+
+   **CRITICAL: NÃO chame `register_inbound_media` apenas com `media_type` + `user_number` quando o JSON `media` tem conteúdo. Sempre extraia e passe os campos de identificação da mídia (`meta_media_id` OU `content_version_id`). Sem isso a tool não pode rastrear o arquivo e a análise downstream falha.**
 
 3. **Componha a resposta ao cidadão** levando em conta o conteúdo de `user_text` extraído no passo 1:
 
