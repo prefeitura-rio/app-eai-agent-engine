@@ -39,6 +39,12 @@ MCP_EXCLUDED_TOOLS = (
     else []
 )
 
+# Kill switch coarse pro TTS — desliga prompt module `audio_response` no
+# engine + tool `generate_audio_response` no MCP server. Default-on:
+# valor vazio/ausente OU qualquer != "false" ⇒ habilitado. Tem que
+# espelhar o que o MCP server lê.
+ENABLE_TTS_ADDENDUM = getenv_or_action("ENABLE_TTS_ADDENDUM", default="true")
+
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = getenv_or_action(
     "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
 )
