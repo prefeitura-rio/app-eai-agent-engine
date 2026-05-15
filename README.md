@@ -96,13 +96,40 @@ PSC enables private connectivity from Vertex AI Agent Engine to VPC resources:
 
 ## Usage
 
-**Local Testing:**
+### Local Testing
 
+Requires `psql` and `cloud-sql-proxy` installed, plus GCP credentials saved locally:
+- Staging: `<STAGING_CREDENTIALS_PATH>`
+- Production: `<PRODUCTION_CREDENTIALS_PATH>`
+
+If you don't have these files, ask Bruno.
+
+Also make sure `.env` is set with the correct variables for the target environment.
+
+**Staging — Terminal 1 (connect to DB):**
 ```bash
+export GOOGLE_APPLICATION_CREDENTIALS=<STAGING_CREDENTIALS_PATH>
+GOOGLE_APPLICATION_CREDENTIALS=<STAGING_CREDENTIALS_PATH> cloud-sql-proxy "rj-superapp-staging:us-central1:postgres"
+```
+
+**Production — Terminal 1 (connect to DB):**
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=<PRODUCTION_CREDENTIALS_PATH>
+GOOGLE_APPLICATION_CREDENTIALS=<PRODUCTION_CREDENTIALS_PATH> cloud-sql-proxy "rj-superapp:us-central1:postgres"
+```
+
+**Terminal 2 (run the test):**
+```bash
+# Run locally (no Reasoning Engine)
+uv run src/interactive_test.py local
+
+# Run with REASONING_ENGINE_ID from .env
 uv run src/interactive_test.py
 ```
 
-**Production:** Agent is invoked via the EAI Agent Gateway API.
+### Production
+
+Agent is invoked via the EAI Agent Gateway API.
 
 ## Troubleshooting
 
