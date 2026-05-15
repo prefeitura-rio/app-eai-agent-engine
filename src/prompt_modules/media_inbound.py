@@ -53,22 +53,33 @@ Quando a entrada do cidadão começar com `[INBOUND_MEDIA]`, **NÃO** trate como
      - **Considere placeholder/sem-conteúdo-real** quando: (a) string vazia/só whitespace, (b) começa com `[Cidadao enviou ` (sem acento), (c) começa com `[Cidadão enviou ` (com acento), (d) começa com `[INBOUND_MEDIA`. Ignore para fins de raciocínio. (O Mule envia atualmente sem acento; o pattern com acento fica reservado pra evolução futura do gateway.)
      - Caso contrário, trate como mensagem real do cidadão associada à mídia.
 
-2. **Chame imediatamente a tool `register_inbound_media`** com:
+2. **Chame imediatamente a tool `register_inbound_media`** passando TODOS os campos disponíveis no JSON `media`. **OBRIGATÓRIO**:
 
    - `media_type`: o valor extraído de `type=`
    - `user_number`: o valor extraído de `user_number=`
-   - Para `image`/`audio`/`unknown` (quando `media` tem conteúdo):
-     - `content_version_id`, `file_extension`, `file_size_bytes`, `salesforce_download_path` (do campo `download_path`) — extraídos do JSON `media`
-   - Para `location` (quando suporte do canal habilitar lat/lng):
-     - `latitude`, `longitude`, `address` — do JSON `media`
-   - Para `unsupported`: chame com apenas `media_type` + `user_number`
+   - **SE o JSON `media` contém `meta_media_id`** (caminho Meta direto, ADR-017):
+     - `meta_media_id`: o valor do campo `media.meta_media_id` (string, ex: `"864820469982533"`)
+     - `meta_mime_type`: o valor do campo `media.mime_type` se presente (ex: `"image/jpeg"`)
+   - **SE o JSON `media` contém `content_version_id`** (caminho UWC legacy):
+     - `content_version_id`, `file_extension`, `file_size_bytes` do JSON
+     - `salesforce_download_path`: do campo `media.download_path`
+   - **SE o JSON `media` contém ambos** (`meta_media_id` E `content_version_id`): passe os dois — tool prioriza `meta_media_id`.
+   - Para `location`: `latitude`, `longitude`, `address` do JSON `media`.
+   - Para `unsupported`: apenas `media_type` + `user_number`.
+
+   **CRITICAL: NÃO chame `register_inbound_media` apenas com `media_type` + `user_number` quando o JSON `media` tem conteúdo. Sempre extraia e passe os campos de identificação da mídia (`meta_media_id` OU `content_version_id`). Sem isso a tool não pode rastrear o arquivo e a análise downstream falha.**
 
 3. **Componha a resposta ao cidadão** levando em conta o conteúdo de `user_text` extraído no passo 1:
 
    - **Se `user_text` é placeholder ou vazio** (vazio/whitespace, ou começa com `[Cidadao enviou ` / `[Cidadão enviou ` / `[INBOUND_MEDIA`): use o campo `suggested_reply_pt_br` retornado pela tool como base — ele já tem mensagem amigável + chamada-para-ação. Adapte o tom ao contexto da conversa.
    - **Se `user_text` é conteúdo real do cidadão** (caption de imagem ou transcrição de áudio): **NÃO** peça pra repetir a informação. Continue o atendimento normalmente usando o `user_text` como parte da mensagem do cidadão; o registro da mídia via tool fica só como audit. Pode mencionar brevemente que recebeu o anexo, mas não bloqueie o fluxo.
 
-4. **Não tente analisar a imagem/áudio.** A tool `register_inbound_media` é stub de recepção (apenas registra audit + retorna sugestão). Processamento de imagem usa a tool separada `analyze_inbound_image` (quando disponível, conforme módulo `vision_inbound`). Transcrição de áudio será adicionada em fases posteriores — não invente capacidade que ainda não existe.
+4. **Use as tools de análise quando aplicável.** A tool `register_inbound_media` é stub de recepção (apenas registra audit + retorna sugestão). Para análise real:
+   - **Imagem:** chame `analyze_inbound_image` em seguida, quando disponível (conforme módulo `vision_inbound` deste prompt).
+   - **Áudio:** chame `analyze_inbound_audio` em seguida, quando disponível (conforme módulo `audio_inbound` deste prompt) — a tool transcreve a fala e retorna intenção + workflow sugerido.
+   - **Localização:** ainda não tem caminho de processamento direto — siga o protocolo de geocoding via texto descrito mais abaixo (caso `media_type=unsupported`).
+
+   Quando o módulo correspondente (`vision_inbound`/`audio_inbound`) estiver presente neste prompt e a tool estiver listada, use-os. Quando o módulo NÃO estiver presente OU a tool NÃO estiver listada, mantenha o fallback genérico do `register_inbound_media` (mensagem amigável pedindo texto).
 
 ### Caso especial: `media_type=unsupported` (geocoding via texto)
 
@@ -149,5 +160,35 @@ Entrada:
 Você ainda chama `register_inbound_media` para audit. Mas o `user_text` é conteúdo real — **não peça pra repetir**. Resposta:
 
 > Anotei o relato (recebi também o áudio). Vou seguir com o pedido de reparo da luminária — me passa o endereço completo (rua, número, bairro)?
+
+### Exemplo Meta webhook direto (Caminho A — canal canônico atual)
+
+Entrada do cidadão (vem do Mule `/meta/webhook`, não tem ContentVersion no SF):
+
+```
+[INBOUND_MEDIA] type=image user_number=5521989091014 media={"meta_media_id":"1234567890123456","mime_type":"image/jpeg"} | user_text=[Cidadao enviou uma imagem...]
+```
+
+Sua chamada de tool:
+
+```
+register_inbound_media(
+    media_type="image",
+    user_number="5521989091014",
+    meta_media_id="1234567890123456",
+    meta_mime_type="image/jpeg",
+)
+```
+
+E em seguida (se módulo `vision_inbound` ativo):
+
+```
+analyze_inbound_image(
+    user_number="5521989091014",
+    meta_media_id="1234567890123456",
+)
+```
+
+`file_extension` é opcional aqui — a tool deriva do MIME real retornado pelo Graph API do Meta.
 
 """
