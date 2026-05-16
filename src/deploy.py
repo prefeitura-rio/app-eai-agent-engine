@@ -136,9 +136,15 @@ def deploy(deploy_timestamp=None):
                     and "send_whatsapp_media" not in (env.MCP_EXCLUDED_TOOLS or [])
                     else []
                 )
+                + (
+                    ["send_whatsapp_flow", "send_whatsapp_buttons", "send_whatsapp_list"]
+                    if (env.ENABLE_INTERACTIVE_RESPONSE or "true").lower() == "false"
+                    else []
+                )
             ),
             "ENABLE_TTS_ADDENDUM": env.ENABLE_TTS_ADDENDUM,
             "ENABLE_MEDIA_RESPONSE": env.ENABLE_MEDIA_RESPONSE,
+            "ENABLE_INTERACTIVE_RESPONSE": env.ENABLE_INTERACTIVE_RESPONSE,
             "ERROR_INTERCEPTOR_URL": env.ERROR_INTERCEPTOR_URL,
             "ERROR_INTERCEPTOR_TOKEN": env.ERROR_INTERCEPTOR_TOKEN,
         },
