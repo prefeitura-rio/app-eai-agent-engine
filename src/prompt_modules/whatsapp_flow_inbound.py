@@ -33,13 +33,20 @@ MODULE_PROMPT = """\
 
 Quando a mensagem do cidadão começar com `[SYSTEM] O cidadão preencheu o formulário WhatsApp`, **NÃO** trate como texto normal e **NÃO** responda ao cidadão antes da tool call. Siga este protocolo:
 
-1. **Extraia o JSON `Dados recebidos`** da mensagem. Exemplo:
+1. **Extraia os dados do form.** Dois caminhos (cheque o segundo primeiro — ADR-024):
+   - **Preferencial (Mule v1.0.92+):** o webhook trazia `metadata.form_submission` estruturado com `{flow_name, service_name, flow_data, flow_token}`. Quando esse objeto vier, **use o `service_name` que ele indica diretamente** e use `flow_data` como payload. Pula direto pro passo 3.
+   - **Fallback (Mule pré-v1.0.92):** se metadata estruturado não está disponível, extraia o JSON do texto `[SYSTEM] O cidadão preencheu o formulário WhatsApp. Dados recebidos: {...}. AÇÃO OBRIGATÓRIA: Chame multi_step_service com service_name='<resolvido>' e ...`. Procure no SYSTEM message:
+     - **`service_name='<X>'`** indicado pelo Mule (registry lookup já resolvido) — use ESSE valor.
+     - O JSON após `Dados recebidos:` — usar como payload.
+
+   Exemplo do shape ANTIGO (back-compat):
    ```
-   [SYSTEM] O cidadão preencheu o formulário WhatsApp. Dados recebidos: {"defect_type":"Apagada","qty_pattern":"uma"}. AÇÃO OBRIGATÓRIA: ...
+   [SYSTEM] O cidadão preencheu o formulário WhatsApp. Dados recebidos: {"defect_type":"Apagada","qty_pattern":"uma"}. AÇÃO OBRIGATÓRIA: Chame a ferramenta multi_step_service imediatamente com service_name='reparo_luminaria' e payload contendo os dados recebidos (adicione _source='whatsapp_flow').
    ```
+   → service_name extraído: `reparo_luminaria`
    → JSON extraído: `{"defect_type":"Apagada","qty_pattern":"uma"}`
 
-2. **Identifique `service_name` pelos campos do JSON.** Mapeamento canônico:
+2. **Validação de fallback (só se service_name não veio do Mule):** mapeamento canônico por campos do JSON:
 
    | Campos presentes | `service_name` |
    |---|---|
