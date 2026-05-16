@@ -55,6 +55,26 @@ ENABLE_INTERACTIVE_RESPONSE = getenv_or_action(
     "ENABLE_INTERACTIVE_RESPONSE", default="true"
 )
 
+# === LLM tuning (latency vs quality trade-offs) ===
+# THINKING_BUDGET: tokens maximos que o Gemini 2.5 Flash pode gastar em
+# chain-of-thought antes de responder. Default -1 (unbounded) mantem
+# comportamento atual. Limites menores (e.g. 1024-4096) reduzem latencia
+# 5-15s/turn mas podem afetar qualidade em queries complexas. Testar com
+# eval suite antes de promover.
+THINKING_BUDGET = int(getenv_or_action("THINKING_BUDGET", default="-1") or "-1")
+# INCLUDE_THOUGHTS: se o LLM retorna o texto de chain-of-thought no
+# response (alem da resposta final). Default true mantem traces visiveis
+# em logs/OTel pra debug. Setar false reduz payload de saida mas nao
+# afeta latencia de inferencia significativamente.
+INCLUDE_THOUGHTS = (
+    (getenv_or_action("INCLUDE_THOUGHTS", default="true") or "true").lower() != "false"
+)
+# LLM_TEMPERATURE: criatividade do LLM. Default 0.7 (atual). Valores
+# menores (e.g. 0.3) sao mais deterministicos + ligeiramente mais rapidos.
+LLM_TEMPERATURE = float(
+    getenv_or_action("LLM_TEMPERATURE", default="0.7") or "0.7"
+)
+
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = getenv_or_action(
     "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
 )
