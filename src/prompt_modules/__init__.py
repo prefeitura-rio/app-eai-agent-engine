@@ -33,6 +33,7 @@ from typing import Tuple
 from src.prompt_modules import (
     audio_inbound,
     audio_response,
+    interactive_response,
     media_inbound,
     media_response,
     video_inbound,
@@ -82,6 +83,16 @@ _media_response_enabled = (
     (_getenv_or_action("ENABLE_MEDIA_RESPONSE", action="ignore", default="true") or "true").lower() != "false"
     and "send_whatsapp_media" not in _excluded_tools
 )
+# `interactive_response` (ADR-024) gate: registra instruções pros tools
+# send_whatsapp_flow/_buttons/_list. Mesma estratégia: precisam estar bound.
+_interactive_response_enabled = (
+    (_getenv_or_action("ENABLE_INTERACTIVE_RESPONSE", action="ignore", default="true") or "true").lower() != "false"
+    and not (
+        "send_whatsapp_flow" in _excluded_tools
+        and "send_whatsapp_buttons" in _excluded_tools
+        and "send_whatsapp_list" in _excluded_tools
+    )
+)
 
 ENABLED_MODULES = [
     media_inbound,
@@ -94,6 +105,8 @@ if _audio_response_enabled:
     ENABLED_MODULES.append(audio_response)
 if _media_response_enabled:
     ENABLED_MODULES.append(media_response)
+if _interactive_response_enabled:
+    ENABLED_MODULES.append(interactive_response)
 
 
 def compose(base_prompt: str, base_version: str) -> Tuple[str, str]:

@@ -48,6 +48,12 @@ ENABLE_TTS_ADDENDUM = getenv_or_action("ENABLE_TTS_ADDENDUM", default="true")
 # module `media_response` no engine + tool `send_whatsapp_media` no MCP
 # server. Mesma semantica do ENABLE_TTS_ADDENDUM.
 ENABLE_MEDIA_RESPONSE = getenv_or_action("ENABLE_MEDIA_RESPONSE", default="true")
+# Kill switch pro interactive response (ADR-024 + ADR-022) — desliga
+# prompt module `interactive_response` + tools send_whatsapp_flow/
+# _buttons/_list no MCP server.
+ENABLE_INTERACTIVE_RESPONSE = getenv_or_action(
+    "ENABLE_INTERACTIVE_RESPONSE", default="true"
+)
 
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = getenv_or_action(
     "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
