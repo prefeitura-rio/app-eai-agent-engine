@@ -1,9 +1,4 @@
-import concurrent.futures
-import os
-import sys
-import time
-import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 import vertexai
 from vertexai import agent_engines
@@ -19,11 +14,11 @@ vertexai.init(
 )
 
 
-def deploy(deploy_timestamp=None):
+def deploy():
     system_prompt = prompt_data["prompt"]
     system_prompt_version = prompt_data["version"]
     model = "gemini-2.5-flash"
-    now = deploy_timestamp or datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
     # Tools will be loaded at runtime from MCP server (not at deployment time)
     # This allows deployment from local machine where MCP private network is not accessible
@@ -96,7 +91,7 @@ def deploy(deploy_timestamp=None):
         ],
         extra_packages=["./engine"],
         gcs_dir_name=f"{model}/v{system_prompt_version}/{now}",
-        display_name=f"EAI Agent | {model} | v{system_prompt_version} | {now}",
+        display_name=f"EAI Agent | {model} | v{system_prompt_version}",
         env_vars={
             "PROJECT_ID": env.PROJECT_ID,
             "LOCATION": env.LOCATION,
@@ -127,70 +122,7 @@ def deploy(deploy_timestamp=None):
     )
 
 
-_RECOVERY_POLL_INTERVAL_SECONDS = 30
-# Recovery budget capped to fit inside the GH Actions job's `timeout-minutes:
-# 45`. The SDK already spent ~15min polling before TimeoutError, so a 15min
-# recovery window plus a safety margin keeps the job under the 45min cap.
-_RECOVERY_DEADLINE_SECONDS = 15 * 60
-
-
-def _recover_engine_after_timeout(unique_display_name):
-    """Find the engine created by this run when the create poll timed out.
-
-    `agent_engines.create()` blocks polling for up to 900s but the create LRO
-    on the GCP side can run longer. The engine still ends up created — we lose
-    the synchronous handle. We embed the deploy timestamp into display_name to
-    make it run-unique, then poll `agent_engines.list()` until the matching
-    resource appears OR the recovery deadline expires.
-    """
-    deadline = time.monotonic() + _RECOVERY_DEADLINE_SECONDS
-    attempts = 0
-    while time.monotonic() < deadline:
-        attempts += 1
-        for engine in agent_engines.list():
-            if getattr(engine, "display_name", None) == unique_display_name:
-                return engine
-        time.sleep(_RECOVERY_POLL_INTERVAL_SECONDS)
-    print(
-        f"Recovery gave up after {attempts} list attempts over "
-        f"{_RECOVERY_DEADLINE_SECONDS}s without finding "
-        f'display_name="{unique_display_name}".',
-        file=sys.stderr,
-    )
-    return None
-
-
 if __name__ == "__main__":
-    # Compose a run-unique discriminator so the timeout-recovery list filter
-    # can attribute the engine to THIS run, even if a parallel /deploy comment
-    # starts a second job for the same prompt version in the same second.
-    # GITHUB_RUN_ID is unique per workflow run in CI; outside CI we fall back
-    # to a uuid4 prefix so local runs still get a unique tag.
-    run_id = os.environ.get("GITHUB_RUN_ID") or f"local-{uuid.uuid4().hex[:8]}"
-    deploy_timestamp = (
-        f"{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S')}_{run_id}"
-    )
-    unique_display_name = (
-        f'EAI Agent | gemini-2.5-flash | v{prompt_data["version"]} | {deploy_timestamp}'
-    )
-
-    try:
-        engine = deploy(deploy_timestamp=deploy_timestamp)
-    except concurrent.futures.TimeoutError:
-        print(
-            "Polling timed out before agent_engines.create() returned. "
-            f'Polling agent_engines.list() for display_name="{unique_display_name}" '
-            f"every {_RECOVERY_POLL_INTERVAL_SECONDS}s up to {_RECOVERY_DEADLINE_SECONDS}s.",
-            file=sys.stderr,
-        )
-        engine = _recover_engine_after_timeout(unique_display_name)
-        if engine is None:
-            print(
-                "Recovery failed: no engine with the run-unique display_name "
-                "appeared within the deadline. The deploy may genuinely have failed.",
-                file=sys.stderr,
-            )
-            raise
-
+    engine = deploy()
     engine_id = engine.resource_name.split("/")[-1]
     print(f"REASONING_ENGINE_ID={engine_id}")
