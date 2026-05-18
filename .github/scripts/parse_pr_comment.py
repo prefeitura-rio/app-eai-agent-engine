@@ -9,16 +9,7 @@ for c in sorted(comments, key=lambda x: x.get("created_at", ""), reverse=True):
     if "REASONING_ENGINE_ID" not in body:
         continue
     m_env = re.search(r"Environment[^a-zA-Z0-9]*([a-zA-Z0-9_-]+)", body, re.IGNORECASE)
-    # Deploy comment format:
-    #   `**REASONING_ENGINE_ID:** `<id>``
-    # Match the keyword, skip arbitrary punctuation/whitespace/markdown
-    # (`**`, `:`, spaces), then capture the value either inside backticks
-    # (preferred) or as the next non-whitespace, non-backtick token.
-    m_id = re.search(
-        r"REASONING_ENGINE_ID[\s*:`]*([^`\s*]+)`?",
-        body,
-        re.IGNORECASE,
-    )
+    m_id = re.search(r"REASONING_ENGINE_ID\\s*:\\s*`?([^`\\s]+)`?", body, re.IGNORECASE)
     if not m_id:
         continue
     env = (m_env.group(1) if m_env else "").strip().lower()
