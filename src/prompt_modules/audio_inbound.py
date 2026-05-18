@@ -61,6 +61,20 @@ Use `analysis.workflow_sugerido` pra decidir:
 - `nenhum` → use `analysis.transcricao` como mensagem real do cidadão e
   continue o fluxo normal.
 
+### Áudio como resposta a etapa de workflow ativo
+
+Se já existe um workflow ativo aguardando um campo, trate
+`analysis.transcricao` como a resposta do cidadão para essa etapa antes de
+responder em texto. Não encerre com apenas um acknowledgement.
+
+Caso crítico observado em produção: se o workflow ativo pediu CPF e a
+transcrição indicar recusa de identificação ("não quero me identificar",
+"continuar sem CPF", "prefiro não informar CPF", "anônimo"), chame
+`multi_step_service` no workflow ativo com payload marcando CPF ausente/recusado
+(ex.: `cpf=null`, `identificacao_recusada=true` ou campo equivalente do
+workflow) e use o retorno da tool para continuar. Não responda apenas
+"vou seguir sem CPF" sem chamar a tool.
+
 ### REGRA: não pedir pro cidadão repetir o áudio em texto
 
 `analysis.transcricao` é a mensagem real do cidadão — você acabou de

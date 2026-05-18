@@ -38,6 +38,7 @@ from src.prompt_modules import (
     media_response,
     video_inbound,
     vision_inbound,
+    workflow_continuation,
     whatsapp_flow_inbound,
 )
 
@@ -95,6 +96,7 @@ _interactive_response_enabled = (
 )
 
 ENABLED_MODULES = [
+    workflow_continuation,
     media_inbound,
     vision_inbound,
     audio_inbound,
