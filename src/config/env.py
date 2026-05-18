@@ -44,10 +44,6 @@ MCP_EXCLUDED_TOOLS = (
 # valor vazio/ausente OU qualquer != "false" ⇒ habilitado. Tem que
 # espelhar o que o MCP server lê.
 ENABLE_TTS_ADDENDUM = getenv_or_action("ENABLE_TTS_ADDENDUM", default="true")
-# Kill switch pro media response generico (ADR-022) — desliga prompt
-# module `media_response` no engine + tool `send_whatsapp_media` no MCP
-# server. Mesma semantica do ENABLE_TTS_ADDENDUM.
-ENABLE_MEDIA_RESPONSE = getenv_or_action("ENABLE_MEDIA_RESPONSE", default="true")
 
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = getenv_or_action(
     "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"

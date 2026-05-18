@@ -34,7 +34,6 @@ from src.prompt_modules import (
     audio_inbound,
     audio_response,
     media_inbound,
-    media_response,
     video_inbound,
     vision_inbound,
     whatsapp_flow_inbound,
@@ -74,14 +73,6 @@ _audio_response_enabled = (
     (_getenv_or_action("ENABLE_TTS_ADDENDUM", action="ignore", default="true") or "true").lower() != "false"
     and "generate_audio_response" not in _excluded_tools
 )
-# `media_response` (ADR-022) gate: registra a instrução pra send_whatsapp_media
-# apenas quando a tool MCP correspondente está bound. Mesma estratégia do
-# audio_response — sem checagens, LLM seria instruído a chamar tool não-bound
-# e turns com pedido de mídia produziriam erro de tool unknown.
-_media_response_enabled = (
-    (_getenv_or_action("ENABLE_MEDIA_RESPONSE", action="ignore", default="true") or "true").lower() != "false"
-    and "send_whatsapp_media" not in _excluded_tools
-)
 
 ENABLED_MODULES = [
     media_inbound,
@@ -92,8 +83,6 @@ ENABLED_MODULES = [
 ]
 if _audio_response_enabled:
     ENABLED_MODULES.append(audio_response)
-if _media_response_enabled:
-    ENABLED_MODULES.append(media_response)
 
 
 def compose(base_prompt: str, base_version: str) -> Tuple[str, str]:

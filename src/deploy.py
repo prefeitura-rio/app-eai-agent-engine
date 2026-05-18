@@ -120,8 +120,7 @@ def deploy(deploy_timestamp=None):
             # generate_audio_response a MCP_EXCLUDED_TOOLS, garantindo que o
             # tool binder (engine/agent.py) também o filtre — sem isso o LLM
             # poderia ver a tool schema mesmo com o prompt addendum removido.
-            # Mesma logica pra ENABLE_MEDIA_RESPONSE=false + send_whatsapp_media
-            # (ADR-022). Codex P2 2026-05-15.
+            # Codex P2 2026-05-15.
             "MCP_EXCLUDED_TOOLS": ",".join(
                 list(env.MCP_EXCLUDED_TOOLS or [])
                 + (
@@ -130,15 +129,8 @@ def deploy(deploy_timestamp=None):
                     and "generate_audio_response" not in (env.MCP_EXCLUDED_TOOLS or [])
                     else []
                 )
-                + (
-                    ["send_whatsapp_media"]
-                    if (env.ENABLE_MEDIA_RESPONSE or "true").lower() == "false"
-                    and "send_whatsapp_media" not in (env.MCP_EXCLUDED_TOOLS or [])
-                    else []
-                )
             ),
             "ENABLE_TTS_ADDENDUM": env.ENABLE_TTS_ADDENDUM,
-            "ENABLE_MEDIA_RESPONSE": env.ENABLE_MEDIA_RESPONSE,
             "ERROR_INTERCEPTOR_URL": env.ERROR_INTERCEPTOR_URL,
             "ERROR_INTERCEPTOR_TOKEN": env.ERROR_INTERCEPTOR_TOKEN,
         },
