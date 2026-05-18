@@ -74,26 +74,36 @@ repetir** — siga a partir do ``user_text``.
 ### Quando AS DUAS condições passam, executar transcrição
 
 1. **Chamar ``analyze_inbound_audio``** logo após o
-   ``register_inbound_media``. **OBRIGATÓRIO** — sem isso o cidadão recebe
-   apenas o fallback genérico "não consigo transcrever áudio" do
-   ``register_inbound_media``, que NÃO É a resposta desejada quando há
-   áudio real:
+   ``register_inbound_media``:
 
    - ``user_number``: mesmo valor extraído do prefix ``[INBOUND_MEDIA]``
-   - ``message_id``: do prefix se disponível
-   - **SE o JSON ``media`` tem ``meta_media_id``** (canal canônico Meta direto):
-     - ``meta_media_id``: o valor (string) do campo ``media.meta_media_id``
-     - Não precisa de ``file_extension`` — tool deriva do MIME real do
-       Graph API (handle ``audio/ogg; codecs=opus`` automático).
-   - **SE o JSON ``media`` tem ``content_version_id``** (UWC legacy):
-     - ``file_extension``: do campo ``media.file_extension`` (**allowlist
-       Gemini**: ``oga``/``ogg``/``aac``/``mp3``/``wav``/``flac``/``aiff``;
-       NÃO ``m4a``/``amr``). Se fora do allowlist, NÃO chame a tool.
-     - ``content_version_id``: ``media.content_version_id``
-     - ``salesforce_download_path``: ``media.download_path``
-   - **SE ambos presentes**: passe ``meta_media_id`` (a tool prioriza esse caminho).
-
-   **REGRA CRÍTICA:** Quando o prefix `[INBOUND_MEDIA] type=audio` chegar, você TEM que chamar `analyze_inbound_audio` ALÉM de `register_inbound_media`. Chamar APENAS `register_inbound_media` resulta em resposta genérica "não consigo ouvir" — isso é regressão.
+   - ``message_id``: do prefix se disponível (audit cross-ref)
+   - **Caminho A — Meta webhook direto (ADR-017, canal canônico):**
+     quando o JSON ``media`` tem ``meta_media_id`` (cidadão veio via
+     ``/meta/webhook`` no Mule), passe APENAS:
+     - ``meta_media_id``: do campo ``media.meta_media_id``
+     - ``file_extension`` (opcional): a tool deriva do MIME real
+       retornado pelo Graph API (handle ``audio/ogg; codecs=opus`` e
+       outros parametrizados). Pode omitir.
+     Não passe ``content_version_id`` nem ``salesforce_download_path``
+     nesse caminho — não existem no payload Meta direto.
+   - **Caminho B — UWC legacy (Salesforce ContentVersion):** quando o
+     JSON ``media`` tem ``content_version_id``/``download_path`` (sem
+     ``meta_media_id``):
+     - ``file_extension``: do campo ``media.file_extension``.
+       **Allowlist do Gemini audio input (espelhado pela tool):**
+       ``oga``/``ogg`` (PTT WhatsApp, container OGG-Opus), ``aac``,
+       ``mp3``, ``wav``, ``flac``, ``aiff``/``aif``. **Não passa**:
+       ``m4a`` (MP4 audio), ``amr`` (codec deprecado), nem outras
+       extensões — a tool rejeita antes de chamar Gemini. Se
+       ``media.file_extension`` cair fora do allowlist, **não chame a
+       tool** e volte ao protocolo do módulo "Recepção de mídia".
+     - ``content_version_id``: do campo ``media.content_version_id``
+     - **PREFIRA** ``salesforce_download_path`` (do campo
+       ``media.download_path``) — tool faz download via SF REST sozinha.
+     - Fallbacks: ``audio_bytes_base64`` ou ``local_audio_path`` se o
+       campo ``download_path`` não estiver presente.
+   - **Quando ambos presentes:** prefira Caminho A.
 
 2. **Usar a resposta da transcrição.** Retorno contém ``analysis`` com:
 
