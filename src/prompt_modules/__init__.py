@@ -32,7 +32,6 @@ from typing import Tuple
 
 from src.prompt_modules import (
     audio_inbound,
-    audio_response,
     media_inbound,
     video_inbound,
     vision_inbound,
@@ -53,27 +52,6 @@ from src.prompt_modules import (
 # `[FLOW_COMPLETION]`, próprio dispatcher MCP). Ordenado por último —
 # media_inbound prefix dá precedência em casos ambíguos (improvável mas
 # concebível se um flow_name fizer match com palavra de prefix media).
-# audio_response só entra na lista quando a tool MCP correspondente
-# (`generate_audio_response`) está disponível em runtime. Lê via
-# `getenv_or_action` com `action='ignore'` pra honrar as MESMAS fontes
-# que `src.config.env` (root .env + os.environ) sem fail-fast em testes
-# que não tem deployment vars setadas. Dois sinais desligam:
-#   1. Kill switch coarse: ENABLE_TTS_ADDENDUM=false.
-#   2. Exclusão fina: 'generate_audio_response' em MCP_EXCLUDED_TOOLS.
-# Sem checagens: o LLM seria instruído a chamar tool não-bound e turns
-# explícitos de áudio quebrariam.
-from src.utils.infisical import getenv_or_action as _getenv_or_action
-
-_excluded_tools = {
-    t.strip()
-    for t in (_getenv_or_action("MCP_EXCLUDED_TOOLS", action="ignore", default="") or "").split(",")
-    if t.strip()
-}
-_audio_response_enabled = (
-    (_getenv_or_action("ENABLE_TTS_ADDENDUM", action="ignore", default="true") or "true").lower() != "false"
-    and "generate_audio_response" not in _excluded_tools
-)
-
 ENABLED_MODULES = [
     media_inbound,
     vision_inbound,
@@ -81,8 +59,6 @@ ENABLED_MODULES = [
     video_inbound,
     whatsapp_flow_inbound,
 ]
-if _audio_response_enabled:
-    ENABLED_MODULES.append(audio_response)
 
 
 def compose(base_prompt: str, base_version: str) -> Tuple[str, str]:

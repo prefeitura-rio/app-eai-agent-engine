@@ -116,21 +116,9 @@ def deploy(deploy_timestamp=None):
             "EAI_GATEWAY_API_TOKEN": env.EAI_GATEWAY_API_TOKEN,
             "SHORT_MEMORY_TOKEN_LIMIT": env.SHORT_MEMORY_TOKEN_LIMIT,
             "SHORT_MEMORY_TIME_LIMIT": env.SHORT_MEMORY_TIME_LIMIT,
-            # ENABLE_TTS_ADDENDUM=false força adicionar
-            # generate_audio_response a MCP_EXCLUDED_TOOLS, garantindo que o
-            # tool binder (engine/agent.py) também o filtre — sem isso o LLM
-            # poderia ver a tool schema mesmo com o prompt addendum removido.
-            # Codex P2 2026-05-15.
-            "MCP_EXCLUDED_TOOLS": ",".join(
-                list(env.MCP_EXCLUDED_TOOLS or [])
-                + (
-                    ["generate_audio_response"]
-                    if (env.ENABLE_TTS_ADDENDUM or "true").lower() == "false"
-                    and "generate_audio_response" not in (env.MCP_EXCLUDED_TOOLS or [])
-                    else []
-                )
-            ),
-            "ENABLE_TTS_ADDENDUM": env.ENABLE_TTS_ADDENDUM,
+            "MCP_EXCLUDED_TOOLS": ",".join(env.MCP_EXCLUDED_TOOLS)
+            if env.MCP_EXCLUDED_TOOLS
+            else "",
             "ERROR_INTERCEPTOR_URL": env.ERROR_INTERCEPTOR_URL,
             "ERROR_INTERCEPTOR_TOKEN": env.ERROR_INTERCEPTOR_TOKEN,
         },
