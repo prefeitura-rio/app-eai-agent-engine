@@ -63,4 +63,29 @@ async def get_mcp_tools(
 
     return filtered_tools
 
-mcp_tools = asyncio.run(get_mcp_tools(exclude_tools=env.MCP_EXCLUDED_TOOLS))
+# Safety exclusions aplicadas no loader compartilhado — afeta todos os
+# caminhos (deploy, interactive_test, pre_deploy tests). Mantém estes
+# nomes fora do tool binding mesmo se o operator não os listou em
+# MCP_EXCLUDED_TOOLS.
+#
+# `send_whatsapp_flow` (high-level pós-rename MCP 2026-05-18): requer
+# `user_number` E.164 que o Engine framework não injeta deterministicamente
+# (langgraph-prebuilt 1.0.7 não tem inject_tool_args). LLM pode hallucinar
+# número e mandar Flow pra cidadão errado. Bloqueado até injeção segura
+# estar wired (ex: HTTP header X-User-Number derivado de thread_id).
+#
+# Migration alias: deployments preexistentes que tinham `send_whatsapp_flow`
+# (nome antigo do low-level) em MCP_EXCLUDED_TOOLS devem manter a low-level
+# bloqueada pós-rename — automaticamente também excluímos
+# `build_whatsapp_flow_envelope`.
+_SAFETY_EXCLUDED = ["send_whatsapp_flow"]
+_legacy_excluded = list(env.MCP_EXCLUDED_TOOLS or [])
+if (
+    "send_whatsapp_flow" in _legacy_excluded
+    and "build_whatsapp_flow_envelope" not in _legacy_excluded
+):
+    _SAFETY_EXCLUDED.append("build_whatsapp_flow_envelope")
+
+_effective_excluded = sorted(set(_legacy_excluded) | set(_SAFETY_EXCLUDED))
+
+mcp_tools = asyncio.run(get_mcp_tools(exclude_tools=_effective_excluded))
