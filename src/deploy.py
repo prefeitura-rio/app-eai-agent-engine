@@ -140,8 +140,40 @@ def deploy(deploy_timestamp=None):
                     else []
                 )
                 + (
-                    ["send_whatsapp_flow", "send_whatsapp_buttons", "send_whatsapp_list"]
+                    # MCP server renomeou send_whatsapp_flow (low-level) pra
+                    # build_whatsapp_flow_envelope em 2026-05-18. Kill switch
+                    # ENABLE_INTERACTIVE_RESPONSE=false desliga as 3 tools que
+                    # o prompt module orienta (build_whatsapp_flow_envelope +
+                    # send_whatsapp_buttons + send_whatsapp_list).
+                    [
+                        "build_whatsapp_flow_envelope",
+                        "send_whatsapp_buttons",
+                        "send_whatsapp_list",
+                    ]
                     if (env.ENABLE_INTERACTIVE_RESPONSE or "true").lower() == "false"
+                    else []
+                )
+                + (
+                    # `send_whatsapp_flow` high-level (user_number, service_type)
+                    # — sempre excluído enquanto não houver injeção determinística
+                    # de user_number no Engine framework. Sem isso o LLM pode
+                    # invocar com número hallucinado e mandar Flow pra cidadão
+                    # errado. Reativar quando MCP/Engine tiver propagação segura
+                    # (ex: HTTP header X-User-Number derivado de thread_id).
+                    ["send_whatsapp_flow"]
+                    if "send_whatsapp_flow" not in (env.MCP_EXCLUDED_TOOLS or [])
+                    else []
+                )
+                + (
+                    # Migration alias: deployments que ainda têm
+                    # MCP_EXCLUDED_TOOLS contendo `send_whatsapp_flow` (nome
+                    # antigo do low-level) devem também excluir o nome novo
+                    # `build_whatsapp_flow_envelope` — senão a tool low-level
+                    # ficaria bound silenciosamente pós-rename. Mapping
+                    # garante backward-compat.
+                    ["build_whatsapp_flow_envelope"]
+                    if "send_whatsapp_flow" in (env.MCP_EXCLUDED_TOOLS or [])
+                    and "build_whatsapp_flow_envelope" not in (env.MCP_EXCLUDED_TOOLS or [])
                     else []
                 )
             ),

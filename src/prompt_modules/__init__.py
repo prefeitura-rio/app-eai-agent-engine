@@ -85,11 +85,23 @@ _media_response_enabled = (
     and "send_whatsapp_media" not in _excluded_tools
 )
 # `interactive_response` (ADR-024) gate: registra instruções pros tools
-# send_whatsapp_flow/_buttons/_list. Mesma estratégia: precisam estar bound.
+# build_whatsapp_flow_envelope/send_whatsapp_buttons/send_whatsapp_list.
+# (MCP server renomeou em 2026-05-18 a versão low-level pra
+# build_whatsapp_flow_envelope; o nome send_whatsapp_flow agora é da
+# variante high-level que requer user_number — não usada por este prompt.)
+# Módulo é desabilitado quando o kill-switch ENABLE_INTERACTIVE_RESPONSE
+# vira "false" OU todas as 3 tools que ele orienta estão bloqueadas em
+# MCP_EXCLUDED_TOOLS. Pra migration compat, aceita `send_whatsapp_flow`
+# como alias do antigo nome low-level (deployments preexistentes que
+# excluíam o nome antigo continuam desativando o módulo como esperado).
+_flow_builder_blocked = (
+    "build_whatsapp_flow_envelope" in _excluded_tools
+    or "send_whatsapp_flow" in _excluded_tools  # legacy alias do low-level
+)
 _interactive_response_enabled = (
     (_getenv_or_action("ENABLE_INTERACTIVE_RESPONSE", action="ignore", default="true") or "true").lower() != "false"
     and not (
-        "send_whatsapp_flow" in _excluded_tools
+        _flow_builder_blocked
         and "send_whatsapp_buttons" in _excluded_tools
         and "send_whatsapp_list" in _excluded_tools
     )
