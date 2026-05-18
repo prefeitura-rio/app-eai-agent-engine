@@ -27,15 +27,12 @@ def deploy(deploy_timestamp=None):
 
     # Tools will be loaded at runtime from MCP server (not at deployment time)
     # This allows deployment from local machine where MCP private network is not accessible
-    # LLM tuning vem de env vars com defaults preservando comportamento atual.
-    # Set THINKING_BUDGET=4096 (ou similar) pra reduzir latencia em queries
-    # complexas — testar com eval suite antes de promover pra producao.
     local_agent = Agent(
         model=model,
         system_prompt=system_prompt,
-        include_thoughts=env.INCLUDE_THOUGHTS,
-        thinking_budget=env.THINKING_BUDGET,  # 0 to disable, -1 unlimited, N pra cap
-        temperature=env.LLM_TEMPERATURE,
+        include_thoughts=True,
+        thinking_budget=-1,  # 0 to disable, -1 to unlimited and other token limit value
+        temperature=0.7,
         tools=[],  # Empty - tools loaded lazily at runtime
         otpl_service=f"eai-langgraph-v{system_prompt_version}",
     )
@@ -148,11 +145,6 @@ def deploy(deploy_timestamp=None):
             "ENABLE_TTS_ADDENDUM": env.ENABLE_TTS_ADDENDUM,
             "ENABLE_MEDIA_RESPONSE": env.ENABLE_MEDIA_RESPONSE,
             "ENABLE_INTERACTIVE_RESPONSE": env.ENABLE_INTERACTIVE_RESPONSE,
-            # LLM tuning (preserved at deploy time + propagated as env vars
-            # so eventuais consumidores runtime tambem leem o mesmo valor)
-            "THINKING_BUDGET": str(env.THINKING_BUDGET),
-            "INCLUDE_THOUGHTS": "true" if env.INCLUDE_THOUGHTS else "false",
-            "LLM_TEMPERATURE": str(env.LLM_TEMPERATURE),
             "ERROR_INTERCEPTOR_URL": env.ERROR_INTERCEPTOR_URL,
             "ERROR_INTERCEPTOR_TOKEN": env.ERROR_INTERCEPTOR_TOKEN,
         },
