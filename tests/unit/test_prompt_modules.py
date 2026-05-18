@@ -9,7 +9,12 @@ tests pós-deploy em staging.
 """
 
 from src.prompt_modules import compose, ENABLED_MODULES
-from src.prompt_modules import audio_inbound, media_inbound, vision_inbound
+from src.prompt_modules import (
+    audio_inbound,
+    media_inbound,
+    vision_inbound,
+    workflow_continuation,
+)
 
 
 # ---------- compose() — comportamento básico ----------
@@ -341,6 +346,36 @@ def test_audio_inbound_prompt_short_circuits_address_when_available():
     p = audio_inbound.MODULE_PROMPT
     assert "validate_address" in p, "Atalho via validate_address não documentado"
     assert "endereco_mencionado" in p, "Field do atalho não referenciado"
+
+
+def test_audio_inbound_prompt_continues_active_workflow_on_cpf_refusal():
+    """Quando áudio responde a uma etapa ativa, especialmente recusa de CPF,
+    prompt deve mandar continuar via multi_step_service em vez de só dar ack."""
+    p = audio_inbound.MODULE_PROMPT.lower()
+    assert "workflow ativo" in p, "Regra de continuação de workflow ativo ausente"
+    assert "cpf" in p, "Recusa de CPF não documentada"
+    assert "não quero me identificar" in p, "Exemplo de recusa por áudio ausente"
+    assert "multi_step_service" in p, "Continuação via tool não documentada"
+    assert "sem chamar a tool" in p, "Regra anti-ack-only ausente"
+
+
+def test_workflow_continuation_module_is_enabled_before_media_modules():
+    """Regra geral de continuar workflow ativo deve entrar no prompt composto,
+    antes dos modulos de midia que podem produzir respostas de etapa."""
+    names = [m.MODULE_NAME for m in ENABLED_MODULES]
+    assert "workflow_continuation" in names
+    assert names.index("workflow_continuation") < names.index("media_inbound")
+
+
+def test_workflow_continuation_prompt_handles_cpf_refusal():
+    """Recusa de CPF por texto deve continuar workflow ativo via tool."""
+    p = workflow_continuation.MODULE_PROMPT.lower()
+    assert "workflow ativo" in p
+    assert "continuar sem cpf" in p
+    assert "nao quero me identificar" in p
+    assert "cpf ausente/recusado" in p
+    assert "multi_step_service" in p
+    assert "sem chamar a tool" in p
 
 
 # ---------- regressão: idempotência de chamada ----------
