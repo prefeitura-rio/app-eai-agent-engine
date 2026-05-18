@@ -33,7 +33,6 @@ from typing import Tuple
 from src.prompt_modules import (
     audio_inbound,
     media_inbound,
-    video_inbound,
     vision_inbound,
     whatsapp_flow_inbound,
 )
@@ -56,7 +55,6 @@ ENABLED_MODULES = [
     media_inbound,
     vision_inbound,
     audio_inbound,
-    video_inbound,
     whatsapp_flow_inbound,
 ]
 

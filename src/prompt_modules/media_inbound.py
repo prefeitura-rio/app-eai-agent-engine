@@ -46,7 +46,7 @@ Quando a entrada do cidadão começar com `[INBOUND_MEDIA]`, **NÃO** trate como
    [INBOUND_MEDIA] type=<media_type> user_number=<phone> media=<json> | user_text=<placeholder>
    ```
 
-   - `media_type` ∈ `{image, audio, video, location, unsupported, unknown}`
+   - `media_type` ∈ `{image, audio, location, unsupported, unknown}`
    - `user_number`: E.164 sem `+` (ex: `5521989091014`)
    - `media`: objeto JSON com metadados (pode ser `null` para `unsupported`/`unknown`)
    - `user_text`: conteúdo textual associado à mídia. **Atenção:** pode ser **placeholder gerado upstream** (quando nada de texto real veio do cidadão) ou **conteúdo real** (caption de imagem, transcrição de áudio, etc.).
@@ -77,10 +77,9 @@ Quando a entrada do cidadão começar com `[INBOUND_MEDIA]`, **NÃO** trate como
 4. **Use as tools de análise quando aplicável.** A tool `register_inbound_media` é stub de recepção (apenas registra audit + retorna sugestão). Para análise real:
    - **Imagem:** chame `analyze_inbound_image` em seguida, quando disponível (conforme módulo `vision_inbound` deste prompt).
    - **Áudio:** chame `analyze_inbound_audio` em seguida, quando disponível (conforme módulo `audio_inbound` deste prompt) — a tool transcreve a fala e retorna intenção + workflow sugerido.
-   - **Vídeo:** chame `analyze_inbound_video` em seguida, quando disponível (conforme módulo `video_inbound` deste prompt) — a tool analisa frames + áudio do vídeo e retorna descrição + transcrição + workflow sugerido.
    - **Localização:** ainda não tem caminho de processamento direto — siga o protocolo de geocoding via texto descrito mais abaixo (caso `media_type=unsupported`).
 
-   Quando o módulo correspondente (`vision_inbound`/`audio_inbound`/`video_inbound`) estiver presente neste prompt e a tool estiver listada, use-os. Quando o módulo NÃO estiver presente OU a tool NÃO estiver listada, mantenha o fallback genérico do `register_inbound_media` (mensagem amigável pedindo texto).
+   Quando o módulo correspondente (`vision_inbound`/`audio_inbound`) estiver presente neste prompt e a tool estiver listada, use-os. Quando o módulo NÃO estiver presente OU a tool NÃO estiver listada, mantenha o fallback genérico do `register_inbound_media` (mensagem amigável pedindo texto).
 
 ### Caso especial: `media_type=unsupported` (geocoding via texto)
 
