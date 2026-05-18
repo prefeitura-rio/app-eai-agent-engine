@@ -1,117 +1,174 @@
 """
 Módulo de prompt: instruções para o LLM chamar a tool MCP
 ``analyze_inbound_image`` (Gemini Vision) depois de ``register_inbound_media``
-quando o cidadão envia uma imagem real pelo WhatsApp.
+quando o cidadão envia uma imagem via WhatsApp.
 
-Contexto upstream (resumido):
+Contexto:
 
-* O módulo ``media_inbound`` já documenta o protocolo do prefix
-  ``[INBOUND_MEDIA]`` e instrui o LLM a chamar ``register_inbound_media``
-  (stub de recepção).
+* :mod:`src.prompt_modules.media_inbound` já instrui o LLM a chamar
+  ``register_inbound_media`` (stub de recepção/audit) quando vê o prefix
+  ``[INBOUND_MEDIA]``. Esse stub registra mas não analisa.
 * A tool MCP ``analyze_inbound_image`` (em
-  ``prefeitura-rio/app-mcp-server/src/tools/inbound_media_vision.py``)
-  estende o stub: baixa via Meta CDN ou Salesforce REST, classifica
-  o problema via Gemini Vision, retorna ``{categoria, workflow_sugerido,
-  confianca, suggested_reply_pt_br}``.
+  ``prefeitura-rio/app-mcp-server`` commit ``71202f62``, arquivo
+  ``src/tools/inbound_media_vision.py``) faz análise visual real via
+  Gemini Vision e classifica em workflows (``reparo_luminaria``,
+  ``poda_de_arvore``, ``nenhum``). É **opt-in** no MCP via flag
+  ``ENABLE_VISION_ADDENDUM=true`` — sem o flag a tool não é registrada e
+  o LLM nem a vê (instruções abaixo viram no-op).
 
-Refator 2026-05-14 noite (ADR-018): bulk da estrutura do prompt
-(opt-in gate + call section + REGRA CRÍTICA) extraído pra
-``_analyzable_media_template.AnalyzableMediaSpec``. Este arquivo fica só
-com o que é vision-specific: schema do JSON de análise, regras de
-classificação visual, workflows sugeridos, exemplos.
+Quando a tool está registrada, o LLM deve chamar ela DEPOIS do
+``register_inbound_media`` mas ANTES de responder ao cidadão. O
+``suggested_reply_pt_br`` da análise visual substitui o do registro stub.
+
+**Limitação conhecida (fase atual):** ``analyze_inbound_image`` requer
+``image_bytes_base64`` ou ``local_image_path``. Em produção via Engine,
+nenhum dos dois é fornecido automaticamente pelo Gateway hoje (só
+``salesforce_download_path``). Até o Engine team implementar pré-fetch
+de bytes do Salesforce e injeção no contexto da mensagem, a tool pode
+retornar erro/análise vazia em prod. Mantemos a instrução pro LLM
+porque (a) staging com upload manual de bytes funciona, (b) quando o
+pre-fetch chegar (fase 2), nenhum redeploy de prompt será necessário.
+
+Refs:
+    - ``prefeitura-rio/app-mcp-server`` merge commit ``71202f62`` (PR #56)
+    - ``prefeitura-rio/study-sf-whatsapp-poc1`` ADR-012
+    - ``src/prompt_modules/media_inbound.py`` (módulo predecessor)
 """
-
-from src.prompt_modules._analyzable_media_template import (
-    AnalyzableMediaSpec,
-    render_module_prompt,
-)
 
 MODULE_NAME = "vision_inbound"
 
+MODULE_PROMPT = """## Análise visual de imagem inbound (extensão de mídia)
 
-_VISION_GUIDANCE = """\
-### Schema da resposta `analyze_inbound_image`
+Quando o passo anterior identificou ``media_type=image`` (via
+``register_inbound_media`` do módulo "Recepção de mídia"), você PODE
+tentar análise visual via ``analyze_inbound_image``. Decisão sobre
+chamá-la ou não segue a árvore abaixo:
 
-O `analysis` retornado tem o seguinte schema:
+### Decisão: chamar ``analyze_inbound_image`` ou pular?
+
+**Chamar somente se TODAS as 2 condições forem verdadeiras:**
+
+(a) A tool ``analyze_inbound_image`` está disponível no seu toolset
+    (opt-in via ``ENABLE_VISION_ADDENDUM=true`` no MCP — se a tool não
+    estiver listada, ela não está disponível).
+
+(b) Você tem ao menos UMA destas fontes de bytes da imagem
+    (em ordem de preferência):
+
+    - ``meta_media_id`` no JSON do prefix ``[INBOUND_MEDIA]`` (campo
+      ``media.meta_media_id``). **Caminho canônico atual em produção
+      (ADR-017)** — cidadão veio via Meta webhook direto pro Mule.
+      A tool faz 2 GETs no Graph API (metadata + signed CDN URL) com
+      ``WA_TOKEN``, sem precisar do Salesforce.
+    - ``salesforce_download_path`` no JSON do prefix ``[INBOUND_MEDIA]``
+      (campo ``media.download_path``). Caminho UWC legacy — cidadão veio
+      via Salesforce UWC. A tool autentica via OAuth Client Credentials
+      e baixa direto do Salesforce REST API.
+    - ``image_bytes_base64`` no contexto da mensagem (raro em produção
+      porque o LLM trunca strings >~10KB em tool args; útil só pra
+      testes manuais).
+    - ``local_image_path`` no JSON do prefix ``[INBOUND_MEDIA]`` (modo
+      teste local com upload manual em ``/tmp``, ``IS_LOCAL=true``).
+
+**Se qualquer uma das 2 condições falhar, NÃO chame a tool.** Volte
+inteiramente ao protocolo do módulo "Recepção de mídia" — ele já trata
+corretamente a distinção entre placeholder (use ``suggested_reply_pt_br``
+do registro) vs caption real (use o ``user_text`` como mensagem do
+cidadão, sem pedir pra repetir). Não há regressão nesse caminho.
+
+> Em produção, **sempre passe ``salesforce_download_path``** quando ele
+> estiver presente no prefix ``[INBOUND_MEDIA]``. A tool baixa bytes via
+> SF REST sem você precisar copiar string longa via args (que o modelo
+> tende a truncar).
+
+### Quando AS DUAS condições passam, executar análise
+
+1. **Chamar ``analyze_inbound_image``** logo após o ``register_inbound_media``. **OBRIGATÓRIO** — sem isso o cidadão recebe apenas o fallback genérico "não consigo analisar fotos" do `register_inbound_media`, que NÃO É a resposta desejada quando há foto real:
+
+   - ``user_number``: mesmo valor extraído do prefix ``[INBOUND_MEDIA]``
+   - ``message_id``: do prefix se disponível (audit cross-ref)
+   - **SE o JSON ``media`` tem ``meta_media_id``** (canal canônico Meta direto, ADR-017):
+     - ``meta_media_id``: o valor (string) do campo ``media.meta_media_id``
+     - Não precisa de ``file_extension`` (tool deriva do MIME real do Graph API)
+   - **SE o JSON ``media`` tem ``content_version_id``** (UWC legacy):
+     - ``content_version_id``: ``media.content_version_id``
+     - ``file_extension``: ``media.file_extension``
+     - ``salesforce_download_path``: ``media.download_path``
+   - **SE ambos presentes**: passe ``meta_media_id`` (a tool prioriza esse caminho).
+
+   **REGRA CRÍTICA:** Quando o prefix `[INBOUND_MEDIA] type=image` chegar, você TEM que chamar `analyze_inbound_image` ALÉM de `register_inbound_media`. Chamar APENAS `register_inbound_media` resulta em resposta genérica "não consigo analisar fotos" — isso é regressão, não comportamento esperado.
+
+2. **Usar a resposta da análise.** O retorno contém ``analysis`` com:
+
+   - ``descricao``: o que a foto mostra
+   - ``problema_detectado``: bool
+   - ``categoria``: ``luminaria_publica``/``poda_arvore``/``buraco_via``/etc.
+   - ``workflow_sugerido``: ``reparo_luminaria``/``poda_de_arvore``/``nenhum``
+   - ``confianca``: ``alta``/``media``/``baixa``
+
+   E ``suggested_reply_pt_br`` baseado na análise. Use **esse**
+   ``suggested_reply_pt_br`` (da análise visual) como base da resposta
+   ao cidadão — NÃO o do ``register_inbound_media``, que é genérico.
+
+   Se ``user_text`` veio com caption real do cidadão, **combine**: cite
+   tanto o que viu na imagem quanto o que o cidadão disse, sem pedir
+   pra ele repetir o que já escreveu.
+
+3. **Iniciar workflow se aplicável.** Se
+   ``analysis.workflow_sugerido`` for ``reparo_luminaria`` ou
+   ``poda_de_arvore`` E a ``confianca`` for ``alta`` ou ``media``:
+
+   - Confirme com o cidadão a categoria detectada antes de iniciar o
+     workflow ("Vi uma luminária com o globo quebrado — confirma que
+     é isso?").
+   - Após confirmação, inicie via ``multi_step_service`` com o
+     ``service_name`` correspondente.
+
+4. **Fallback se análise falha ou é inconclusiva.** Se a tool retornar
+   erro, ``problema_detectado=false`` com ``categoria=nao_aplica``, ou
+   ``confianca=baixa``, **volte ao protocolo do módulo "Recepção de
+   mídia"** (mesmo princípio do "tool indisponível" acima — não invente
+   diagnóstico não suportado pela análise; se há ``user_text`` real,
+   continue a partir dele).
+
+### Exemplo de fluxo (imagem de luminária quebrada)
+
+Após ``register_inbound_media`` ter sido chamado para a imagem,
+você chama:
 
 ```
-{
-  "descricao": "<o que a foto mostra, max 200 chars>",
-  "problema_detectado": <true|false>,
-  "categoria": "<luminaria_publica | poda_arvore | buraco_via | lixo_irregular | iluminacao_publica | sinalizacao | outro | nao_aplica>",
-  "detalhes": "<o que parece estar errado, max 250 chars>",
-  "workflow_sugerido": "<reparo_luminaria | poda_de_arvore | nenhum>",
-  "confianca": "<alta|media|baixa>"
-}
-```
-
-### Workflows triggerable a partir da análise visual
-
-Use `analysis.workflow_sugerido` pra decidir o próximo passo:
-
-- `reparo_luminaria` → confirme com o cidadão a categoria detectada
-  ("Vi uma luminária com o globo quebrado — confirma que é isso?"),
-  depois chame `multi_step_service(service_name="reparo_luminaria")`.
-- `poda_de_arvore` → confirme, depois
-  `multi_step_service(service_name="poda_de_arvore")`.
-- `nenhum` → use o `suggested_reply_pt_br` da análise como base e siga o
-  fluxo conversacional normal.
-
-**Sempre confirme a categoria antes de disparar o workflow.** Análise
-visual pode estar errada, especialmente com `confianca=media` ou `baixa`.
-
-### Composição da resposta
-
-- Se `user_text` veio com caption real do cidadão, **combine**: cite tanto
-  o que viu na imagem quanto o que ele disse, sem pedir pra repetir.
-- Se `confianca=baixa` ou `problema_detectado=false`, peça descrição em
-  texto pra confirmar.
-
-### Exemplo de fluxo (imagem de luminária quebrada via Meta direto)
-
-Entrada do cidadão:
-```
-[INBOUND_MEDIA] type=image user_number=5521989091014 media={"meta_media_id":"1234567890123456","mime_type":"image/jpeg"} | user_text=[Cidadao enviou uma imagem...]
-```
-
-Chamadas em sequência:
-```
-register_inbound_media(media_type="image", user_number="5521989091014",
-                       meta_media_id="1234567890123456", meta_mime_type="image/jpeg")
-analyze_inbound_image(user_number="5521989091014", meta_media_id="1234567890123456")
+analyze_inbound_image(
+    user_number="5521989091014",
+    file_extension="jpg",
+    content_version_id="0688800000Bgd3T",
+    salesforce_download_path="/services/data/v62.0/sobjects/ContentVersion/0688800000Bgd3T/VersionData",
+)
 ```
 
 Retorno típico:
+
 ```json
 {
-  "status": "analyzed",
+  "status": "ok",
   "analysis": {
     "descricao": "Poste de luminária pública com lâmpada quebrada",
     "problema_detectado": true,
     "categoria": "luminaria_publica",
+    "detalhes": "Vidro do globo da luminária quebrado, lâmpada visível",
     "workflow_sugerido": "reparo_luminaria",
     "confianca": "alta"
   },
   "suggested_reply_pt_br": "Vi na foto que a luminária pública está com o globo quebrado. Posso abrir o pedido de reparo pra você? Me confirma o endereço (rua, número, bairro) e a gente segue."
 }
 ```
+
+Sua resposta ao cidadão (adaptando o ``suggested_reply_pt_br``):
+
+> Olhei sua foto — luminária com globo quebrado, anotado.
+> Pra abrir o pedido de reparo preciso do endereço (rua, número, bairro).
+> Pode me passar?
+
+Depois da confirmação do endereço, chame
+``multi_step_service(service_name="reparo_luminaria", user_id=user_number, payload=...)``
+pra iniciar o workflow.
 """
-
-
-_SPEC = AnalyzableMediaSpec(
-    module_name=MODULE_NAME,
-    media_type="image",
-    analyze_tool="analyze_inbound_image",
-    domain_noun_singular="imagem",
-    domain_noun_indefinite="uma imagem",
-    domain_action="analisar",
-    domain_action_present="análise",
-    accepted_extensions=("jpg", "jpeg", "png", "webp", "gif"),
-    bytes_base64_arg_name="image_bytes_base64",
-    local_path_arg_name="local_image_path",
-    enable_env_var="ENABLE_VISION_ADDENDUM",
-    type_specific_guidance=_VISION_GUIDANCE,
-)
-
-
-MODULE_PROMPT = render_module_prompt(_SPEC)
