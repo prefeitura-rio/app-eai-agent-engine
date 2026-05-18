@@ -30,7 +30,16 @@ específicas que devem viver ao lado do código de tools.
 
 from typing import Tuple
 
-from src.prompt_modules import audio_inbound, media_inbound, vision_inbound
+from src.prompt_modules import (
+    audio_inbound,
+    audio_response,
+    interactive_response,
+    media_inbound,
+    media_response,
+    video_inbound,
+    vision_inbound,
+    whatsapp_flow_inbound,
+)
 
 # Ordem importa — define a sequência em que cada módulo aparece no prompt
 # final. Pra desabilitar um módulo, removê-lo desta lista (não comentar
@@ -41,11 +50,63 @@ from src.prompt_modules import audio_inbound, media_inbound, vision_inbound
 # DEPOIS. O suggested_reply de analyze_inbound_image/_audio substitui o do
 # register_inbound_media — a ordem das instruções no prompt importa pro LLM
 # resolver o "qual usar".
+#
+# whatsapp_flow_inbound é independente dos demais (próprio protocolo
+# `[FLOW_COMPLETION]`, próprio dispatcher MCP). Ordenado por último —
+# media_inbound prefix dá precedência em casos ambíguos (improvável mas
+# concebível se um flow_name fizer match com palavra de prefix media).
+# audio_response só entra na lista quando a tool MCP correspondente
+# (`generate_audio_response`) está disponível em runtime. Lê via
+# `getenv_or_action` com `action='ignore'` pra honrar as MESMAS fontes
+# que `src.config.env` (root .env + os.environ) sem fail-fast em testes
+# que não tem deployment vars setadas. Dois sinais desligam:
+#   1. Kill switch coarse: ENABLE_TTS_ADDENDUM=false.
+#   2. Exclusão fina: 'generate_audio_response' em MCP_EXCLUDED_TOOLS.
+# Sem checagens: o LLM seria instruído a chamar tool não-bound e turns
+# explícitos de áudio quebrariam.
+from src.utils.infisical import getenv_or_action as _getenv_or_action
+
+_excluded_tools = {
+    t.strip()
+    for t in (_getenv_or_action("MCP_EXCLUDED_TOOLS", action="ignore", default="") or "").split(",")
+    if t.strip()
+}
+_audio_response_enabled = (
+    (_getenv_or_action("ENABLE_TTS_ADDENDUM", action="ignore", default="true") or "true").lower() != "false"
+    and "generate_audio_response" not in _excluded_tools
+)
+# `media_response` (ADR-022) gate: registra a instrução pra send_whatsapp_media
+# apenas quando a tool MCP correspondente está bound. Mesma estratégia do
+# audio_response — sem checagens, LLM seria instruído a chamar tool não-bound
+# e turns com pedido de mídia produziriam erro de tool unknown.
+_media_response_enabled = (
+    (_getenv_or_action("ENABLE_MEDIA_RESPONSE", action="ignore", default="true") or "true").lower() != "false"
+    and "send_whatsapp_media" not in _excluded_tools
+)
+# `interactive_response` (ADR-024) gate: registra instruções pros tools
+# send_whatsapp_flow/_buttons/_list. Mesma estratégia: precisam estar bound.
+_interactive_response_enabled = (
+    (_getenv_or_action("ENABLE_INTERACTIVE_RESPONSE", action="ignore", default="true") or "true").lower() != "false"
+    and not (
+        "send_whatsapp_flow" in _excluded_tools
+        and "send_whatsapp_buttons" in _excluded_tools
+        and "send_whatsapp_list" in _excluded_tools
+    )
+)
+
 ENABLED_MODULES = [
     media_inbound,
     vision_inbound,
     audio_inbound,
+    video_inbound,
+    whatsapp_flow_inbound,
 ]
+if _audio_response_enabled:
+    ENABLED_MODULES.append(audio_response)
+if _media_response_enabled:
+    ENABLED_MODULES.append(media_response)
+if _interactive_response_enabled:
+    ENABLED_MODULES.append(interactive_response)
 
 
 def compose(base_prompt: str, base_version: str) -> Tuple[str, str]:

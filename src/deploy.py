@@ -27,12 +27,15 @@ def deploy(deploy_timestamp=None):
 
     # Tools will be loaded at runtime from MCP server (not at deployment time)
     # This allows deployment from local machine where MCP private network is not accessible
+    # LLM tuning vem de env vars com defaults preservando comportamento atual.
+    # Set THINKING_BUDGET=4096 (ou similar) pra reduzir latencia em queries
+    # complexas — testar com eval suite antes de promover pra producao.
     local_agent = Agent(
         model=model,
         system_prompt=system_prompt,
-        include_thoughts=True,
-        thinking_budget=-1,  # 0 to disable, -1 to unlimited and other token limit value
-        temperature=0.7,
+        include_thoughts=env.INCLUDE_THOUGHTS,
+        thinking_budget=env.THINKING_BUDGET,  # 0 to disable, -1 unlimited, N pra cap
+        temperature=env.LLM_TEMPERATURE,
         tools=[],  # Empty - tools loaded lazily at runtime
         otpl_service=f"eai-langgraph-v{system_prompt_version}",
     )
@@ -116,9 +119,40 @@ def deploy(deploy_timestamp=None):
             "EAI_GATEWAY_API_TOKEN": env.EAI_GATEWAY_API_TOKEN,
             "SHORT_MEMORY_TOKEN_LIMIT": env.SHORT_MEMORY_TOKEN_LIMIT,
             "SHORT_MEMORY_TIME_LIMIT": env.SHORT_MEMORY_TIME_LIMIT,
-            "MCP_EXCLUDED_TOOLS": ",".join(env.MCP_EXCLUDED_TOOLS)
-            if env.MCP_EXCLUDED_TOOLS
-            else "",
+            # ENABLE_TTS_ADDENDUM=false força adicionar
+            # generate_audio_response a MCP_EXCLUDED_TOOLS, garantindo que o
+            # tool binder (engine/agent.py) também o filtre — sem isso o LLM
+            # poderia ver a tool schema mesmo com o prompt addendum removido.
+            # Mesma logica pra ENABLE_MEDIA_RESPONSE=false + send_whatsapp_media
+            # (ADR-022). Codex P2 2026-05-15.
+            "MCP_EXCLUDED_TOOLS": ",".join(
+                list(env.MCP_EXCLUDED_TOOLS or [])
+                + (
+                    ["generate_audio_response"]
+                    if (env.ENABLE_TTS_ADDENDUM or "true").lower() == "false"
+                    and "generate_audio_response" not in (env.MCP_EXCLUDED_TOOLS or [])
+                    else []
+                )
+                + (
+                    ["send_whatsapp_media"]
+                    if (env.ENABLE_MEDIA_RESPONSE or "true").lower() == "false"
+                    and "send_whatsapp_media" not in (env.MCP_EXCLUDED_TOOLS or [])
+                    else []
+                )
+                + (
+                    ["send_whatsapp_flow", "send_whatsapp_buttons", "send_whatsapp_list"]
+                    if (env.ENABLE_INTERACTIVE_RESPONSE or "true").lower() == "false"
+                    else []
+                )
+            ),
+            "ENABLE_TTS_ADDENDUM": env.ENABLE_TTS_ADDENDUM,
+            "ENABLE_MEDIA_RESPONSE": env.ENABLE_MEDIA_RESPONSE,
+            "ENABLE_INTERACTIVE_RESPONSE": env.ENABLE_INTERACTIVE_RESPONSE,
+            # LLM tuning (preserved at deploy time + propagated as env vars
+            # so eventuais consumidores runtime tambem leem o mesmo valor)
+            "THINKING_BUDGET": str(env.THINKING_BUDGET),
+            "INCLUDE_THOUGHTS": "true" if env.INCLUDE_THOUGHTS else "false",
+            "LLM_TEMPERATURE": str(env.LLM_TEMPERATURE),
             "ERROR_INTERCEPTOR_URL": env.ERROR_INTERCEPTOR_URL,
             "ERROR_INTERCEPTOR_TOKEN": env.ERROR_INTERCEPTOR_TOKEN,
         },
