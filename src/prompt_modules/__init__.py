@@ -30,12 +30,7 @@ específicas que devem viver ao lado do código de tools.
 
 from typing import Tuple
 
-from src.prompt_modules import (
-    audio_inbound,
-    media_inbound,
-    vision_inbound,
-    whatsapp_flow_inbound,
-)
+from src.prompt_modules import audio_inbound, media_inbound, vision_inbound
 
 # Ordem importa — define a sequência em que cada módulo aparece no prompt
 # final. Pra desabilitar um módulo, removê-lo desta lista (não comentar
@@ -46,16 +41,10 @@ from src.prompt_modules import (
 # DEPOIS. O suggested_reply de analyze_inbound_image/_audio substitui o do
 # register_inbound_media — a ordem das instruções no prompt importa pro LLM
 # resolver o "qual usar".
-#
-# whatsapp_flow_inbound é independente dos demais (próprio protocolo
-# `[FLOW_COMPLETION]`, próprio dispatcher MCP). Ordenado por último —
-# media_inbound prefix dá precedência em casos ambíguos (improvável mas
-# concebível se um flow_name fizer match com palavra de prefix media).
 ENABLED_MODULES = [
     media_inbound,
     vision_inbound,
     audio_inbound,
-    whatsapp_flow_inbound,
 ]
 
 
