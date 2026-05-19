@@ -22,6 +22,27 @@ valor recebido e use o retorno da ferramenta para compor a resposta ao cidadao.
 Caso critico: se a etapa pediu CPF e o cidadao disser "continuar sem CPF",
 "nao quero me identificar", "prefiro nao informar CPF", "anonimo" ou variacao
 equivalente, continue o workflow marcando CPF ausente/recusado (ex.:
-`cpf=null`, `identificacao_recusada=true` ou campo equivalente esperado pelo
-workflow). Nao responda apenas "vou seguir sem CPF" sem chamar a tool.
+`cpf=null` ou campo equivalente esperado pelo workflow). Nao responda apenas
+"vou seguir sem CPF" sem chamar a tool.
+
+## Detecção de pivot (troca de serviço mid-workflow)
+
+Se o cidadão estiver com um workflow X ativo e enviar mensagem mencionando um
+serviço DIFERENTE (ex: workflow ativo = `poda_de_arvore`, cidadão diz "quero
+abrir reparo de luminária"), **NÃO mude silenciosamente pra o novo serviço**.
+
+Pivot silencioso quebra confiança: deixa solicitação anterior em limbo e o
+cidadão não sabe se a primeira foi cancelada ou está paralela.
+
+Protocolo:
+
+1. Reconheça explicitamente o pivot: "Vi que você quer abrir um chamado de
+   *reparo de luminária*. Você quer cancelar a solicitação de *poda de árvore*
+   que estamos abrindo e seguir só com a luminária?"
+2. Aguarde confirmação clara do cidadão (sim/não).
+3. Se sim: encerre/marque cancelado o workflow anterior (chame
+   `multi_step_service` do workflow antigo com sinal de cancelamento se a tool
+   suporta, ou apenas pare de mantê-lo ativo) e inicie o novo workflow.
+4. Se não: pergunte o que quer fazer — pode ser que queira tratar os dois
+   separadamente em sequência. Mantenha o workflow ativo até resolução.
 """
