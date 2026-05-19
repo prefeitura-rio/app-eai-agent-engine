@@ -1,0 +1,31 @@
+# Pre-commit hooks pro app-eai-agent-engine.
+#
+# Ativar local:
+#   uv pip install pre-commit pyyaml
+#   uv run pre-commit install
+#
+# Rodar manualmente:
+#   uv run pre-commit run --all-files
+#
+# Convencão hoje:
+#   - check-mcp-tool-references: warn-only, lista tools referenciadas em
+#     src/prompt_modules/ que não estão no registry do app-mcp-server
+#     (media-types.yaml). Não bloqueia commit.
+
+repos:
+  - repo: local
+    hooks:
+      - id: check-mcp-tool-references
+        name: Check MCP tool references (warn-only)
+        entry: python scripts/check_mcp_tool_references.py
+        # language: python → pre-commit cria venv isolado e instala
+        # additional_dependencies. Resolve dois problemas: (a) não depende
+        # do `python` global do dev, (b) garante pyyaml disponível (sem o
+        # pacote o script degrada silencioso e a guarda some).
+        language: python
+        additional_dependencies:
+          - pyyaml>=6.0
+        files: ^src/prompt_modules/.*\.py$
+        pass_filenames: false
+        # Sempre exit 0 — script roda mas não bloqueia. Logs em stderr.
+        verbose: true
