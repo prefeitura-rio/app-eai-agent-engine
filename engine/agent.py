@@ -1145,6 +1145,16 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 max_size=10,
                 timeout=30.0,
                 open=True,  # Auto-open on creation
+                # Pre-ping antes de entregar a conexão pro caller. Sem isso, conexões
+                # ficam zumbis quando o cloudsql-proxy/ILB no GKE recicla pods e o pool
+                # entrega sockets mortos pro LangGraph (incidente 2026-05-21).
+                check=AsyncConnectionPool.check_connection,
+                # Recicla conexão ociosa há mais de 5min pra reduzir janela de
+                # detecção de drop silencioso entre rollouts do proxy.
+                max_idle=300.0,
+                # Tempo máximo tentando reabrir conexão antes de propagar erro
+                # pro chamador. Default infinito mascara DB inacessível.
+                reconnect_timeout=30.0,
             )
             logger.info("[Agent Setup] ✓ Connection pool created")
 
