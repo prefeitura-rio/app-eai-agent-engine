@@ -43,6 +43,16 @@ from engine.log import logger
 # Explicit Gemini caching (opt-in via GEMINI_EXPLICIT_CACHE_ENABLED)
 from engine.caching import GeminiCacheManager
 
+# C3 PII redaction (plano-bot-2026 Fase 0). Per-thread TTL cache keeps token
+# numbering stable across the redact (pre-invoke) → restore (post-model + final
+# filter) round-trip plus follow-up turns inside the short-term memory window.
+from engine.middleware import (
+    PIIThreadCache,
+    redact_with_cache,
+    restore,
+    text_contains_token,
+)
+
 # OTel GenAI token usage histogram (SemConv v1.37)
 from engine.observability import (
     TOKEN_TYPE_CACHE_READ,
@@ -265,6 +275,16 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # cold path is unaffected when the feature flag is OFF.
         self._gemini_cache_manager: GeminiCacheManager | None = None
 
+        # C3 PII redaction (plano-bot-2026 Fase 0). The cache is constructed
+        # eagerly because it is cheap (just a dict + lock) and the redact path
+        # runs on every inbound message; lazy-init would add a None-check on
+        # the hot path with no real win. TTL aligned with the project's short
+        # memory window default (10 min) — overridable via env.
+        pii_ttl_seconds = self._pii_cache_ttl_seconds_from_env()
+        self._pii_thread_cache: PIIThreadCache = PIIThreadCache(
+            ttl_seconds=pii_ttl_seconds
+        )
+
     def _explicit_cache_enabled(self) -> bool:
         """Read the opt-in env flag for explicit Gemini caching.
 
@@ -291,6 +311,239 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 min_tokens=min_tokens,
             )
         return self._gemini_cache_manager
+
+    # ------------------------------------------------------------------
+    # PII redaction wiring (plano-bot-2026 Fase 0 / C3)
+    # ------------------------------------------------------------------
+    #
+    # Flow:
+    #   1. ``_combined_pre_invoke_hook`` (outer; receives raw input from the
+    #      worker) → :py:meth:`_redact_input_messages` swaps PII spans in the
+    #      *incoming* user text for stable tokens like ``[CPF_TOKEN_1]``. The
+    #      mapping is stored in :py:attr:`_pii_thread_cache` keyed by the
+    #      LangGraph ``thread_id`` so subsequent steps in the same invocation
+    #      (and follow-up turns inside the TTL) can resolve them.
+    #   2. The LangGraph layer / Gemini only ever sees redacted tokens.
+    #   3. ``_combined_post_model_hook`` → if the LLM emits a tool_call we
+    #      restore PII inside the tool args *before* the ToolNode runs, so
+    #      tools like ``consulta_iptu`` get the real CPF, not the token.
+    #   4. ``_filter_current_interaction`` (worker callback) restores PII in
+    #      every message body returned to the worker, so the citizen sees their
+    #      own real CPF/CEP/phone — never a token.
+    #
+    # Failure mode: every redact/restore call is wrapped in try/except. On
+    # error we log and fall through to raw text rather than breaking the
+    # conversation. The redactor itself is regex-only and historically does
+    # not raise, so the wrapper is defence in depth.
+    @staticmethod
+    def _pii_cache_ttl_seconds_from_env() -> int:
+        """Resolve the PII mapping TTL from env (default 600s = 10 min).
+
+        Reads ``PII_CACHE_TTL_SECONDS``; if unset or non-numeric we fall back
+        to a 10-minute window which empirically covers the short-term-memory
+        round-trip during a single citizen conversation.
+        """
+        raw = getenv("PII_CACHE_TTL_SECONDS", "")
+        if not raw:
+            return 600
+        try:
+            value = int(raw)
+            return max(1, value)
+        except (TypeError, ValueError):
+            return 600
+
+    @staticmethod
+    def _pii_redaction_enabled() -> bool:
+        """Feature flag — defaults ON for production-track per Fase 0 plan.
+
+        Set ``PII_REDACTION_ENABLED=false`` to short-circuit the entire path
+        if a regression surfaces in prod. We do not gate at import time so
+        flipping the env var only requires a restart, not a redeploy.
+        """
+        raw = getenv("PII_REDACTION_ENABLED", "true").strip().lower()
+        return raw not in ("0", "false", "no", "off")
+
+    @staticmethod
+    def _thread_id_from_kwargs(kwargs: dict) -> str:
+        """Mirror of ``extract_thread_id_from_config`` for the kwargs shape used
+        by the pre-invoke hook.
+        """
+        config = kwargs.get("config", {})
+        if isinstance(config, dict):
+            configurable = config.get("configurable", {})
+            if isinstance(configurable, dict):
+                thread_id = configurable.get("thread_id")
+                if thread_id:
+                    return str(thread_id)
+        return ""
+
+    def _redact_input_messages(self, **kwargs):
+        """Redact PII in user-supplied text *before* it reaches LangGraph/LLM.
+
+        Operates on ``kwargs["input"]["messages"]`` in place (the same shape
+        the existing ``_sanitize_input_messages`` and timestamp hooks mutate).
+        Each message's ``.content`` (or ``["content"]`` for dict shape) is
+        replaced with the redacted form; the corresponding token→PII mapping
+        is merged into the per-thread cache for later restoration.
+
+        Behaviour
+        ~~~~~~~~~
+        - Tool messages, AIMessages, system messages: untouched. Only message
+          dicts/objects without a ``type`` of ``ai``/``tool``/``system`` are
+          considered citizen-side input.
+        - Multimodal content (``content`` is a list of parts): only the text
+          parts are redacted; image / audio / binary parts pass through
+          intact.
+        - Non-string content (already a structured payload) is left alone.
+        - Empty / missing content is a no-op.
+        - Any exception is caught and logged; the message is left as-is so a
+          flaky redactor regex never breaks the bot.
+        """
+        if not self._pii_redaction_enabled():
+            return kwargs
+        try:
+            if "input" not in kwargs or "messages" not in kwargs["input"]:
+                return kwargs
+            messages = kwargs["input"]["messages"]
+            thread_id = self._thread_id_from_kwargs(kwargs)
+            if not thread_id:
+                # Without a thread id we cannot persist the mapping, so even if
+                # we redact the response side cannot restore. Leave untouched
+                # and rely on the upstream worker to always pass thread_id.
+                return kwargs
+            for message in messages:
+                self._redact_one_input_message(message, thread_id)
+        except Exception as exc:  # noqa: BLE001 — defence in depth
+            logger.warning(
+                f"[PII Redaction] Skipped input redaction due to error: {exc}"
+            )
+        return kwargs
+
+    def _redact_one_input_message(self, message, thread_id: str) -> None:
+        """Redact PII inside a single input message (dict or BaseMessage)."""
+        # Skip non-citizen messages: only HumanMessages / dicts with type=human
+        # carry citizen-supplied PT-BR PII. Tool/AI/System messages either
+        # contain machine output (already token-safe) or admin text.
+        message_type = self._message_type_of(message)
+        if message_type and message_type not in ("human", "user"):
+            return
+
+        content = self._read_message_content(message)
+        if content is None:
+            return
+
+        if isinstance(content, str):
+            redacted, _ = redact_with_cache(content, self._pii_thread_cache, thread_id)
+            if redacted is not content:
+                self._write_message_content(message, redacted)
+            return
+
+        if isinstance(content, list):
+            # Multimodal: walk text parts only.
+            mutated = False
+            for index, part in enumerate(content):
+                if isinstance(part, dict) and part.get("type") == "text":
+                    text_value = part.get("text")
+                    if isinstance(text_value, str) and text_value:
+                        redacted, _ = redact_with_cache(
+                            text_value, self._pii_thread_cache, thread_id
+                        )
+                        if redacted is not text_value:
+                            part["text"] = redacted
+                            mutated = True
+                elif isinstance(part, str):
+                    redacted, _ = redact_with_cache(
+                        part, self._pii_thread_cache, thread_id
+                    )
+                    if redacted is not part:
+                        content[index] = redacted
+                        mutated = True
+            if mutated:
+                self._write_message_content(message, content)
+
+    @staticmethod
+    def _message_type_of(message) -> str | None:
+        """Best-effort role detector for both dict-shaped and BaseMessage inputs."""
+        if isinstance(message, dict):
+            msg_type = message.get("type") or message.get("role")
+            return str(msg_type).lower() if msg_type else None
+        # BaseMessage / subclass
+        msg_type = getattr(message, "type", None)
+        if msg_type:
+            return str(msg_type).lower()
+        # Heuristic: class name → lower
+        return type(message).__name__.lower().replace("message", "") or None
+
+    @staticmethod
+    def _read_message_content(message):
+        if isinstance(message, dict):
+            return message.get("content")
+        return getattr(message, "content", None)
+
+    @staticmethod
+    def _write_message_content(message, value) -> None:
+        if isinstance(message, dict):
+            message["content"] = value
+        else:
+            try:
+                message.content = value
+            except Exception:
+                # Some BaseMessage subclasses (legacy) define content as a
+                # property without a setter. Fall back to monkey-patching the
+                # attribute dict so the redacted value survives.
+                try:
+                    object.__setattr__(message, "content", value)
+                except Exception:
+                    pass
+
+    def _restore_pii_in_messages(self, messages, thread_id: str) -> None:
+        """Restore PII tokens in a list of messages in place.
+
+        Walks ``.content`` and, for AIMessages, ``.tool_calls[*].args`` so the
+        text the citizen sees is reconstructed even if a tool call carried a
+        token (this can happen if the LLM echoes the user's CPF inside the
+        tool arg before we restore on the post-model hook).
+        """
+        if not self._pii_redaction_enabled() or not thread_id:
+            return
+        if not messages:
+            return
+        mapping = self._pii_thread_cache.get(thread_id)
+        if not mapping:
+            return
+        try:
+            for message in messages:
+                self._restore_pii_in_one_message(message, mapping)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                f"[PII Restoration] Skipped restore due to error: {exc}"
+            )
+
+    @staticmethod
+    def _restore_pii_in_one_message(message, mapping) -> None:
+        content = Agent._read_message_content(message)
+        if isinstance(content, str) and text_contains_token(content):
+            Agent._write_message_content(message, restore(content, mapping))
+        elif isinstance(content, list):
+            for index, part in enumerate(content):
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    if text_contains_token(part["text"]):
+                        part["text"] = restore(part["text"], mapping)
+                elif isinstance(part, str) and text_contains_token(part):
+                    content[index] = restore(part, mapping)
+
+        # Restore tokens nested inside tool_call args. This is the path that
+        # gives ``consulta_iptu``/``consulta_protocolo`` etc. the raw CPF the
+        # citizen sent — without it the tool would receive ``[CPF_TOKEN_1]``
+        # and fail in a confusing way.
+        tool_calls = getattr(message, "tool_calls", None)
+        if tool_calls:
+            for tool_call in tool_calls:
+                args = tool_call.get("args") if isinstance(tool_call, dict) else None
+                if isinstance(args, dict):
+                    for key, value in list(args.items()):
+                        if isinstance(value, str) and text_contains_token(value):
+                            args[key] = restore(value, mapping)
 
     @staticmethod
     def _tools_signature(tools: List[BaseTool]) -> str:
@@ -436,6 +689,12 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         """Centralizes all manipulations on input arguments before invoking the graph."""
         kwargs = self._add_timestamp_to_input_messages(**kwargs)
         kwargs = self._sanitize_input_messages(**kwargs)
+        # C3 PII redaction must run *after* sanitize/timestamp so it operates
+        # on the final user-visible string the Engine will hand to LangGraph.
+        # Mapping survives in the per-thread TTL cache; restoration happens at
+        # post-model (for tool args) and at _filter_current_interaction (for
+        # citizen-visible content).
+        kwargs = self._redact_input_messages(**kwargs)
         return kwargs
 
     @interceptor(
@@ -1272,8 +1531,27 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         extract_user_id=extract_thread_id_from_config
     )
     def _combined_post_model_hook(self, state, config=None):
-        # Log tool calls if present
+        # C3 PII restoration on tool_call args MUST happen before the tool
+        # node runs, otherwise tools like ``consulta_iptu`` get a token
+        # instead of the citizen's actual CPF. We only touch the latest
+        # AIMessage — older tool_call args were already restored on prior
+        # post-model passes (or never carried tokens to begin with).
         messages = state.get("messages", [])
+        try:
+            thread_id = self._extract_thread_id_for_metrics(config) or ""
+            if thread_id and messages:
+                last_ai = next(
+                    (msg for msg in reversed(messages) if isinstance(msg, AIMessage)),
+                    None,
+                )
+                if last_ai is not None:
+                    self._restore_pii_in_messages([last_ai], thread_id)
+        except Exception as exc:  # noqa: BLE001 — defence in depth
+            logger.warning(
+                f"[PII Restoration] post-model restore skipped: {exc}"
+            )
+
+        # Log tool calls if present
         for msg in reversed(messages):
             if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
                 logger.info("[Tool Execution] AI Message with tool calls detected")
@@ -1284,7 +1562,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                     logger.info(f"[Tool Execution]   - Tool Args: {tool_call.get('args', {})}")
                     logger.info(f"[Tool Execution]   - Full Tool Call: {tool_call}")
                 break  # Only log the most recent AI message
-        
+
         # Check if upsert_user_memory tool was called
         for msg in reversed(messages):
             if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
@@ -1549,6 +1827,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 return {"status_code": 500, "status": "error", "message": str(e)}
         result = await self._graph.ainvoke(**kwargs)
         filtered_result = self._filter_current_interaction(result)
+        # C3 PII restore — last hop before the worker callback. The cache is
+        # per-thread, so this is a no-op when the thread has no tokens.
+        filtered_result = self._restore_pii_in_result(filtered_result, **kwargs)
 
         # Simple tracing
         self._trace_conversation(filtered_result, **kwargs)
@@ -1571,6 +1852,11 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 )
             async for chunk in self._graph.astream(**kwargs):
                 filtered_chunk = self._filter_streaming_chunk(chunk)
+                # C3 PII restore on streamed chunks (best-effort — token
+                # boundaries may straddle chunk boundaries on partial frames;
+                # the final chunk carries the complete content so the citizen
+                # always sees real PII on the user-visible reply).
+                filtered_chunk = self._restore_pii_in_result(filtered_chunk, **kwargs)
                 yield dumpd(filtered_chunk)
 
         return async_generator()
@@ -1588,6 +1874,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         result = self._graph.invoke(**kwargs)
         filtered_result = self._filter_current_interaction(result)
+        filtered_result = self._restore_pii_in_result(filtered_result, **kwargs)
 
         # Simple tracing
         self._trace_conversation(filtered_result, **kwargs)
@@ -1606,6 +1893,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
         for chunk in self._graph.stream(**kwargs):
             filtered_chunk = self._filter_streaming_chunk(chunk)
+            filtered_chunk = self._restore_pii_in_result(filtered_chunk, **kwargs)
             yield dumpd(filtered_chunk)
 
     @interceptor(
@@ -1637,6 +1925,37 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         if isinstance(chunk, dict) and "messages" in chunk:
             return self._filter_current_interaction(chunk)
         return chunk
+
+    def _restore_pii_in_result(self, filtered_result, **kwargs) -> Any:
+        """Restore PII tokens in messages of ``filtered_result`` before return.
+
+        Final hop before the worker callback. Pulls ``thread_id`` from
+        ``kwargs["config"]`` (the same hook used by the rest of the runtime)
+        and restores any redaction tokens that still survive in ``.content``
+        or in dict-shaped messages. Idempotent on payloads without tokens —
+        :func:`text_contains_token` short-circuits the common case.
+
+        Streaming caveat
+        ~~~~~~~~~~~~~~~~
+        The current code base uses LangGraph's default ``stream_mode="updates"``,
+        where each emitted chunk carries a fully-formed ``AIMessage`` — token
+        boundaries can never split a ``[CPF_TOKEN_N]`` placeholder. If a
+        future change switches to ``stream_mode="messages"`` (per-token
+        streaming) the restore here needs a cross-chunk buffer so partial
+        ``[CPF_`` prefixes are not flushed to the citizen. Tracked as a P3
+        TODO; if you wire token-streaming, wrap this in a per-thread
+        :class:`io.StringIO` buffer keyed by ``thread_id``.
+        """
+        if not isinstance(filtered_result, dict):
+            return filtered_result
+        messages = filtered_result.get("messages")
+        if not isinstance(messages, list) or not messages:
+            return filtered_result
+        thread_id = self._thread_id_from_kwargs(kwargs)
+        if not thread_id:
+            return filtered_result
+        self._restore_pii_in_messages(messages, thread_id)
+        return filtered_result
 
     async def cleanup(self):
         """Cleanup resources, including connection pool and telemetry."""
