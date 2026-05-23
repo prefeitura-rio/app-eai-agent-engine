@@ -21,9 +21,15 @@ from langchain_google_vertexai import ChatVertexAI
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
-from opentelemetry import trace
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import (
+    ConsoleMetricExporter,
+    PeriodicExportingMetricReader,
+)
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -243,6 +249,41 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._database_password = getenv("DATABASE_PASSWORD", "")
         self._otlp_endpoint = getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
         self._otlp_header = getenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
+        # Metrics endpoint: dedicated env var, falls back to the trace endpoint
+        # (with path swap `/v1/traces` → `/v1/metrics` — OTLP collectors usam
+        # paths distintos por signal; reaproveitar trace URL crua manda métricas
+        # pra `/v1/traces` e o collector retorna 404). `OTEL_METRICS_EXPORTER=console`
+        # switches to stdout exporter (useful em dev/staging sem OTLP target).
+        _metrics_endpoint_raw = getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")
+        if _metrics_endpoint_raw:
+            self._otlp_metrics_endpoint = _metrics_endpoint_raw
+        elif self._otlp_endpoint:
+            # Substitui `/v1/traces` → `/v1/metrics` se o trace endpoint tem
+            # esse suffix canônico; senão usa cru (collectors all-paths-accept).
+            if self._otlp_endpoint.rstrip("/").endswith("/v1/traces"):
+                self._otlp_metrics_endpoint = (
+                    self._otlp_endpoint.rstrip("/")[: -len("/v1/traces")] + "/v1/metrics"
+                )
+            else:
+                self._otlp_metrics_endpoint = self._otlp_endpoint
+        else:
+            self._otlp_metrics_endpoint = ""
+        self._otlp_metrics_header = getenv(
+            "OTEL_EXPORTER_OTLP_METRICS_HEADERS", self._otlp_header
+        )
+        self._otel_metrics_exporter = getenv(
+            "OTEL_METRICS_EXPORTER", "otlp"
+        ).lower().strip()
+        try:
+            _interval = int(getenv("OTEL_METRIC_EXPORT_INTERVAL_MILLIS", "60000"))
+        except ValueError:
+            _interval = 60000
+        # Clamp pra positivo: PeriodicExportingMetricReader rejeita 0/negativo
+        # com ValueError, e queremos fail-safe (fallback default em vez de
+        # crash startup por bad env value).
+        if _interval <= 0:
+            _interval = 60000
+        self._otel_metric_export_interval_ms = _interval
 
         self._graph = None
         self._checkpointer = None  # Store checkpointer instance
@@ -254,6 +295,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # OpenTelemetry tracer e processor para shutdown
         self._tracer = None
         self._batch_processor = None
+        self._meter_provider = None
         self._shutdown_handlers_registered = False
 
         # Short-term memory limits - lazy loaded from env vars
@@ -599,9 +641,89 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # Initialize tracer
         self._tracer = trace.get_tracer(__name__)
 
+        # MeterProvider (M0.0 do plano-bot-2026): sem isso o histogram
+        # `gen_ai.client.token.usage` (engine/observability/token_metrics.py)
+        # virava noop contra o NoOpMeterProvider default. Resource compartilhado
+        # com TracerProvider — service.name idêntico facilita correlação
+        # logs/traces/metrics em Datadog/Grafana/Honeycomb.
+        resource = Resource.create({"service.name": self._otpl_service})
+        metric_exporter = self._build_metric_exporter()
+        if metric_exporter is not None:
+            metric_reader = PeriodicExportingMetricReader(
+                metric_exporter,
+                export_interval_millis=self._otel_metric_export_interval_ms,
+            )
+            meter_provider = MeterProvider(
+                resource=resource,
+                metric_readers=[metric_reader],
+            )
+            self._meter_provider = meter_provider
+            metrics.set_meter_provider(meter_provider)
+            logger.info(
+                "[OTel] MeterProvider initialized exporter={} interval_ms={}",
+                self._otel_metrics_exporter,
+                self._otel_metric_export_interval_ms,
+            )
+        else:
+            self._meter_provider = None
+            logger.info(
+                "[OTel] MeterProvider skipped (exporter={} endpoint empty); "
+                "token usage histogram will be noop",
+                self._otel_metrics_exporter,
+            )
+
         LangchainInstrumentor().instrument()
 
         self._opentelemetry_setup_complete = True
+
+    def _build_metric_exporter(self):
+        """Constrói o metric exporter conforme env config.
+
+        Retorna None se nenhum exporter pode ser instanciado (caso em que
+        MeterProvider não é setado e métricas continuam noop — fail-safe).
+
+        Estratégias suportadas:
+          - ``otel`` / ``otlp`` (default no init via getenv): OTLPMetricExporter
+            via HTTP/protobuf usando ``OTEL_EXPORTER_OTLP_METRICS_ENDPOINT``
+            (ou trace endpoint).
+          - ``console``: ConsoleMetricExporter (stdout). Útil em dev/staging
+            sem coletor OTLP.
+          - ``none`` / vazio (env var explicitamente unset): skip.
+
+        IMPORTANTE: NÃO normalizar `""` → `"otlp"` aqui. Operador que setou
+        `OTEL_METRICS_EXPORTER=""` (string vazia) quer disable explícito —
+        respeitar. Default `otlp` vem do `getenv` no `__init__`.
+        """
+        strategy = self._otel_metrics_exporter
+        if strategy in ("none", ""):
+            return None
+        if strategy == "console":
+            return ConsoleMetricExporter()
+        if strategy in ("otel", "otlp"):
+            if not self._otlp_metrics_endpoint:
+                return None
+            # split('=', 1) — maxsplit=1 evita ValueError quando o value tem
+            # '=' (e.g. JWT/Bearer com base64 padding `=` no final). Sem isso,
+            # `OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer xyz=="`
+            # aborta startup com unpacking error.
+            headers = (
+                dict(
+                    header.split("=", 1)
+                    for header in self._otlp_metrics_header.split(",")
+                    if "=" in header
+                )
+                if self._otlp_metrics_header
+                else None
+            )
+            return OTLPMetricExporter(
+                endpoint=self._otlp_metrics_endpoint,
+                headers=headers,
+            )
+        logger.warning(
+            "[OTel] OTEL_METRICS_EXPORTER={!r} not recognized; skipping",
+            strategy,
+        )
+        return None
 
     def _trace_conversation(self, filtered_result: dict, **kwargs):
         """Simple tracing to show user input and model output."""
@@ -1974,6 +2096,20 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             self._batch_processor.force_flush(timeout_millis=5000)
             self._batch_processor.shutdown()
             logger.info("[Agent Cleanup] Telemetry processor flushed and shutdown")
+
+        # Shutdown MeterProvider (PeriodicExportingMetricReader background
+        # thread + buffered measurements). Sem isso, workers que reiniciam
+        # múltiplas vezes em testes/dev acumulam readers ativos. force_flush
+        # garante export pendente antes do shutdown.
+        if self._meter_provider:
+            try:
+                self._meter_provider.force_flush(timeout_millis=5000)
+                self._meter_provider.shutdown()
+                logger.info("[Agent Cleanup] MeterProvider flushed and shutdown")
+            except Exception as e:
+                logger.warning(f"[Agent Cleanup] Error shutting down MeterProvider: {e}")
+            finally:
+                self._meter_provider = None
 
     def __del__(self):
         """Ensure cleanup on object destruction."""
