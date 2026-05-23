@@ -40,6 +40,18 @@ from vertexai.agent_engines import (
 from engine.custom_react_agent import create_react_agent
 from engine.log import logger
 
+# Explicit Gemini caching (opt-in via GEMINI_EXPLICIT_CACHE_ENABLED)
+from engine.caching import GeminiCacheManager
+
+# OTel GenAI token usage histogram (SemConv v1.37)
+from engine.observability import (
+    TOKEN_TYPE_CACHE_READ,
+    TOKEN_TYPE_INPUT,
+    TOKEN_TYPE_OUTPUT,
+    TOKEN_TYPE_REASONING,
+    record_token_usage,
+)
+
 # Error monitoring utilities (safe fallback if not available)
 from engine.utils import (
     interceptor,
@@ -248,6 +260,57 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         
         # Store messages sent to LLM for accurate token counting
         self._last_llm_input_messages = None
+
+        # Explicit Gemini cache manager (opt-in). Constructed lazily so the
+        # cold path is unaffected when the feature flag is OFF.
+        self._gemini_cache_manager: GeminiCacheManager | None = None
+
+    def _explicit_cache_enabled(self) -> bool:
+        """Read the opt-in env flag for explicit Gemini caching.
+
+        Defaults to OFF so existing deployments stay on implicit caching
+        until we have confidence in the cost/coverage math. Flip via
+        ``GEMINI_EXPLICIT_CACHE_ENABLED=true`` in Infisical.
+        """
+        return getenv("GEMINI_EXPLICIT_CACHE_ENABLED", "").lower() in ("1", "true", "yes")
+
+    def _ensure_gemini_cache_manager(self) -> GeminiCacheManager:
+        """Lazy-init the manager so import order is irrelevant.
+
+        Honours ``GEMINI_EXPLICIT_CACHE_TTL_SECONDS`` (default 3600s) and
+        ``GEMINI_EXPLICIT_CACHE_MIN_TOKENS`` (default 1024 — Flash floor).
+        """
+        if self._gemini_cache_manager is None:
+            from datetime import timedelta as _td  # local alias for clarity
+
+            ttl_seconds = int(getenv("GEMINI_EXPLICIT_CACHE_TTL_SECONDS", "3600"))
+            min_tokens = int(getenv("GEMINI_EXPLICIT_CACHE_MIN_TOKENS", "1024"))
+            self._gemini_cache_manager = GeminiCacheManager(
+                model_name=self._model,
+                ttl=_td(seconds=ttl_seconds),
+                min_tokens=min_tokens,
+            )
+        return self._gemini_cache_manager
+
+    @staticmethod
+    def _tools_signature(tools: List[BaseTool]) -> str:
+        """Build a stable signature of the bound tools for cache hashing.
+
+        Uses tool name + (truncated) description. Schema changes inside a
+        tool's args trigger a hash drift via the description shift; pure
+        name renames also drift. Good enough as a first cut.
+        """
+        if not tools:
+            return ""
+        parts: list[str] = []
+        for tool in tools:
+            try:
+                name = getattr(tool, "name", "")
+                description = (getattr(tool, "description", "") or "")[:200]
+                parts.append(f"{name}::{description}")
+            except Exception:
+                continue
+        return "|".join(sorted(parts))
 
     def _set_up_opentelemetry(self):
         if self._opentelemetry_setup_complete:
@@ -1141,9 +1204,68 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                         current_span.set_attribute("llm.usage.cache_read_tokens", cache_read)
                     if reasoning_tokens > 0:
                         current_span.set_attribute("llm.usage.reasoning_tokens", reasoning_tokens)
-                    
+
+            # Emit OTel GenAI SemConv v1.37 histogram observations.
+            # One observation per token-type dimension so dashboards can
+            # filter `gen_ai.token.type ∈ {input,output,cache_read,reasoning}`.
+            # `input_tokens` from Vertex AI is the *total* input (including
+            # any cache_read portion); the histogram preserves that meaning
+            # so summing input + output gives the full per-request token
+            # count.
+            try:
+                metric_thread_id = self._extract_thread_id_for_metrics(config)
+                record_token_usage(
+                    TOKEN_TYPE_INPUT,
+                    input_tokens,
+                    model=self._model,
+                    thread_id=metric_thread_id,
+                )
+                record_token_usage(
+                    TOKEN_TYPE_OUTPUT,
+                    output_tokens,
+                    model=self._model,
+                    thread_id=metric_thread_id,
+                )
+                if cache_read > 0:
+                    record_token_usage(
+                        TOKEN_TYPE_CACHE_READ,
+                        cache_read,
+                        model=self._model,
+                        thread_id=metric_thread_id,
+                    )
+                if reasoning_tokens > 0:
+                    record_token_usage(
+                        TOKEN_TYPE_REASONING,
+                        reasoning_tokens,
+                        model=self._model,
+                        thread_id=metric_thread_id,
+                    )
+            except Exception as metric_error:
+                # Never let a metrics failure break the post-model hook.
+                logger.warning(
+                    f"[Token Usage Metrics] Failed to record OTel histogram: {metric_error}"
+                )
+
         except Exception as e:
             logger.error(f"[Token Usage] Error logging token usage: {e}", exc_info=True)
+
+    @staticmethod
+    def _extract_thread_id_for_metrics(config) -> str | None:
+        """Pull ``thread_id`` from the LangGraph config, falling back to None.
+
+        Kept defensive so metric emission never raises on shape drift in the
+        LangGraph config dict.
+        """
+        if not config:
+            return None
+        try:
+            configurable = config.get("configurable") if isinstance(config, dict) else None
+            if not configurable:
+                return None
+            thread_id = configurable.get("thread_id")
+            return str(thread_id) if thread_id else None
+        except Exception:
+            return None
 
     @interceptor(
         source=make_source(POST_MODEL_HOOK, POST_MODEL_COMBINED),
@@ -1179,20 +1301,90 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         return self._inject_thread_id_in_user_id_params(state, config)
 
+    def _build_chat_vertex_ai_with_cache_fallback(
+        self,
+        *,
+        base_llm_kwargs: dict[str, Any],
+        cached_content: str | None,
+    ):
+        """Construct ``ChatVertexAI`` with an explicit-cache fallback.
+
+        If the cache resource is stale/invalid (TTL expired, deleted out-
+        of-band, schema drift) ``ChatVertexAI`` may reject it during
+        validation. We catch that, invalidate our local cache record so
+        the next setup recreates one, and rebuild the LLM without the
+        ``cached_content`` kwarg so requests degrade to implicit caching
+        instead of failing the process for its lifetime.
+        """
+        if cached_content:
+            try:
+                kwargs_with_cache = dict(base_llm_kwargs)
+                kwargs_with_cache["cached_content"] = cached_content
+                return ChatVertexAI(**kwargs_with_cache)
+            except Exception as exc:
+                logger.warning(
+                    f"[GeminiCache] ChatVertexAI rejected cached_content={cached_content}; "
+                    f"invalidating and falling back to implicit caching: {exc}"
+                )
+                if self._gemini_cache_manager is not None:
+                    try:
+                        self._gemini_cache_manager.invalidate()
+                    except Exception as inv_exc:
+                        logger.warning(
+                            f"[GeminiCache] invalidate() during fallback failed: {inv_exc}"
+                        )
+        return ChatVertexAI(**base_llm_kwargs)
+
     def _create_react_agent(
         self,
         checkpointer: AsyncPostgresSaver | PostgresSaver | None = None,
     ):
         """Create and configure the React Agent."""
-        llm = ChatVertexAI(
+        # Resolve the explicit-cache resource name (opt-in). When the flag
+        # is OFF, ``cached_content`` stays ``None`` and ``ChatVertexAI``
+        # falls back to implicit caching (which Gemini 2.5+ has on by
+        # default since 2026). Any failure inside the manager is caught
+        # by ``GeminiCacheManager.ensure_cache`` and degrades to ``None``.
+        cached_content: str | None = None
+        if self._explicit_cache_enabled():
+            try:
+                cache_result = self._ensure_gemini_cache_manager().ensure_cache(
+                    self._system_prompt,
+                    tools_signature=self._tools_signature(self._tools),
+                )
+                cached_content = cache_result.cached_content
+                if cached_content:
+                    logger.info(
+                        f"[GeminiCache] Using explicit cache {cached_content} "
+                        f"(created={cache_result.created} hit={cache_result.hit})"
+                    )
+                elif cache_result.skipped_below_min:
+                    logger.info(
+                        "[GeminiCache] Explicit cache skipped: prompt below min-tokens; "
+                        "implicit caching still applies"
+                    )
+            except Exception as cache_exc:
+                # Never let cache wiring break agent creation — fall back to
+                # implicit caching silently with a logged warning.
+                logger.warning(
+                    f"[GeminiCache] Explicit cache wiring failed, using implicit only: {cache_exc}"
+                )
+                cached_content = None
+
+        base_llm_kwargs: dict[str, Any] = dict(
             model_name=self._model,
             temperature=self._temperature,
             include_thoughts=self._include_thoughts,
             thinking_budget=self._thinking_budget,
         )
+
+        llm = self._build_chat_vertex_ai_with_cache_fallback(
+            base_llm_kwargs=base_llm_kwargs,
+            cached_content=cached_content,
+        )
         # llm_with_tools = llm.bind_tools(tools=self._tools, parallel_tool_calls=False)
         llm_with_tools = llm.bind_tools(tools=self._tools)
-        
+
         # Wrap tools with logging
         wrapped_tools = self._wrap_tools_with_logging(self._tools)
 
