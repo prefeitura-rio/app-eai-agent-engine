@@ -43,6 +43,7 @@ from vertexai.agent_engines import (
 
 # from langgraph.prebuilt import create_react_agent
 # use custom graph without _validate_chat_history
+from engine.active_learning import FlagAssignment, inject_few_shot_examples
 from engine.custom_react_agent import create_react_agent
 from engine.log import logger
 
@@ -80,6 +81,7 @@ from engine.utils import (
     PRE_MODEL_HOOK,
     PRE_MODEL_COMBINED,
     PRE_MODEL_FILTER_MEMORY,
+    PRE_MODEL_INJECT_FEW_SHOT,
     PRE_MODEL_INJECT_MEMORY,
     PRE_MODEL_INJECT_THREAD_ID,
     POST_MODEL_HOOK,
@@ -1417,6 +1419,45 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         return {"messages": messages}
 
     @interceptor(
+        source=make_source(PRE_MODEL_HOOK, PRE_MODEL_INJECT_FEW_SHOT),
+        extract_user_id=extract_thread_id_from_config,
+    )
+    def _inject_active_learning_few_shot(self, state, config=None):
+        """Inject Active Learning few-shot examples pre-resolved by the async caller.
+
+        Reads ``active_learning_assignment`` and ``active_learning_examples``
+        from ``config["configurable"]``. If either is missing, returns the
+        state unchanged. The async caller (query handler) is responsible
+        for resolving the flag and retrieving examples before invoking the
+        LangGraph runtime — this hook is sync-safe by design.
+
+        Feature is OFF by default: a caller that does not pre-resolve
+        anything sees no behaviour change. See ADR-032 (Iter 2.5) and
+        ``engine/active_learning/hook.py`` docstring for the sync/async
+        bridge rationale.
+        """
+
+        if not config or not isinstance(config, dict):
+            return state
+
+        configurable = config.get("configurable", {})
+        assignment = configurable.get("active_learning_assignment")
+        if assignment is None:
+            return state
+        if not isinstance(assignment, FlagAssignment):
+            # Deserialization drift would surface as AttributeError deep
+            # inside the pure orchestrator. Fail fast at the boundary with
+            # a clear message — same shape AGENTS § Error Handling.
+            logger.warning(
+                "[Active Learning] active_learning_assignment is "
+                f"{type(assignment).__name__}, expected FlagAssignment; skipping"
+            )
+            return state
+
+        examples = configurable.get("active_learning_examples", [])
+        return inject_few_shot_examples(state, assignment, examples)
+
+    @interceptor(
         source=make_source(PRE_MODEL_HOOK, PRE_MODEL_COMBINED),
         extract_user_id=extract_thread_id_from_config
     )
@@ -1428,6 +1469,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         # Step 2: Inject long-term memory as SystemMessage
         state = self._inject_long_term_memory(state, config)
+
+        # Step 2.5: Inject Active Learning few-shot examples (sync-safe).
+        # The async caller is responsible for resolving the flag assignment
+        # and retrieving examples; this step is a pure read of config.
+        # Returns state unchanged when keys are absent — feature stays off
+        # by default until callers opt in.
+        state = self._inject_active_learning_few_shot(state, config)
 
         # Step 3: Apply short-term memory filtering
         # This returns llm_input_messages which should NOT be overwritten

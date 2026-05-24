@@ -24,6 +24,7 @@ PRE_INVOKE_SANITIZE = "sanitize_inputs"
 
 PRE_MODEL_COMBINED = "combined"
 PRE_MODEL_INJECT_MEMORY = "inject_memory"
+PRE_MODEL_INJECT_FEW_SHOT = "inject_few_shot"
 PRE_MODEL_FILTER_MEMORY = "filter_memory"
 PRE_MODEL_INJECT_THREAD_ID = "inject_thread_id"
 

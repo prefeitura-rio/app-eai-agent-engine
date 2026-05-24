@@ -30,6 +30,7 @@ try:
         PRE_INVOKE_SANITIZE,
         PRE_MODEL_COMBINED,
         PRE_MODEL_INJECT_MEMORY,
+        PRE_MODEL_INJECT_FEW_SHOT,
         PRE_MODEL_FILTER_MEMORY,
         PRE_MODEL_INJECT_THREAD_ID,
         POST_MODEL_COMBINED,
@@ -78,6 +79,7 @@ except Exception as e:
     PRE_INVOKE_SANITIZE = "sanitize_inputs"
     PRE_MODEL_COMBINED = "combined"
     PRE_MODEL_INJECT_MEMORY = "inject_memory"
+    PRE_MODEL_INJECT_FEW_SHOT = "inject_few_shot"
     PRE_MODEL_FILTER_MEMORY = "filter_memory"
     PRE_MODEL_INJECT_THREAD_ID = "inject_thread_id"
     POST_MODEL_COMBINED = "combined"
@@ -115,6 +117,7 @@ __all__ = [
     "PRE_INVOKE_SANITIZE",
     "PRE_MODEL_COMBINED",
     "PRE_MODEL_INJECT_MEMORY",
+    "PRE_MODEL_INJECT_FEW_SHOT",
     "PRE_MODEL_FILTER_MEMORY",
     "PRE_MODEL_INJECT_THREAD_ID",
     "POST_MODEL_COMBINED",
