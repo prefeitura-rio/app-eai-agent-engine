@@ -4,6 +4,7 @@ Submodules:
 - flag_client: low-privilege HTTP client for Gateway /api/v1/flags/:name/assign.
 - fewshot_injector: pure renderer for treatment-variant few-shot SystemMessage.
 - embedder: Gemini text-embedding-004 adapter implementing the Embedder Protocol.
+- hook: pure orchestrator that combines assignment + examples into state.
 """
 
 from engine.active_learning.embedder import (
@@ -23,6 +24,10 @@ from engine.active_learning.flag_client import (
     FlagClientError,
     FlagClientTimeout,
 )
+from engine.active_learning.hook import (
+    TREATMENT_VARIANT,
+    inject_few_shot_examples,
+)
 
 __all__ = [
     "Embedder",
@@ -34,6 +39,8 @@ __all__ = [
     "GeminiEmbedder",
     "GeminiEmbedderConfig",
     "GeminiEmbedderError",
+    "TREATMENT_VARIANT",
     "build_few_shot_message",
+    "inject_few_shot_examples",
     "render_few_shot_block",
 ]
