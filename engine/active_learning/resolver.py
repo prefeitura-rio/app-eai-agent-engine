@@ -118,7 +118,19 @@ class ActiveLearningResolver:
             failure), examples is empty and the downstream hook is a no-op.
         """
 
-        assignment = await self._flag_client.assign(self._flag_name, user_id)
+        # FlagClient.assign raises FlagClientError on 4xx / invalid JSON /
+        # missing keys (realistic config drift: flag renamed, schema change,
+        # auth misconfig). The experiment layer must NOT break a citizen
+        # turn, so a raising assign degrades to control (None, []).
+        try:
+            assignment = await self._flag_client.assign(self._flag_name, user_id)
+        except Exception as exc:  # noqa: BLE001 — experiment layer must not break turn
+            logger.warning(
+                f"[Active Learning] flag assign failed for user={user_id}: {exc}; "
+                "degrading to control behaviour"
+            )
+            return ResolvedActiveLearning(assignment=None, examples=[])
+
         if assignment is None or assignment.variant != TREATMENT_VARIANT:
             return ResolvedActiveLearning(assignment=assignment, examples=[])
 

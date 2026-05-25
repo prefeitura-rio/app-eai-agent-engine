@@ -50,6 +50,15 @@ class _RaisingRetriever:
         raise RuntimeError("index unavailable")
 
 
+class _RaisingFlagClient:
+    """Mirrors FlagClient.assign raising FlagClientError on config drift."""
+
+    async def assign(self, flag_name: str, user_id: str) -> FlagAssignment:
+        from engine.active_learning.flag_client import FlagClientError
+
+        raise FlagClientError("simulated 4xx config drift")
+
+
 def _treatment() -> FlagAssignment:
     return FlagAssignment(flag="active_learning_v1", variant="treatment", user_id="u-1")
 
@@ -112,6 +121,20 @@ async def test_resolve_retriever_failure_degrades_to_empty():
     # Assignment preserved (still treatment) but examples empty — no raise.
     assert result.assignment is not None
     assert result.assignment.variant == "treatment"
+    assert result.examples == []
+
+
+@pytest.mark.asyncio
+async def test_resolve_flag_client_raises_degrades_to_control():
+    """FlagClient.assign raising (4xx config drift) must NOT propagate —
+    the experiment layer degrades to control (None, [])."""
+
+    resolver = ActiveLearningResolver(
+        flag_client=_RaisingFlagClient(),  # type: ignore[arg-type]
+        retriever=_RecordingRetriever([_example()]),
+    )
+    result = await resolver.resolve("u-1", "query")
+    assert result.assignment is None
     assert result.examples == []
 
 

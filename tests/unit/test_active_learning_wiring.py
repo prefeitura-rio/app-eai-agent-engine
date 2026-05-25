@@ -21,8 +21,10 @@ import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from engine.active_learning import (
+    ActiveLearningResolver,
     FewShotExample,
     FlagAssignment,
+    ResolvedActiveLearning,
 )
 from engine.agent import Agent
 
@@ -284,3 +286,246 @@ def test_combined_hook_pass_through_when_feature_off(
     # No SystemMessage added.
     assert all(not isinstance(m, SystemMessage) for m in messages)
     assert len(messages) == 1
+
+
+# ---------- _latest_user_text ----------
+
+
+def test_latest_user_text_from_human_message():
+    graph_input = {"messages": [HumanMessage(content="minha pergunta")]}
+    assert Agent._latest_user_text(graph_input) == "minha pergunta"
+
+
+def test_latest_user_text_from_dict_message():
+    graph_input = {"messages": [{"type": "human", "content": "via dict"}]}
+    assert Agent._latest_user_text(graph_input) == "via dict"
+
+
+def test_latest_user_text_returns_most_recent_human():
+    graph_input = {
+        "messages": [
+            HumanMessage(content="primeira"),
+            HumanMessage(content="mais recente"),
+        ]
+    }
+    assert Agent._latest_user_text(graph_input) == "mais recente"
+
+
+def test_latest_user_text_empty_when_no_messages():
+    assert Agent._latest_user_text({"messages": []}) == ""
+    assert Agent._latest_user_text({}) == ""
+    assert Agent._latest_user_text("not-a-dict") == ""
+
+
+def test_latest_user_text_safe_on_non_list_messages():
+    """Truthy non-list messages must return '' not raise (e.g. int)."""
+
+    assert Agent._latest_user_text({"messages": 123}) == ""
+    assert Agent._latest_user_text({"messages": "a string"}) == ""
+    assert Agent._latest_user_text({"messages": None}) == ""
+
+
+# ---------- _resolve_active_learning_into_config ----------
+
+
+def _resolver_returning(
+    assignment: FlagAssignment | None, examples: list[FewShotExample]
+) -> ActiveLearningResolver:
+    class _StubResolver:
+        async def resolve(self, user_id: str, query: str) -> ResolvedActiveLearning:
+            return ResolvedActiveLearning(assignment=assignment, examples=examples)
+
+    return _StubResolver()  # type: ignore[return-value]
+
+
+@pytest.mark.asyncio
+async def test_resolution_noop_when_no_resolver(agent: Agent) -> None:
+    kwargs = {
+        "config": {"configurable": {"thread_id": "t1"}},
+        "input": {"messages": [HumanMessage(content="hi")]},
+    }
+    result = await agent._resolve_active_learning_into_config(kwargs)
+    assert result is kwargs  # untouched
+
+
+@pytest.mark.asyncio
+async def test_resolution_noop_when_no_thread_id(
+    assignment_treatment: FlagAssignment, example: FewShotExample
+) -> None:
+    agent = Agent(
+        model="gemini-2.5-flash",
+        system_prompt="(t)",
+        tools=[],
+        otpl_service="test-engine",
+        active_learning_resolver=_resolver_returning(assignment_treatment, [example]),
+    )
+    kwargs = {
+        "config": {"configurable": {}},  # no thread_id
+        "input": {"messages": [HumanMessage(content="hi")]},
+    }
+    result = await agent._resolve_active_learning_into_config(kwargs)
+    assert result is kwargs
+
+
+@pytest.mark.asyncio
+async def test_resolution_noop_when_no_query(
+    assignment_treatment: FlagAssignment, example: FewShotExample
+) -> None:
+    agent = Agent(
+        model="gemini-2.5-flash",
+        system_prompt="(t)",
+        tools=[],
+        otpl_service="test-engine",
+        active_learning_resolver=_resolver_returning(assignment_treatment, [example]),
+    )
+    kwargs = {
+        "config": {"configurable": {"thread_id": "t1"}},
+        "input": {"messages": []},  # no human text
+    }
+    result = await agent._resolve_active_learning_into_config(kwargs)
+    assert result is kwargs
+
+
+@pytest.mark.asyncio
+async def test_resolution_merges_overrides_into_config(
+    assignment_treatment: FlagAssignment, example: FewShotExample
+) -> None:
+    agent = Agent(
+        model="gemini-2.5-flash",
+        system_prompt="(t)",
+        tools=[],
+        otpl_service="test-engine",
+        active_learning_resolver=_resolver_returning(assignment_treatment, [example]),
+    )
+    kwargs = {
+        "config": {"configurable": {"thread_id": "t1", "checkpoint_ns": "ns"}},
+        "input": {"messages": [HumanMessage(content="minha query")]},
+    }
+    result = await agent._resolve_active_learning_into_config(kwargs)
+    configurable = result["config"]["configurable"]
+    # Pre-existing keys preserved.
+    assert configurable["thread_id"] == "t1"
+    assert configurable["checkpoint_ns"] == "ns"
+    # New AL keys merged.
+    assert configurable["active_learning_assignment"] is assignment_treatment
+    assert configurable["active_learning_examples"] == [example]
+    # Original kwargs not mutated.
+    assert "active_learning_assignment" not in kwargs["config"]["configurable"]
+
+
+# ---------- Hot-path integration via async_query ----------
+
+
+@pytest.mark.asyncio
+async def test_async_query_runs_resolution_stage(
+    assignment_treatment: FlagAssignment,
+    example: FewShotExample,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Drives async_query end-to-end (graph stubbed) and proves the
+    resolution stage enriches config before the graph is invoked.
+
+    Guards against a future refactor dropping the resolution call from
+    async_query."""
+
+    agent = Agent(
+        model="gemini-2.5-flash",
+        system_prompt="(t)",
+        tools=[],
+        otpl_service="test-engine",
+        active_learning_resolver=_resolver_returning(assignment_treatment, [example]),
+    )
+
+    # Stub out the heavy machinery: pre-invoke hook passes kwargs through,
+    # async setup is a no-op, and the graph captures the config it received.
+    monkeypatch.setattr(agent, "_combined_pre_invoke_hook", lambda **kw: kw)
+
+    async def _noop_setup():
+        return None
+
+    monkeypatch.setattr(agent, "_ensure_async_setup", _noop_setup)
+
+    captured: dict[str, Any] = {}
+
+    class _StubGraph:
+        async def ainvoke(self, **kwargs):
+            captured["config"] = kwargs.get("config")
+            return {"messages": []}
+
+    agent._graph = _StubGraph()
+    monkeypatch.setattr(agent, "_filter_current_interaction", lambda result: result)
+    monkeypatch.setattr(
+        agent, "_restore_pii_in_result", lambda result, **kw: result
+    )
+    monkeypatch.setattr(agent, "_trace_conversation", lambda result, **kw: None)
+
+    await agent.async_query(
+        config={"configurable": {"thread_id": "t1"}},
+        input={"messages": [HumanMessage(content="minha query")]},
+    )
+
+    configurable = captured["config"]["configurable"]
+    assert configurable["active_learning_assignment"] is assignment_treatment
+    assert configurable["active_learning_examples"] == [example]
+
+
+@pytest.mark.asyncio
+async def test_async_query_resolver_raise_does_not_break_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A resolver that raises must NOT break async_query — the turn
+    proceeds with the original (un-enriched) config."""
+
+    class _BoomResolver:
+        async def resolve(self, user_id: str, query: str):
+            raise RuntimeError("boom")
+
+    agent = Agent(
+        model="gemini-2.5-flash",
+        system_prompt="(t)",
+        tools=[],
+        otpl_service="test-engine",
+        active_learning_resolver=_BoomResolver(),  # type: ignore[arg-type]
+    )
+
+    monkeypatch.setattr(agent, "_combined_pre_invoke_hook", lambda **kw: kw)
+
+    async def _noop_setup():
+        return None
+
+    monkeypatch.setattr(agent, "_ensure_async_setup", _noop_setup)
+
+    captured: dict[str, Any] = {}
+
+    class _StubGraph:
+        async def ainvoke(self, **kwargs):
+            captured["config"] = kwargs.get("config")
+            return {"messages": []}
+
+    agent._graph = _StubGraph()
+    monkeypatch.setattr(agent, "_filter_current_interaction", lambda result: result)
+    monkeypatch.setattr(
+        agent, "_restore_pii_in_result", lambda result, **kw: result
+    )
+    monkeypatch.setattr(agent, "_trace_conversation", lambda result, **kw: None)
+
+    # Must not raise.
+    await agent.async_query(
+        config={"configurable": {"thread_id": "t1"}},
+        input={"messages": [HumanMessage(content="q")]},
+    )
+    # Config reached the graph without AL keys (degraded to control).
+    configurable = captured["config"]["configurable"]
+    assert "active_learning_assignment" not in configurable
+
+
+def test_async_query_methods_keep_error_interceptor():
+    """Guard against decorator-misplacement regression: inserting helper
+    methods must not steal the @interceptor from the async query
+    entrypoints. The interceptor uses functools.wraps, so a decorated
+    method exposes __wrapped__; the undecorated helpers do not."""
+
+    assert hasattr(Agent.async_query, "__wrapped__")
+    assert hasattr(Agent.async_stream_query, "__wrapped__")
+    # The resolution helper is intentionally undecorated (it self-guards).
+    assert not hasattr(Agent._resolve_active_learning_into_config, "__wrapped__")

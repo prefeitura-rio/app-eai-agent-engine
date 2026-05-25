@@ -43,7 +43,11 @@ from vertexai.agent_engines import (
 
 # from langgraph.prebuilt import create_react_agent
 # use custom graph without _validate_chat_history
-from engine.active_learning import FlagAssignment, inject_few_shot_examples
+from engine.active_learning import (
+    ActiveLearningResolver,
+    FlagAssignment,
+    inject_few_shot_examples,
+)
 from engine.custom_react_agent import create_react_agent
 from engine.log import logger
 
@@ -235,10 +239,17 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         include_thoughts: bool = True,
         thinking_budget: int = -1,
         otpl_service: str = "langgraph-eai-vX",
+        active_learning_resolver: ActiveLearningResolver | None = None,
     ):
         self._model = model
         self._tools = tools or []
         self._system_prompt = system_prompt
+        # Active Learning resolution stage (Iter 2.5, Option 3). When None
+        # (default) the feature is OFF: the async query path skips resolution
+        # and the sync hook sees no config keys, so behaviour is unchanged.
+        # The caller injects a configured resolver (FlagClient + retriever)
+        # to turn the experiment on.
+        self._active_learning_resolver = active_learning_resolver
         self._temperature = temperature
         self._include_thoughts = include_thoughts
         self._thinking_budget = thinking_budget
@@ -1969,6 +1980,76 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._setup_complete_sync = True
         return self._graph
 
+    async def _resolve_active_learning_into_config(self, kwargs: dict) -> dict:
+        """Resolution stage of the Active Learning bridge (Option 3).
+
+        When a resolver is configured, resolves the flag assignment + few-shot
+        examples for this turn and merges them into
+        ``kwargs["config"]["configurable"]`` so the sync pre-model hook
+        (``_inject_active_learning_few_shot``) can consume them.
+
+        No-op (returns kwargs unchanged) when:
+        - No resolver is configured (feature OFF, the default).
+        - No ``thread_id`` is present (cannot identify the user).
+        - The latest message has no extractable text query.
+
+        Never raises: the resolver itself degrades to control behaviour on
+        any failure (see ``ActiveLearningResolver.resolve``).
+        """
+
+        if self._active_learning_resolver is None:
+            return kwargs
+
+        config = kwargs.get("config") or {}
+        configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
+        thread_id = configurable.get("thread_id")
+        if not thread_id:
+            return kwargs
+
+        query = self._latest_user_text(kwargs.get("input", {}))
+        if not query:
+            return kwargs
+
+        # Defense-in-depth: the resolver is caller-injectable and its
+        # contract is "never raises", but a buggy custom resolver must not
+        # break every citizen turn on this production hot path. Any failure
+        # degrades to the unmodified kwargs (control behaviour).
+        try:
+            resolved = await self._active_learning_resolver.resolve(thread_id, query)
+        except Exception as exc:  # noqa: BLE001 — experiment must not break turn
+            logger.warning(
+                f"[Active Learning] resolver raised for thread={thread_id}: {exc}; "
+                "proceeding without few-shot injection"
+            )
+            return kwargs
+
+        merged_configurable = {**configurable, **resolved.as_config_overrides()}
+        new_config = {**config, "configurable": merged_configurable}
+        return {**kwargs, "config": new_config}
+
+    @staticmethod
+    def _latest_user_text(graph_input: Any) -> str:
+        """Extract the most recent human-turn text from the graph input.
+
+        Returns an empty string when no human text is available (e.g. the
+        input has no messages, or the last message is a tool/AI message).
+        """
+
+        if not isinstance(graph_input, dict):
+            return ""
+        messages = graph_input.get("messages")
+        if not isinstance(messages, list):
+            return ""
+        for message in reversed(messages):
+            content = None
+            if isinstance(message, HumanMessage):
+                content = message.content
+            elif isinstance(message, dict) and message.get("type") in ("human", "user"):
+                content = message.get("content")
+            if isinstance(content, str) and content.strip():
+                return content
+        return ""
+
     @interceptor(
         source=make_source(GRAPH_INVOCATION, GRAPH_ASYNC_QUERY),
         extract_user_id=extract_thread_id_from_config
@@ -1976,6 +2057,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     async def async_query(self, **kwargs) -> dict[str, Any] | Any:
         """Asynchronous query execution with filtered current interaction."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
+        kwargs = await self._resolve_active_learning_into_config(kwargs)
         await self._ensure_async_setup()
         if self._graph is None:
             raise ValueError(
@@ -2013,6 +2095,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     async def async_stream_query(self, **kwargs) -> AsyncIterable[Any]:
         """Asynchronous streaming query execution with filtered chunks."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
+        kwargs = await self._resolve_active_learning_into_config(kwargs)
 
         async def async_generator() -> AsyncIterable[Any]:
             await self._ensure_async_setup()
