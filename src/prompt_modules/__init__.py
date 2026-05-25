@@ -33,6 +33,7 @@ from typing import Tuple
 from src.prompt_modules import (
     audio_inbound,
     audio_response,
+    govbr_auth_gating,
     interactive_response,
     media_inbound,
     media_response,
@@ -107,6 +108,17 @@ _interactive_response_enabled = (
     )
 )
 
+# `govbr_auth_gating` gate: instrui o LLM a usar as tools de auth gov.br
+# (govbr_auth_init/status/logout) só quando elas estão bound E o kill-switch
+# ENABLE_GOVBR_AUTH não está "false". Sem isso, em deployment sem auth gov.br
+# o LLM seria orientado a chamar tool não-bound (erro de tool unknown).
+_govbr_auth_enabled = (
+    (_getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="true") or "true").lower() != "false"
+    and "govbr_auth_init" not in _excluded_tools
+    and "govbr_auth_status" not in _excluded_tools
+    and "govbr_logout" not in _excluded_tools  # módulo instrui logout — exige a tool bound
+)
+
 ENABLED_MODULES = [
     workflow_continuation,
     media_inbound,
@@ -121,6 +133,8 @@ if _media_response_enabled:
     ENABLED_MODULES.append(media_response)
 if _interactive_response_enabled:
     ENABLED_MODULES.append(interactive_response)
+if _govbr_auth_enabled:
+    ENABLED_MODULES.append(govbr_auth_gating)
 
 
 def compose(base_prompt: str, base_version: str) -> Tuple[str, str]:
