@@ -65,17 +65,31 @@ def test_cache_reduces_cost_never_raises_it():
     assert full_cached < half_cached < no_cache
 
 
-def test_reasoning_inside_output_not_billed_separately():
-    """reasoning ⊆ output: two usages with same output but different
-    reasoning split cost the same (reasoning isn't a separate term)."""
+def test_reasoning_is_additive_to_output():
+    """reasoning (thinking) is ADDITIVE to output, both at output rate.
+    langchain-google-vertexai reports output (candidates) separately from
+    reasoning (thoughts), so billable output = output + reasoning."""
 
-    low_reasoning = compute_cost_usd(
-        TokenUsage(input=0, output=1_000_000, reasoning=100_000), MODEL
+    no_reasoning = compute_cost_usd(
+        TokenUsage(input=0, output=1_000_000, reasoning=0), MODEL
     )
-    high_reasoning = compute_cost_usd(
-        TokenUsage(input=0, output=1_000_000, reasoning=900_000), MODEL
+    with_reasoning = compute_cost_usd(
+        TokenUsage(input=0, output=1_000_000, reasoning=1_000_000), MODEL
     )
-    assert low_reasoning == high_reasoning == pytest.approx(2.50)
+    # 1M output → $2.50; +1M reasoning → +$2.50 = $5.00
+    assert no_reasoning == pytest.approx(2.50)
+    assert with_reasoning == pytest.approx(5.00)
+
+
+def test_reasoning_may_exceed_output():
+    """Thinking-heavy turn: reasoning > output is VALID (additive), must NOT
+    be dropped. Regression guard for the P1 (earlier code rejected this)."""
+
+    cost = compute_cost_usd(
+        TokenUsage(input=0, output=500, reasoning=2_000), MODEL
+    )
+    # (500 + 2000) × $2.50 / 1M
+    assert cost == pytest.approx(2_500 * 2.50 / 1_000_000)
 
 
 def test_audio_input_costs_more_than_text():
@@ -137,16 +151,16 @@ def test_cache_read_subset_violation_raises(usage):
         compute_cost_usd(usage, MODEL)
 
 
-@pytest.mark.parametrize(
-    "usage",
-    [
-        TokenUsage(input=0, output=100, reasoning=200),  # reasoning > output
-        TokenUsage(input=0, output=100, reasoning=-5),  # negative reasoning
-    ],
-)
-def test_reasoning_subset_violation_raises(usage):
+def test_negative_reasoning_raises():
+    # reasoning is additive (not ⊆ output), so reasoning > output is VALID;
+    # only a negative value is rejected.
     with pytest.raises(TokenSubsetError, match="reasoning"):
-        compute_cost_usd(usage, MODEL)
+        compute_cost_usd(TokenUsage(input=0, output=100, reasoning=-5), MODEL)
+
+
+def test_negative_output_raises():
+    with pytest.raises(TokenSubsetError, match="output"):
+        compute_cost_usd(TokenUsage(input=0, output=-1), MODEL)
 
 
 def test_unsupported_modality_for_known_model_raises(monkeypatch):
@@ -172,15 +186,16 @@ def test_supported_models_lists_rate_card():
 
 
 def test_realistic_mixed_request():
-    """A realistic turn: 8k input (3k cached), 1.2k output (400 reasoning), text."""
+    """A realistic turn: 8k input (3k cached), 1.2k visible output, 400
+    thinking tokens, text. Reasoning is additive to output."""
 
     usage = TokenUsage(
         input=8_000, output=1_200, cache_read=3_000, reasoning=400
     )
     cost = compute_cost_usd(usage, MODEL, Modality.TEXT)
     expected = (
-        (8_000 - 3_000) * 0.30  # non-cached input
-        + 3_000 * 0.03          # cached input
-        + 1_200 * 2.50          # output (reasoning included)
+        (8_000 - 3_000) * 0.30   # non-cached input
+        + 3_000 * 0.03           # cached input
+        + (1_200 + 400) * 2.50   # visible output + thinking, both output-priced
     ) / 1_000_000
     assert cost == pytest.approx(expected)

@@ -70,6 +70,9 @@ from engine.observability import (
     TOKEN_TYPE_INPUT,
     TOKEN_TYPE_OUTPUT,
     TOKEN_TYPE_REASONING,
+    Modality,
+    TokenUsage,
+    record_cost_usd,
     record_token_usage,
 )
 
@@ -1680,6 +1683,22 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                         model=self._model,
                         thread_id=metric_thread_id,
                     )
+
+                # Iter 4 Tier 1: emit per-request USD cost from the same
+                # counts. Text-only scope (no modality dim yet) + storage not
+                # attributed — both declared via cost.scope=text-only. cost.py
+                # owns the subset-correct formula; record_cost_usd never raises.
+                record_cost_usd(
+                    TokenUsage(
+                        input=input_tokens,
+                        output=output_tokens,
+                        cache_read=cache_read,
+                        reasoning=reasoning_tokens,
+                    ),
+                    model=self._model,
+                    modality=Modality.TEXT,
+                    thread_id=metric_thread_id,
+                )
             except Exception as metric_error:
                 # Never let a metrics failure break the post-model hook.
                 logger.warning(

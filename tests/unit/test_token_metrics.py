@@ -15,13 +15,7 @@ from __future__ import annotations
 from typing import Iterator
 
 import pytest
-from opentelemetry import metrics
-from opentelemetry.sdk.metrics import Histogram as SdkHistogram
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import (
-    AggregationTemporality,
-    InMemoryMetricReader,
-)
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
 from engine.observability.token_metrics import (
     ATTR_OPERATION_NAME,
@@ -43,46 +37,25 @@ TEST_MODEL = "gemini-2.5-flash"
 TEST_THREAD = "thread-abc"
 
 
-# OTel API forbids overriding the global ``MeterProvider`` after the first
-# set, so we install one provider per session and rotate its reader on
-# every test (``InMemoryMetricReader`` is drained on ``get_metrics_data``,
-# but observations accumulate inside the SDK Meter; we therefore swap the
-# reader and create a brand new ``MeterProvider`` only once per session).
-
-
-@pytest.fixture(scope="session")
-def _session_meter_provider() -> MeterProvider:
-    """Session-scoped ``MeterProvider`` that owns an InMemoryMetricReader.
-
-    The reader is configured for DELTA temporality so calling
-    ``get_metrics_data()`` between tests resets cumulative state — each test
-    sees only the points recorded during its own execution.
-
-    Set as the global provider only on first call; subsequent attempts are
-    no-ops because the SDK refuses re-assignment.
-    """
-    reader = InMemoryMetricReader(
-        preferred_temporality={SdkHistogram: AggregationTemporality.DELTA},
-    )
-    provider = MeterProvider(metric_readers=[reader])
-    metrics.set_meter_provider(provider)
-    provider._test_reader = reader  # type: ignore[attr-defined]
-    return provider
+# The global ``MeterProvider`` is installed once for the whole unit suite by
+# the ``shared_metric_reader`` fixture in conftest.py (OTel refuses to
+# re-assign the global provider, so every metric test module must share one).
 
 
 @pytest.fixture
-def in_memory_meter_provider(_session_meter_provider) -> Iterator[InMemoryMetricReader]:
-    """Yield the session reader, draining any prior observations.
+def in_memory_meter_provider(
+    shared_metric_reader: InMemoryMetricReader,
+) -> Iterator[InMemoryMetricReader]:
+    """Yield the shared session reader, draining any prior observations.
 
-    Each test starts with an empty reader (the histogram instrument is also
-    rebuilt so it binds to the same provider after rotation).
+    DELTA temporality + draining at start means each test sees only the points
+    it records; the module-cached histogram is reset so it rebinds to the
+    shared global provider.
     """
-    reader: InMemoryMetricReader = _session_meter_provider._test_reader  # type: ignore[attr-defined]
-    # Drain residual data from prior tests before the test runs.
-    reader.get_metrics_data()
+    shared_metric_reader.get_metrics_data()
     reset_token_metrics_for_testing()
     try:
-        yield reader
+        yield shared_metric_reader
     finally:
         reset_token_metrics_for_testing()
 

@@ -6,19 +6,31 @@ computes USD cost from the token counts that ``token_metrics`` already emits
 
 CRITICAL correctness rule (Vertex telemetry semantics)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-- ``input`` tokens INCLUDE the ``cache_read`` subset (cache_read ⊆ input).
-- ``output`` tokens INCLUDE the ``reasoning`` subset (reasoning ⊆ output).
+Verified against ``langchain-google-vertexai`` 2.1.2
+``_get_usage_metadata_gemini`` (the version the Engine pins):
 
-So the correct cost is::
+- ``input`` = ``prompt_token_count``, which INCLUDES the ``cache_read``
+  (``cached_content_token_count``) subset → **cache_read ⊆ input**.
+- ``output`` = ``candidates_token_count`` — the VISIBLE answer ONLY. It
+  does NOT include reasoning.
+- ``reasoning`` = ``thoughts_token_count`` is reported SEPARATELY and is
+  **additive** (``prompt + candidates + thoughts == total``) →
+  **reasoning is NOT a subset of output**.
 
-    (input - cache_read) * rate_input      # non-cached input at full rate
-  + cache_read           * rate_cached      # cached input at the discounted rate
-  + output               * rate_output      # output (reasoning already inside)
+Reasoning (thinking) tokens are billed at the output rate (Google prices
+output "including thinking tokens"). So the correct cost is::
+
+    (input - cache_read)  * rate_input        # non-cached input at full rate
+  + cache_read            * rate_cached        # cached input at the discounted rate
+  + (output + reasoning)  * rate_output        # visible + thinking, both output-priced
   + cache_storage_token_hours * rate_storage
 
-Summing all four token-types raw double-counts the cached/reasoning portions
-and makes cache appear to *raise* cost. This module enforces the subset
-relationship and raises on violations rather than silently mispricing.
+Two traps this module guards against:
+1. Double-counting the cached portion (it is *inside* input) — subtract it.
+2. Dropping or under-billing thinking-heavy turns: an earlier version
+   treated reasoning as ⊆ output and rejected ``reasoning > output``, which
+   silently dropped the cost of exactly the most expensive (thinking-heavy)
+   turns. reasoning is additive and only requires ``reasoning ≥ 0``.
 
 Modality
 ~~~~~~~~
@@ -77,8 +89,9 @@ class UnknownModalityError(Exception):
 
 
 class TokenSubsetError(Exception):
-    """Raised when token counts violate the documented subset invariants
-    (cache_read ⊆ input, reasoning ⊆ output) — signals telemetry corruption."""
+    """Raised when token counts violate the documented invariants
+    (cache_read ⊆ input; output, reasoning, cache_storage ≥ 0) — signals
+    telemetry corruption or a caller bug."""
 
 
 @dataclass(frozen=True)
@@ -118,7 +131,10 @@ class TokenUsage:
 
     Invariants (enforced by ``compute_cost_usd``):
     - ``cache_read`` ⊆ ``input`` (0 ≤ cache_read ≤ input)
-    - ``reasoning`` ⊆ ``output`` (0 ≤ reasoning ≤ output)
+    - ``output`` ≥ 0 (visible answer / candidates tokens)
+    - ``reasoning`` ≥ 0 (thinking tokens; ADDITIVE to output, not a subset —
+      billed at the output rate)
+    - ``cache_storage_token_hours`` ≥ 0
     """
 
     input: int
@@ -140,10 +156,11 @@ def compute_cost_usd(
         TokenSubsetError: token counts violate the subset invariants.
 
     Notes:
-        ``reasoning`` is informational only here — it is already inside
-        ``output`` and priced at the output rate, so it does not appear as a
-        separate term. It is validated (reasoning ≤ output) but not billed
-        twice.
+        ``reasoning`` (thinking) tokens are ADDITIVE to ``output`` (the
+        candidates count excludes them in langchain-google-vertexai) and are
+        billed at the output rate, so the billable output is
+        ``output + reasoning``. Validated as ``reasoning ≥ 0`` — it is NOT
+        bounded by ``output``.
     """
 
     rates = RATE_CARD.get(model)
@@ -159,11 +176,13 @@ def compute_cost_usd(
             f"cache_read ({usage.cache_read}) must be in [0, input "
             f"({usage.input})] — cache_read ⊆ input violated"
         )
-    if usage.reasoning < 0 or usage.reasoning > usage.output:
-        raise TokenSubsetError(
-            f"reasoning ({usage.reasoning}) must be in [0, output "
-            f"({usage.output})] — reasoning ⊆ output violated"
-        )
+    if usage.output < 0:
+        raise TokenSubsetError(f"output ({usage.output}) must be ≥ 0")
+    # reasoning is ADDITIVE to output (not a subset) — only ≥ 0 is required.
+    # The earlier reasoning ≤ output check silently dropped thinking-heavy
+    # turns (reasoning can exceed the visible candidates count).
+    if usage.reasoning < 0:
+        raise TokenSubsetError(f"reasoning ({usage.reasoning}) must be ≥ 0")
     # Storage is an independent float (no subset bound), so unlike the token
     # terms it can drive cost negative if a caller derives token-hours from a
     # reversed/buggy interval. Guard explicitly — fail fast, never underreport.
@@ -185,10 +204,12 @@ def compute_cost_usd(
     rate_cached = rates.cached_per_modality[modality]
 
     non_cached_input = usage.input - usage.cache_read
+    # Visible (candidates) + thinking (reasoning) tokens are both output-priced.
+    billable_output = usage.output + usage.reasoning
     cost_per_million = (
         non_cached_input * rate_input
         + usage.cache_read * rate_cached
-        + usage.output * rates.output
+        + billable_output * rates.output
         + usage.cache_storage_token_hours * rates.cache_storage_per_hour
     )
     return cost_per_million / TOKENS_PER_MILLION
