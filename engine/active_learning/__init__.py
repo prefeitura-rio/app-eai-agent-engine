@@ -28,10 +28,18 @@ from engine.active_learning.hook import (
     TREATMENT_VARIANT,
     inject_few_shot_examples,
 )
+from engine.active_learning.resolver import (
+    ActiveLearningResolver,
+    FewShotRetriever,
+    NullRetriever,
+    ResolvedActiveLearning,
+)
 
 __all__ = [
+    "ActiveLearningResolver",
     "Embedder",
     "FewShotExample",
+    "FewShotRetriever",
     "FlagAssignment",
     "FlagClient",
     "FlagClientError",
@@ -39,6 +47,8 @@ __all__ = [
     "GeminiEmbedder",
     "GeminiEmbedderConfig",
     "GeminiEmbedderError",
+    "NullRetriever",
+    "ResolvedActiveLearning",
     "TREATMENT_VARIANT",
     "build_few_shot_message",
     "inject_few_shot_examples",
