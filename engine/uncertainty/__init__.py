@@ -2,13 +2,13 @@
 
 Submodules:
 - calibration: pure ECE + reliability bins + temperature scaling (Guo et al. 2017).
+- confidence: pure 3-signal composition + refusal-threshold grid search (ADR-033).
 
-This is the decision-independent calibration CORE — pure math, no bot wiring,
-no I/O. It is the foundation for Iter 3 Phase B; the confidence-signal
-composition, refusal threshold, and agent integration are deferred to the
-full Phase B (behind the A→B sign-off). Computing a *real* ECE against the
-bot requires the human-annotated golden dataset (task #208) — this module
-only provides the mechanics, validated by unit tests on synthetic fixtures.
+These are the decision-independent CORES — pure math, no bot wiring, no I/O.
+The LLM-coupled signal producers (avgLogprobs, self-consistency sampling) and
+the live agent integration remain deferred. Real weights/thresholds + a real
+ECE against the bot need the annotated golden dataset; these modules provide
+the mechanics, validated on synthetic fixtures (dev-vs-prod rule, ADR-038).
 """
 
 from engine.uncertainty.calibration import (
@@ -17,10 +17,24 @@ from engine.uncertainty.calibration import (
     expected_calibration_error,
     reliability_bins,
 )
+from engine.uncertainty.confidence import (
+    ConfidenceError,
+    ConfidenceSignals,
+    compose_confidence,
+    faithfulness_signal,
+    grid_search_threshold,
+    should_refuse,
+)
 
 __all__ = [
+    "ConfidenceError",
+    "ConfidenceSignals",
     "ReliabilityBin",
     "TemperatureScaler",
+    "compose_confidence",
     "expected_calibration_error",
+    "faithfulness_signal",
+    "grid_search_threshold",
     "reliability_bins",
+    "should_refuse",
 ]
