@@ -28,8 +28,9 @@ agente (tom, escopo, fallbacks). Os módulos cobrem apenas integrações
 específicas que devem viver ao lado do código de tools.
 """
 
-import logging
 from typing import Tuple
+
+from loguru import logger
 
 from src.prompt_modules import (
     audio_inbound,
@@ -149,9 +150,9 @@ if _govbr_auth_enabled:
 # valor) torna o deploy diagnosticável: ``present=False`` => o flag não chegou
 # ao ambiente (problema de Infisical/projeto); ``present=True`` com
 # ``govbr_auth_gating=False`` => valor != "true".
-logging.getLogger(__name__).info(
-    "prompt_modules optional gates: audio_response=%s media_response=%s "
-    "interactive_response=%s govbr_auth_gating=%s (ENABLE_GOVBR_AUTH present=%s)",
+logger.info(
+    "prompt_modules optional gates: audio_response={} media_response={} "
+    "interactive_response={} govbr_auth_gating={} (ENABLE_GOVBR_AUTH present={})",
     _audio_response_enabled,
     _media_response_enabled,
     _interactive_response_enabled,
