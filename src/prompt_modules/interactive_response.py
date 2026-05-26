@@ -22,7 +22,7 @@ Quando o cidadão precisa escolher entre opções discretas, **prefira mensagens
 
 | Caso | Tool | Quando usar |
 |---|---|---|
-| Coleta estruturada de campos (formulário) | `build_whatsapp_flow_envelope` | Cidadão precisa preencher múltiplos campos (endereço + defeito + foto). Use somente se há Flow registrado no Meta Business Manager pro service. |
+| Coleta estruturada de campos (formulário) | `build_whatsapp_flow_envelope` | Cidadão precisa preencher campos estruturados (ex: tipo de defeito + local da luminária). Use somente se há Flow registrado no Meta Business Manager pro service. |
 | 2-3 opções (Sim/Não/Outro) | `send_whatsapp_buttons` | Confirmação binária+1, escolha de canal de contato, "Quer abrir chamado?". |
 | 4-10 opções organizadas | `send_whatsapp_list` | Menu de serviços, lista de bairros, tipos de chamado. Acima de 3 opções, buttons lota a tela. |
 | Mais de 10 opções | Não usar interactive. Pedir busca textual ("Digite o bairro:"). |
@@ -75,20 +75,22 @@ ASSISTANT (tool call): send_whatsapp_list(
 
 ### Exemplo: build_whatsapp_flow_envelope
 
-A tool low-level `build_whatsapp_flow_envelope` constrói o envelope WhatsApp Flow com parâmetros manuais (`flow_id` do Meta Business Manager, `body`, `flow_token` UUID, `cta` opcional). Não requer `user_number` — o Mule entrega o envelope retornado ao mesmo cidadão do thread atual.
+A tool `build_whatsapp_flow_envelope` constrói e entrega o envelope WhatsApp Flow ao cidadão do thread atual (não requer `user_number`). Parâmetros: `flow_id` (Meta Business Manager), `body`, `flow_token` (UUID novo por turno), `cta`. **PRÉ-PREENCHIMENTO (faça sempre que der):** passe `service_type` (ex: `"reparo_luminaria"`) + `prefill_data` com os campos que o cidadão JÁ mencionou na conversa — o formulário abre já preenchido e ele só confirma (menos atrito). NUNCA ponha PII (CPF/endereço) em `prefill_data`: o normalizer só aceita os campos do Flow, e o endereço é coletado depois, na conversa.
 
 ```
-USER: minha luminaria quebrou
+USER: a luminária da minha rua tá apagada
 
-ASSISTANT: identifica que é caso de reparo_luminaria → tem Flow registrado.
+ASSISTANT: identifica reparo_luminaria (Flow registrado) e EXTRAI o que o cidadão já disse: defeito=Apagada, local=Rua. Pré-preenche o formulário.
 ASSISTANT (tool call): build_whatsapp_flow_envelope(
   flow_id="4141008006029185",
-  body="Vou abrir o chamado pra você. Preencha o formulário abaixo:",
+  body="Vou abrir o chamado pra você. Confirme as informações no formulário abaixo:",
   flow_token=<UUID gerado>,
-  cta="Preencher"
+  cta="Preencher",
+  service_type="reparo_luminaria",
+  prefill_data={"defect_type": "Apagada", "location": "Rua"}
 )
 
-(Cidadão preenche → bot recebe inbound com interactive.nfm_reply.response_json)
+(O Flow abre JÁ com defeito=Apagada e local=Rua marcados — cidadão só confirma/completa. Inbound volta com interactive.nfm_reply.response_json.)
 ```
 
 **Nota sobre `send_whatsapp_flow` (high-level):** existe também a tool `send_whatsapp_flow(user_number, service_type)` que dispara um Flow do registry interno do MCP por nome de serviço. **NÃO chame essa tool a partir deste prompt module** — ela requer `user_number` E.164 que o LLM não tem acesso confiável (a propagação determinística não está wired ainda no Engine framework). Use `build_whatsapp_flow_envelope` quando o agente precisa proativamente abrir Flow. O caminho via `multi_step_service` (que tem `user_id` resolvido no contexto) continua sendo o canal preferido pra workflows estruturados.
@@ -98,6 +100,8 @@ ASSISTANT (tool call): build_whatsapp_flow_envelope(
 - **NUNCA** liste opções numeradas em texto ("1. Luminária 2. Buraco 3. Outro") quando você tem `send_whatsapp_buttons` ou `send_whatsapp_list` disponível. UX visual é sempre melhor.
 - **NUNCA** chame Flow proativamente — só quando o cidadão indicou intent compatível com algum service registrado. Se não tem Flow, use list.
 - **flow_token sempre único por turno** — gere UUID novo a cada `build_whatsapp_flow_envelope`. Reutilizar token confunde o tracking de submissões.
+- **PRÉ-PREENCHA quando o cidadão já deu pistas** — se a mensagem já traz o defeito ("apagada", "piscando") e/ou o tipo de local ("na rua", "na praça"), passe `service_type="reparo_luminaria"` + `prefill_data` com os IDs canônicos do Flow (defect_type: Apagada/Piscando/Acesa de dia/Pendurada/Danificada/Com ruído; location: Calçada/Fachada/Monumento/Parque/Praça/Quadra de esportes/Rua/Não sei; qty_pattern: uma/bloco/intercaladas). Nunca invente valores que o cidadão não disse.
+- **NUNCA** ponha endereço ou CPF em `prefill_data` — o endereço é perguntado depois, na conversa (workflow), não no Flow.
 - **NÃO chame `send_whatsapp_flow(user_number, service_type)` neste prompt** — risco de hallucination de número. Veja nota acima.
 - **Caption livre no body** — use `body` pra contextualizar, não pra duplicar o texto dos botões/rows. Cidadão vê body + lista; redundância polui.
 
