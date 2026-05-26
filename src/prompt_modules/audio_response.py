@@ -48,7 +48,7 @@ Quando o cidadão pedir explicitamente a resposta em áudio (ex: "responda por �
 
 ### Estilo PT-BR pra TTS
 
-A voz default é `pt-BR-Neural2-A` (Google Cloud TTS, feminina, neural). Ela pronuncia bem PT-BR mas ainda assim:
+A voz é PT-BR (configurada no MCP via provider TTS — Google Cloud TTS ou Gemini TTS; o `voice_used` retornado indica qual foi usada). Ela pronuncia bem PT-BR mas ainda assim:
 
 - **Use grafia natural**: "vou te ajudar" em vez de "irei ajudá-lo".
 - **Expanda abreviações**: "às 14h" → "às catorze horas"; "Rua XV de Novembro" → "Rua quinze de Novembro".
