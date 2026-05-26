@@ -39,6 +39,7 @@ from src.prompt_modules import (
     interactive_response,
     media_inbound,
     media_response,
+    session_close,
     video_inbound,
     vision_inbound,
     workflow_continuation,
@@ -123,6 +124,7 @@ _govbr_auth_enabled = (_govbr_auth_raw or "").strip().lower() != "false"
 
 ENABLED_MODULES = [
     workflow_continuation,
+    session_close,
     media_inbound,
     vision_inbound,
     audio_inbound,
