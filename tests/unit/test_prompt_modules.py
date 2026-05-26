@@ -13,6 +13,7 @@ from src.prompt_modules import (
     audio_inbound,
     govbr_auth_gating,
     media_inbound,
+    session_close,
     vision_inbound,
     workflow_continuation,
 )
@@ -441,3 +442,67 @@ def test_compose_is_pure_and_idempotent():
     a2, v2 = compose("BASE", "v1")
     assert a1 == a2
     assert v1 == v2
+
+
+# ---------- session_close (encerramento de atendimento) ----------
+
+
+def test_session_close_module_has_required_attributes():
+    """session_close segue o contrato MODULE_NAME/MODULE_PROMPT."""
+    assert hasattr(session_close, "MODULE_NAME")
+    assert hasattr(session_close, "MODULE_PROMPT")
+    assert isinstance(session_close.MODULE_NAME, str)
+    assert isinstance(session_close.MODULE_PROMPT, str)
+
+
+def test_session_close_module_name_is_stable():
+    """MODULE_NAME vira sufixo no version (e em logs OTel) — não pode mudar
+    silenciosamente."""
+    assert session_close.MODULE_NAME == "session_close"
+
+
+def test_session_close_enabled_by_default():
+    """Sempre ativo (sem flag): não chama tool, não há risco de tool não-bound
+    — mesmo critério de workflow_continuation."""
+    assert session_close in ENABLED_MODULES
+
+
+def test_session_close_prompt_recognizes_end_intent():
+    """Guard contra deleção dos gatilhos de encerramento — sem eles o LLM não
+    reconhece a intenção de finalizar."""
+    p = session_close.MODULE_PROMPT.lower()
+    assert "encerrar" in p
+    assert "tchau" in p or "era só isso" in p
+
+
+def test_session_close_prompt_protects_active_workflow():
+    """Encerrar não pode descartar workflow ativo em silêncio: deve confirmar
+    antes de cancelar, reusando o mecanismo de multi_step_service."""
+    p = session_close.MODULE_PROMPT.lower()
+    assert "workflow" in p
+    assert "cancel" in p
+    assert "multi_step_service" in p
+
+
+def test_session_close_defers_field_answer_to_workflow():
+    """Não pode clobberar a regra de continuação: se a mensagem puder ser
+    resposta de um campo, o workflow tem prioridade sobre o encerramento."""
+    p = session_close.MODULE_PROMPT.lower()
+    assert "priorize" in p and "campo" in p
+
+
+def test_session_close_before_media_modules_in_enabled():
+    """Mesma lógica de workflow_continuation: regra conversacional geral entra
+    antes dos módulos de mídia que produzem respostas de etapa."""
+    names = [m.MODULE_NAME for m in ENABLED_MODULES]
+    assert "session_close" in names
+    assert names.index("session_close") < names.index("media_inbound")
+
+
+def test_session_close_logout_after_workflow_resolution():
+    """Precedência (achado de review claude+codex): pra cidadão autenticado, o
+    logout só ocorre DEPOIS de resolver concluir/cancelar o workflow ativo —
+    nunca no meio de um atendimento em aberto."""
+    p = session_close.MODULE_PROMPT.lower()
+    assert "logout" in p
+    assert "depois" in p
