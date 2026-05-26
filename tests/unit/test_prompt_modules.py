@@ -222,39 +222,23 @@ def test_govbr_auth_gating_lists_restricted_and_public_scope():
     assert "anônim" in p, "exceção de zeladoria anônima ausente"
 
 
-def test_govbr_auth_gating_off_by_default():
-    """Default OFF (opt-in): a feature fica DORMENTE até ENABLE_GOVBR_AUTH=true
-    explícito (switch único — desacoplado de MCP_EXCLUDED_TOOLS). Usa o MESMO
-    source que o gate de produção (getenv_or_action lê root .env + os.environ),
-    pra não falhar falsamente quando habilitado via .env. Pula se o ambiente
-    habilita explicitamente."""
-    from src.prompt_modules import _flag_is_true
+def test_govbr_auth_gating_on_by_default():
+    """Default ON (opt-out): o módulo entra em ENABLED_MODULES a menos que
+    ENABLE_GOVBR_AUTH=false explícito. O flag do Infisical não chegava ao env do
+    DEPLOY (root não-recursivo), então o gating é ligado em código; só ``false``
+    explícito desliga. Usa o MESMO source que o gate de produção
+    (getenv_or_action lê root .env + os.environ). Pula se o ambiente desliga
+    explicitamente."""
     from src.utils.infisical import getenv_or_action
 
-    explicitly_on = _flag_is_true(
-        getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="")
-    )
-    if explicitly_on:
+    explicitly_off = (
+        getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="") or ""
+    ).strip().lower() == "false"
+    if explicitly_off:
         import pytest
 
-        pytest.skip("ENABLE_GOVBR_AUTH=true (via env/.env) — habilitado explicitamente")
-    assert govbr_auth_gating not in ENABLED_MODULES
-
-
-def test_flag_is_true_tolerates_whitespace_and_case():
-    """Hardening do gate govbr: `getenv_or_action` NÃO faz strip, então um valor
-    com ``\\n``/espaço (comum em paste no Infisical) ou caixa diferente precisa
-    ligar mesmo assim. Opt-in estrito: só ``true`` liga — ``1``/``yes`` não."""
-    from src.prompt_modules import _flag_is_true
-
-    assert _flag_is_true("true")
-    assert _flag_is_true("true\n"), "newline de paste deve ser tolerado"
-    assert _flag_is_true("  TRUE  "), "espaço + caixa devem ser tolerados"
-    assert not _flag_is_true("false")
-    assert not _flag_is_true("")
-    assert not _flag_is_true(None)
-    assert not _flag_is_true("1"), "opt-in estrito: só 'true'"
-    assert not _flag_is_true("yes"), "opt-in estrito: só 'true'"
+        pytest.skip("ENABLE_GOVBR_AUTH=false (via env/.env) — desligado explicitamente")
+    assert govbr_auth_gating in ENABLED_MODULES
 
 
 # ---------- módulo vision_inbound ----------

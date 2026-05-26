@@ -110,23 +110,16 @@ _interactive_response_enabled = (
     )
 )
 
-def _flag_is_true(raw: str | None) -> bool:
-    """Normaliza um flag booleano de env. Tolera whitespace (paste no Infisical
-    costuma deixar ``\\n``/espaço no valor) e caixa; só ``"true"`` liga. É mais
-    estrito que os gates ``!= "false"`` acima — auth é opt-in deliberado, então
-    qualquer coisa que não seja exatamente ``true`` (após strip/lower) fica OFF.
-    `getenv_or_action` não faz strip, então a normalização vive aqui."""
-    return (raw or "").strip().lower() == "true"
-
-
-# `govbr_auth_gating` gate: OPT-IN, controlado SÓ por ENABLE_GOVBR_AUTH (default
-# OFF). O flag do operador é o switch único — sem acoplar a MCP_EXCLUDED_TOOLS,
-# que estava bloqueando a habilitação quando as tools govbr aparecem na exclusão
-# por motivo legado. A preocupação de "instruir tool não-bound" é tratada no
-# PRÓPRIO prompt do módulo (instrui o LLM a não chamar uma tool govbr que não
-# esteja disponível), em vez de derrubar o módulo inteiro.
+# `govbr_auth_gating` gate: ATIVADO POR PADRÃO (opt-out), mesmo padrão dos gates
+# acima (``!= "false"``). Antes era opt-in (exigia ENABLE_GOVBR_AUTH=true), mas o
+# flag nunca chegava ao env do DEPLOY: o deploy lê o Infisical em root
+# NÃO-recursivo e a var ficava em subpasta (o runtime k8s, recursivo, a via; o
+# deploy não), então o módulo ficava sempre OFF apesar de ``true`` no UI. Agora
+# liga por padrão; só ``ENABLE_GOVBR_AUTH=false`` explícito desliga (kill-switch
+# em código). A preocupação de "instruir tool não-bound" é tratada no PRÓPRIO
+# prompt do módulo (instrui o LLM a não chamar uma tool govbr indisponível).
 _govbr_auth_raw = _getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="")
-_govbr_auth_enabled = _flag_is_true(_govbr_auth_raw)
+_govbr_auth_enabled = (_govbr_auth_raw or "").strip().lower() != "false"
 
 ENABLED_MODULES = [
     workflow_continuation,
@@ -147,9 +140,10 @@ if _govbr_auth_enabled:
 
 # Observability — os gates opcionais resolvem em import-time e ficam invisíveis
 # fora do sufixo de version. Logar a decisão (+ presença do flag govbr, SEM o
-# valor) torna o deploy diagnosticável: ``present=False`` => o flag não chegou
-# ao ambiente (problema de Infisical/projeto); ``present=True`` com
-# ``govbr_auth_gating=False`` => valor != "true".
+# valor) torna o deploy diagnosticável. Com o opt-out, ``govbr_auth_gating=True``
+# é o esperado mesmo com ``present=False`` (flag ausente → default ON); só
+# ``present=True`` + ``govbr_auth_gating=False`` indica desligamento explícito
+# (ENABLE_GOVBR_AUTH=false).
 logger.info(
     "prompt_modules optional gates: audio_response={} media_response={} "
     "interactive_response={} govbr_auth_gating={} (ENABLE_GOVBR_AUTH present={})",
