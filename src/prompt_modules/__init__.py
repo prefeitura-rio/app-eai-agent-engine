@@ -108,12 +108,16 @@ _interactive_response_enabled = (
     )
 )
 
-# `govbr_auth_gating` gate: instrui o LLM a usar as tools de auth gov.br
-# (govbr_auth_init/status/logout) só quando elas estão bound E o kill-switch
-# ENABLE_GOVBR_AUTH não está "false". Sem isso, em deployment sem auth gov.br
-# o LLM seria orientado a chamar tool não-bound (erro de tool unknown).
+# `govbr_auth_gating` gate: OPT-IN (default OFF). A feature fica DORMENTE até
+# (a) existirem as tools de dados CPF-bound que de fato consomem o token e
+# (b) a barreira de enforcement dura (ver docstring do módulo). Habilita só com
+# ENABLE_GOVBR_AUTH=true E as 3 tools (init/status/logout) bound. Default OFF
+# evita orientar o cidadão a autenticar sem uma tool de fulfillment ao final.
+# Nota: isto desliga só o PROMPT (como os demais módulos). Pra dormência TOTAL
+# (as tools govbr_auth_* nem bound no schema), excluí-las também via
+# MCP_EXCLUDED_TOOLS no env do Engine.
 _govbr_auth_enabled = (
-    (_getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="true") or "true").lower() != "false"
+    (_getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="false") or "false").lower() == "true"
     and "govbr_auth_init" not in _excluded_tools
     and "govbr_auth_status" not in _excluded_tools
     and "govbr_logout" not in _excluded_tools  # módulo instrui logout — exige a tool bound

@@ -222,21 +222,26 @@ def test_govbr_auth_gating_lists_restricted_and_public_scope():
     assert "anônim" in p, "exceção de zeladoria anônima ausente"
 
 
-def test_govbr_auth_gating_enabled_by_default():
-    """Com env default, o módulo entra em ENABLED_MODULES. Env-aware: pula se o
-    ambiente legitimamente desabilita (ENABLED_MODULES é computado no import,
-    então não dá pra afirmar incondicionalmente sem recarregar o módulo)."""
-    import os
+def test_govbr_auth_gating_off_by_default():
+    """Default OFF (opt-in): a feature fica DORMENTE até ENABLE_GOVBR_AUTH=true
+    explícito (+ as 3 tools bound). Usa o MESMO source que o gate de produção
+    (getenv_or_action lê root .env + os.environ), pra não falhar falsamente
+    quando habilitado via .env. Pula se o ambiente habilita explicitamente."""
+    from src.utils.infisical import getenv_or_action
 
-    excluded = {t.strip() for t in (os.getenv("MCP_EXCLUDED_TOOLS") or "").split(",")}
-    disabled = (os.getenv("ENABLE_GOVBR_AUTH", "true").lower() == "false") or bool(
-        excluded & {"govbr_auth_init", "govbr_auth_status", "govbr_logout"}
-    )
-    if disabled:
+    excluded = {
+        t.strip()
+        for t in (getenv_or_action("MCP_EXCLUDED_TOOLS", action="ignore", default="") or "").split(",")
+        if t.strip()
+    }
+    explicitly_on = (
+        getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="false") or "false"
+    ).lower() == "true" and not (excluded & {"govbr_auth_init", "govbr_auth_status", "govbr_logout"})
+    if explicitly_on:
         import pytest
 
-        pytest.skip("gov.br auth desabilitado via env — gate funcionando como configurado")
-    assert govbr_auth_gating in ENABLED_MODULES
+        pytest.skip("ENABLE_GOVBR_AUTH=true (via env/.env) — habilitado explicitamente")
+    assert govbr_auth_gating not in ENABLED_MODULES
 
 
 # ---------- módulo vision_inbound ----------
