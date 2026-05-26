@@ -224,19 +224,15 @@ def test_govbr_auth_gating_lists_restricted_and_public_scope():
 
 def test_govbr_auth_gating_off_by_default():
     """Default OFF (opt-in): a feature fica DORMENTE até ENABLE_GOVBR_AUTH=true
-    explícito (+ as 3 tools bound). Usa o MESMO source que o gate de produção
-    (getenv_or_action lê root .env + os.environ), pra não falhar falsamente
-    quando habilitado via .env. Pula se o ambiente habilita explicitamente."""
+    explícito (switch único — desacoplado de MCP_EXCLUDED_TOOLS). Usa o MESMO
+    source que o gate de produção (getenv_or_action lê root .env + os.environ),
+    pra não falhar falsamente quando habilitado via .env. Pula se o ambiente
+    habilita explicitamente."""
     from src.utils.infisical import getenv_or_action
 
-    excluded = {
-        t.strip()
-        for t in (getenv_or_action("MCP_EXCLUDED_TOOLS", action="ignore", default="") or "").split(",")
-        if t.strip()
-    }
     explicitly_on = (
         getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="false") or "false"
-    ).lower() == "true" and not (excluded & {"govbr_auth_init", "govbr_auth_status", "govbr_logout"})
+    ).lower() == "true"
     if explicitly_on:
         import pytest
 

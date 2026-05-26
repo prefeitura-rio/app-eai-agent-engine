@@ -108,20 +108,15 @@ _interactive_response_enabled = (
     )
 )
 
-# `govbr_auth_gating` gate: OPT-IN (default OFF). A feature fica DORMENTE até
-# (a) existirem as tools de dados CPF-bound que de fato consomem o token e
-# (b) a barreira de enforcement dura (ver docstring do módulo). Habilita só com
-# ENABLE_GOVBR_AUTH=true E as 3 tools (init/status/logout) bound. Default OFF
-# evita orientar o cidadão a autenticar sem uma tool de fulfillment ao final.
-# Nota: isto desliga só o PROMPT (como os demais módulos). Pra dormência TOTAL
-# (as tools govbr_auth_* nem bound no schema), excluí-las também via
-# MCP_EXCLUDED_TOOLS no env do Engine.
+# `govbr_auth_gating` gate: OPT-IN, controlado SÓ por ENABLE_GOVBR_AUTH (default
+# OFF). O flag do operador é o switch único — sem acoplar a MCP_EXCLUDED_TOOLS,
+# que estava bloqueando a habilitação quando as tools govbr aparecem na exclusão
+# por motivo legado. A preocupação de "instruir tool não-bound" é tratada no
+# PRÓPRIO prompt do módulo (instrui o LLM a não chamar uma tool govbr que não
+# esteja disponível), em vez de derrubar o módulo inteiro.
 _govbr_auth_enabled = (
-    (_getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="false") or "false").lower() == "true"
-    and "govbr_auth_init" not in _excluded_tools
-    and "govbr_auth_status" not in _excluded_tools
-    and "govbr_logout" not in _excluded_tools  # módulo instrui logout — exige a tool bound
-)
+    _getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="false") or "false"
+).lower() == "true"
 
 ENABLED_MODULES = [
     workflow_continuation,
