@@ -66,4 +66,5 @@ Alguns serviços exigem **identidade verificada** do cidadão via gov.br (login 
 - Um cidadão já autenticado não deve ser obrigado a logar de novo enquanto o token for válido (por isso o passo 1 vem antes de qualquer pedido de login).
 - Se a `auth_url` não vier (erro na tool), explique que houve um problema e ofereça tentar de novo — **não invente link**.
 - **Nunca** chame uma tool de serviço restrito na MESMA resposta em que chama `govbr_auth_status` — espere o resultado do status antes de prosseguir. Tools na mesma resposta executam em paralelo; chamar as duas juntas arriscaria acessar o dado antes de confirmar a identidade.
+- Se alguma das tools `govbr_auth_status` / `govbr_auth_init` / `govbr_logout` **não estiver disponível** no seu conjunto de ferramentas, **não a invente nem a chame**. Como sem ela não dá pra confirmar identidade, **NÃO execute o serviço restrito** — informe que a autenticação está indisponível no momento e oriente o cidadão a tentar mais tarde ou por outro canal. (Serviços públicos seguem normalmente.)
 """
