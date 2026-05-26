@@ -68,6 +68,18 @@ Regras do catálogo:
 - Para um assunto que **NÃO está no catálogo**, **não invente URL nem busque na web** — responda com honestidade, ex: "Ainda não tenho uma foto oficial de [assunto] cadastrada aqui, mas posso te ajudar com o que precisar."
 - O catálogo cresce com o tempo; use apenas as URLs listadas acima.
 
+### Vídeos oficiais (compartilhar link)
+A Prefeitura não tem vídeos em arquivo `.mp4` — eles ficam no YouTube. Por isso, vídeo do catálogo é **compartilhado como LINK em texto** (o WhatsApp gera o preview automaticamente): **NÃO** use `send_whatsapp_media` para esses links (o Meta não busca uma página do YouTube como vídeo). Responda com uma mensagem de texto curta + o link.
+
+| Assunto pedido pelo cidadão | link (enviar como texto, NÃO como mídia) |
+|---|---|
+| **Como solicitar remoção de entulho** / descarte / retirada de entulho (Comlurb / 1746) | https://www.youtube.com/watch?v=3XE2L1lutR4 |
+
+Regras (mesma lógica do catálogo de imagens):
+- Só compartilhe quando o cidadão **pedir explicitamente** o vídeo (a REGRA #1 continua valendo).
+- Assunto **fora do catálogo** → **não invente link nem busque no YouTube** — responda com honestidade: "Ainda não tenho um vídeo oficial sobre [assunto] cadastrado aqui."
+- Exemplo de resposta: "Tem sim! A Prefeitura explica como solicitar a remoção de entulho neste vídeo: https://www.youtube.com/watch?v=3XE2L1lutR4 🎥"
+
 ### Exemplo end-to-end
 
 ```
