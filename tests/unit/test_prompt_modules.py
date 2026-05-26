@@ -11,6 +11,7 @@ tests pós-deploy em staging.
 from src.prompt_modules import compose, ENABLED_MODULES
 from src.prompt_modules import (
     audio_inbound,
+    govbr_auth_gating,
     media_inbound,
     vision_inbound,
     workflow_continuation,
@@ -186,6 +187,56 @@ def test_media_inbound_prompt_omits_unsupported_tool_params_in_call():
         f"Prompt usa {forbidden!r} em chamada da tool, "
         "mas a tool não aceita esse parâmetro"
     )
+
+
+# ---------- govbr_auth_gating (auth gov.br) ----------
+
+
+def test_govbr_auth_gating_module_name_is_stable():
+    """``MODULE_NAME`` vira sufixo no version — não pode mudar silenciosamente."""
+    assert govbr_auth_gating.MODULE_NAME == "govbr_auth_gating"
+    assert isinstance(govbr_auth_gating.MODULE_PROMPT, str)
+
+
+def test_govbr_auth_gating_prompt_mentions_the_three_tools():
+    """Guard contra deleção dos nomes EXATOS das tools MCP — se o prompt não
+    citar, o LLM não sabe o que chamar."""
+    p = govbr_auth_gating.MODULE_PROMPT
+    assert "govbr_auth_status" in p
+    assert "govbr_auth_init" in p
+    assert "govbr_logout" in p
+
+
+def test_govbr_auth_gating_checks_status_before_init():
+    """Política: checar status ANTES de pedir login — não obrigar re-auth de
+    quem já está autenticado (gating idempotente)."""
+    p = govbr_auth_gating.MODULE_PROMPT
+    assert p.index("govbr_auth_status") < p.index("govbr_auth_init")
+
+
+def test_govbr_auth_gating_lists_restricted_and_public_scope():
+    """Sanity da política aprovada: serviços restritos (CPF-bound) + exceção
+    pública (zeladoria anônima)."""
+    p = govbr_auth_gating.MODULE_PROMPT.lower()
+    assert "iptu" in p and "multas" in p, "serviços restritos ausentes"
+    assert "anônim" in p, "exceção de zeladoria anônima ausente"
+
+
+def test_govbr_auth_gating_enabled_by_default():
+    """Com env default, o módulo entra em ENABLED_MODULES. Env-aware: pula se o
+    ambiente legitimamente desabilita (ENABLED_MODULES é computado no import,
+    então não dá pra afirmar incondicionalmente sem recarregar o módulo)."""
+    import os
+
+    excluded = {t.strip() for t in (os.getenv("MCP_EXCLUDED_TOOLS") or "").split(",")}
+    disabled = (os.getenv("ENABLE_GOVBR_AUTH", "true").lower() == "false") or bool(
+        excluded & {"govbr_auth_init", "govbr_auth_status", "govbr_logout"}
+    )
+    if disabled:
+        import pytest
+
+        pytest.skip("gov.br auth desabilitado via env — gate funcionando como configurado")
+    assert govbr_auth_gating in ENABLED_MODULES
 
 
 # ---------- módulo vision_inbound ----------

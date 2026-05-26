@@ -925,18 +925,22 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         extract_user_id=extract_thread_id_from_config
     )
     def _inject_thread_id_in_user_id_params(self, state, config=None):
-        """Hook para injetar thread_id em qualquer parâmetro user_id de tool calls.
+        """Hook para injetar thread_id em parâmetros user_id/user_number de tool calls.
 
         Este hook processa todas as tool calls e substitui qualquer parâmetro
-        'user_id' pelo thread_id atual, garantindo que todas as ferramentas
-        recebam o identificador correto do usuário.
+        'user_id' OU 'user_number' pelo thread_id atual, garantindo que todas
+        as ferramentas recebam o identificador correto do cidadão SEM depender
+        do LLM adivinhar o telefone (as tools de auth gov.br
+        ``govbr_auth_init/status/logout`` usam ``user_number``; sem essa
+        injeção o LLM alucinaria o número em fluxos de texto — ver nota em
+        ``prompt_modules/interactive_response.py``).
 
         Args:
             state: Estado do grafo contendo as mensagens
             config: Configuração do LangGraph (pode ser None em alguns contextos)
 
         Returns:
-            dict: Estado atualizado com thread_id injetado em todos os parâmetros user_id
+            dict: Estado atualizado com thread_id injetado em todos os parâmetros user_id/user_number
         """
         messages = state.get("messages", [])
 
@@ -960,14 +964,14 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             for message in reversed(messages):
                 if hasattr(message, "tool_calls") and message.tool_calls:
                     for tool_call in message.tool_calls:
-                        # Verifica se a tool call tem argumentos e se possui user_id
-                        if (
-                            "args" in tool_call
-                            and isinstance(tool_call["args"], dict)
-                            and "user_id" in tool_call["args"]
+                        # Substitui user_id E user_number pelo thread_id atual
+                        # (qualquer um que a tool exponha como argumento).
+                        if "args" in tool_call and isinstance(
+                            tool_call["args"], dict
                         ):
-                            # Substitui user_id pelo thread_id
-                            tool_call["args"]["user_id"] = thread_id
+                            for _id_param in ("user_id", "user_number"):
+                                if _id_param in tool_call["args"]:
+                                    tool_call["args"][_id_param] = thread_id
                     break  # Processa apenas a última mensagem AI
 
         return {"messages": messages}
