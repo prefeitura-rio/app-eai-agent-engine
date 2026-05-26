@@ -228,16 +228,33 @@ def test_govbr_auth_gating_off_by_default():
     source que o gate de produção (getenv_or_action lê root .env + os.environ),
     pra não falhar falsamente quando habilitado via .env. Pula se o ambiente
     habilita explicitamente."""
+    from src.prompt_modules import _flag_is_true
     from src.utils.infisical import getenv_or_action
 
-    explicitly_on = (
-        getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="false") or "false"
-    ).lower() == "true"
+    explicitly_on = _flag_is_true(
+        getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="")
+    )
     if explicitly_on:
         import pytest
 
         pytest.skip("ENABLE_GOVBR_AUTH=true (via env/.env) — habilitado explicitamente")
     assert govbr_auth_gating not in ENABLED_MODULES
+
+
+def test_flag_is_true_tolerates_whitespace_and_case():
+    """Hardening do gate govbr: `getenv_or_action` NÃO faz strip, então um valor
+    com ``\\n``/espaço (comum em paste no Infisical) ou caixa diferente precisa
+    ligar mesmo assim. Opt-in estrito: só ``true`` liga — ``1``/``yes`` não."""
+    from src.prompt_modules import _flag_is_true
+
+    assert _flag_is_true("true")
+    assert _flag_is_true("true\n"), "newline de paste deve ser tolerado"
+    assert _flag_is_true("  TRUE  "), "espaço + caixa devem ser tolerados"
+    assert not _flag_is_true("false")
+    assert not _flag_is_true("")
+    assert not _flag_is_true(None)
+    assert not _flag_is_true("1"), "opt-in estrito: só 'true'"
+    assert not _flag_is_true("yes"), "opt-in estrito: só 'true'"
 
 
 # ---------- módulo vision_inbound ----------

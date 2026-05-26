@@ -28,6 +28,7 @@ agente (tom, escopo, fallbacks). Os módulos cobrem apenas integrações
 específicas que devem viver ao lado do código de tools.
 """
 
+import logging
 from typing import Tuple
 
 from src.prompt_modules import (
@@ -108,15 +109,23 @@ _interactive_response_enabled = (
     )
 )
 
+def _flag_is_true(raw: str | None) -> bool:
+    """Normaliza um flag booleano de env. Tolera whitespace (paste no Infisical
+    costuma deixar ``\\n``/espaço no valor) e caixa; só ``"true"`` liga. É mais
+    estrito que os gates ``!= "false"`` acima — auth é opt-in deliberado, então
+    qualquer coisa que não seja exatamente ``true`` (após strip/lower) fica OFF.
+    `getenv_or_action` não faz strip, então a normalização vive aqui."""
+    return (raw or "").strip().lower() == "true"
+
+
 # `govbr_auth_gating` gate: OPT-IN, controlado SÓ por ENABLE_GOVBR_AUTH (default
 # OFF). O flag do operador é o switch único — sem acoplar a MCP_EXCLUDED_TOOLS,
 # que estava bloqueando a habilitação quando as tools govbr aparecem na exclusão
 # por motivo legado. A preocupação de "instruir tool não-bound" é tratada no
 # PRÓPRIO prompt do módulo (instrui o LLM a não chamar uma tool govbr que não
 # esteja disponível), em vez de derrubar o módulo inteiro.
-_govbr_auth_enabled = (
-    _getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="false") or "false"
-).lower() == "true"
+_govbr_auth_raw = _getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="")
+_govbr_auth_enabled = _flag_is_true(_govbr_auth_raw)
 
 ENABLED_MODULES = [
     workflow_continuation,
@@ -134,6 +143,21 @@ if _interactive_response_enabled:
     ENABLED_MODULES.append(interactive_response)
 if _govbr_auth_enabled:
     ENABLED_MODULES.append(govbr_auth_gating)
+
+# Observability — os gates opcionais resolvem em import-time e ficam invisíveis
+# fora do sufixo de version. Logar a decisão (+ presença do flag govbr, SEM o
+# valor) torna o deploy diagnosticável: ``present=False`` => o flag não chegou
+# ao ambiente (problema de Infisical/projeto); ``present=True`` com
+# ``govbr_auth_gating=False`` => valor != "true".
+logging.getLogger(__name__).info(
+    "prompt_modules optional gates: audio_response=%s media_response=%s "
+    "interactive_response=%s govbr_auth_gating=%s (ENABLE_GOVBR_AUTH present=%s)",
+    _audio_response_enabled,
+    _media_response_enabled,
+    _interactive_response_enabled,
+    _govbr_auth_enabled,
+    bool((_govbr_auth_raw or "").strip()),
+)
 
 
 def compose(base_prompt: str, base_version: str) -> Tuple[str, str]:
