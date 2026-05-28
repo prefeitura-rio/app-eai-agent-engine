@@ -38,6 +38,7 @@ from vertexai.agent_engines import (
 # from langgraph.prebuilt import create_react_agent
 # use custom graph without _validate_chat_history
 from engine.custom_react_agent import create_react_agent
+from engine.audio_mode import inject_audio_directive
 from engine.log import logger
 
 # Error monitoring utilities (safe fallback if not available)
@@ -1010,7 +1011,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         else:
             # No filtering applied, just inject thread_id normally
             final_state = self._inject_thread_id_in_user_id_params(filtered_state, config)
-        
+
+        # Step 4.5: Modo áudio contínuo — reinjeta a diretiva todo turno, derivada
+        # determinísticamente do histórico persistido (durável via checkpointer).
+        # Entra só em llm_input_messages (não-persistente), igual ao filtro de
+        # curto prazo. Antes do Step 5 para o token counting incluir a diretiva.
+        final_state = inject_audio_directive(state, final_state)
+
         # Step 5: Store the messages that will be sent to LLM for token counting later
         # The prompt_runnable will prepend system prompt to these messages
         if "llm_input_messages" in final_state:
