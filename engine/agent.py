@@ -39,6 +39,7 @@ from vertexai.agent_engines import (
 # use custom graph without _validate_chat_history
 from engine.custom_react_agent import create_react_agent
 from engine.audio_mode import inject_audio_directive
+from engine.session_boundary import apply_session_reset
 from engine.log import logger
 
 # Error monitoring utilities (safe fallback if not available)
@@ -1012,8 +1013,14 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             # No filtering applied, just inject thread_id normally
             final_state = self._inject_thread_id_in_user_id_params(filtered_state, config)
 
+        # Step 4.4: Reset de sessão — se o cidadão encerrou ("tchau"/"pode
+        # encerrar") e mandou nova mensagem depois, trunca o llm_input pro
+        # atendimento atual (contexto fresco; memória de longo prazo preservada).
+        # Antes do áudio pra a preferência derivar só da sessão nova.
+        final_state = apply_session_reset(state, final_state)
+
         # Step 4.5: Modo áudio contínuo — reinjeta a diretiva todo turno, derivada
-        # determinísticamente do histórico persistido (durável via checkpointer).
+        # determinísticamente do atendimento atual (reseta após encerramento).
         # Entra só em llm_input_messages (não-persistente), igual ao filtro de
         # curto prazo. Antes do Step 5 para o token counting incluir a diretiva.
         final_state = inject_audio_directive(state, final_state)
