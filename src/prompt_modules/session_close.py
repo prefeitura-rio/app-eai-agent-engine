@@ -7,12 +7,19 @@ assunto (pivot tratado em ``workflow_continuation``). Faltava reconhecer a
 intenção explícita de finalizar ("tchau", "era só isso", "pode encerrar") e
 fechar com cordialidade — sem deixar um workflow em aberto no limbo.
 
-Não depende de tool nova: o fechamento é comportamento conversacional. O
-cancelamento de workflow ativo reusa o mesmo mecanismo de
-``workflow_continuation`` (chamar ``multi_step_service`` com sinal de
-cancelamento, ou parar de mantê-lo ativo). O logout gov.br, quando aplicável,
-é tratado pelo módulo ``govbr_auth_gating`` (logout a pedido do cidadão) — não
-duplicado aqui pra não instruir uma tool que pode não estar bound.
+A despedida é comportamento conversacional (este módulo). Mas o **reset de
+sessão** — pra a próxima mensagem começar limpa — NÃO é mais só conversacional:
+é mecânico, em ``engine/session_boundary.py``. Ele detecta o encerramento e, na
+mensagem seguinte, trunca o ``llm_input_messages`` pro atendimento atual
+(contexto + preferências como modo áudio resetam; memória de longo prazo
+persiste por design). Antes desse mecanismo, "encerrar" só dava tchau e a
+conversa seguinte continuava o mesmo thread — a preferência de áudio vazava
+(bug que motivou isto). O cancelamento de workflow ativo reusa o mesmo
+mecanismo de ``workflow_continuation`` (chamar ``multi_step_service`` com sinal
+de cancelamento, ou parar de mantê-lo ativo). O logout gov.br, quando
+aplicável, é tratado pelo módulo ``govbr_auth_gating`` (logout a pedido do
+cidadão) — não duplicado aqui pra não instruir uma tool que pode não estar
+bound.
 
 Sempre ativo (sem flag): como não chama tool, não há risco de instruir tool
 não-bound — mesmo critério dos módulos ``workflow_continuation`` /

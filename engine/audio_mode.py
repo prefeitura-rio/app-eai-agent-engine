@@ -23,10 +23,12 @@ O modo contínuo só liga com marcadores de continuidade ("sempre", "fica",
 """
 
 import re
-import unicodedata
 from typing import Any, Mapping, Sequence
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import SystemMessage
+
+from engine.session_boundary import current_session_messages
+from engine.text_match import is_human, message_text, normalize
 
 # Diretiva reinjetada todo turno quando o modo contínuo está ligado. Já embute a
 # regra de precedência (resumo falado em áudio + detalhes em texto) para resolver
@@ -70,39 +72,6 @@ _ON_RE = [re.compile(p) for p in _ON_PATTERNS]
 _OFF_RE = [re.compile(p) for p in _OFF_PATTERNS]
 
 
-def _normalize(text: str) -> str:
-    """Minúsculo + sem acentos, para casar frases independente de grafia."""
-    decomposed = unicodedata.normalize("NFKD", text)
-    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
-    return stripped.lower()
-
-
-def _message_text(message: Any) -> str:
-    """Extrai o texto de uma mensagem (str ou lista de blocos)."""
-    content = getattr(message, "content", "")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, Mapping) and isinstance(block.get("text"), str):
-                parts.append(block["text"])
-        return " ".join(parts)
-    return str(content) if content is not None else ""
-
-
-def _is_human(message: Any) -> bool:
-    if isinstance(message, HumanMessage):
-        return True
-    # Tolera dicts/objetos com role/type "human"/"user" (robustez a serialização).
-    role = getattr(message, "type", None) or getattr(message, "role", None)
-    if role is None and isinstance(message, Mapping):
-        role = message.get("type") or message.get("role")
-    return role in ("human", "user")
-
-
 def derive_audio_mode(messages: Sequence[Any]) -> bool:
     """Deriva o modo áudio contínuo do histórico (diretiva mais recente vence).
 
@@ -115,9 +84,9 @@ def derive_audio_mode(messages: Sequence[Any]) -> bool:
     segurança.
     """
     for message in reversed(list(messages)):
-        if not _is_human(message):
+        if not is_human(message):
             continue
-        text = _normalize(_message_text(message))
+        text = normalize(message_text(message))
         if not text:
             continue
         if any(rx.search(text) for rx in _OFF_RE):
@@ -135,13 +104,14 @@ def audio_mode_directive_message() -> SystemMessage:
 def inject_audio_directive(state: Mapping[str, Any], final_state: dict) -> dict:
     """Anexa a diretiva de áudio ao input do LLM quando o modo contínuo está ON.
 
-    Pura e idempotente por turno. Lê a preferência do histórico **persistido**
-    (``state['messages']`` — completo, não o filtrado), e injeta a diretiva no
-    canal não-persistente ``llm_input_messages``, preservando qualquer
-    transformação anterior (memória, filtro, thread_id) já aplicada em
-    ``final_state``. Não mexe em ``messages`` (o canal persistido).
+    Pura e idempotente por turno. Lê a preferência só do atendimento ATUAL
+    (``current_session_messages`` — reseta após um encerramento), e injeta a
+    diretiva no canal não-persistente ``llm_input_messages``, preservando
+    qualquer transformação anterior (memória, filtro, thread_id, reset de
+    sessão) já aplicada em ``final_state``. Não mexe em ``messages`` (o canal
+    persistido).
     """
-    if not derive_audio_mode(state.get("messages", [])):
+    if not derive_audio_mode(current_session_messages(state.get("messages", []))):
         return final_state
 
     base = final_state.get("llm_input_messages")
