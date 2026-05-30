@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import json
 import random
+import traceback as _traceback
 from datetime import datetime, timezone
 from functools import wraps
 from os import getenv
@@ -47,6 +48,7 @@ from engine.utils import (
     interceptor,
     extract_thread_id_from_config,
     make_source,
+    send_general_error,
     PRE_INVOKE,
     PRE_INVOKE_SANITIZE,
     PRE_INVOKE_COMBINED,
@@ -66,6 +68,55 @@ from engine.utils import (
     RESPONSE_FILTER,
     RESPONSE_FILTER_FILTER,
 )
+
+
+# Resposta de fallback quando a execução do grafo falha de forma não-recuperável
+# (erro de protocolo MCP, recursion limit, etc.). Em vez de propagar a exceção
+# — que vira o erro genérico do Gateway — o engine devolve esta mensagem,
+# guiando o cidadão (inclusive pro caminho de endereço por texto, relevante ao
+# bug do pin de localização no fluxo de luminária).
+ENGINE_FALLBACK_MESSAGE = (
+    "Desculpe, tive um problema técnico ao processar sua mensagem agora. "
+    "Pode tentar enviar de novo? Se você mandou uma localização, tente digitar "
+    "o endereço (rua/avenida, número se souber, e bairro)."
+)
+
+
+async def _report_graph_failure(source: dict, exc: Exception, kwargs: dict) -> None:
+    """Reporta falha de grafo ao error interceptor.
+
+    A rede de segurança do Agent.query devolve um fallback em vez de propagar a
+    exceção — mas isso faz o `@interceptor` (que só reporta em exceção propagada)
+    perder o erro. Este helper preserva esse canal de monitoramento, reportando
+    explicitamente antes do fallback.
+    """
+    try:
+        thread_id = (
+            (kwargs.get("config", {}) or {})
+            .get("configurable", {})
+            .get("thread_id", "unknown")
+        )
+        await send_general_error(
+            user_id=thread_id,
+            source=dict(source),
+            error_type=type(exc).__name__,
+            error_message=str(exc)[:300],
+            traceback=_traceback.format_exc(),
+        )
+    except Exception as report_error:  # nunca deixar o report quebrar o fallback
+        logger.warning(f"[Engine] Falha ao reportar erro de grafo: {report_error}")
+
+
+def _report_graph_failure_sync(source: dict, exc: Exception, kwargs: dict) -> None:
+    """Variante sync-safe: usa o loop corrente se houver, senão roda um efêmero."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_report_graph_failure(source, exc, kwargs))
+    except RuntimeError:
+        try:
+            asyncio.run(_report_graph_failure(source, exc, kwargs))
+        except Exception as report_error:
+            logger.warning(f"[Engine] Falha ao reportar erro de grafo (sync): {report_error}")
 
 
 class IntVersionPostgresSaver(AsyncPostgresSaver):
@@ -1373,13 +1424,23 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 }
             except Exception as e:
                 return {"status_code": 500, "status": "error", "message": str(e)}
-        result = await self._graph.ainvoke(**kwargs)
-        filtered_result = self._filter_current_interaction(result)
+        try:
+            result = await self._graph.ainvoke(**kwargs)
+            filtered_result = self._filter_current_interaction(result)
 
-        # Simple tracing
-        self._trace_conversation(filtered_result, **kwargs)
+            # Simple tracing
+            self._trace_conversation(filtered_result, **kwargs)
 
-        return filtered_result
+            return filtered_result
+        except Exception as e:
+            logger.error(
+                f"[async_query] Falha na execução do grafo; devolvendo fallback: {e}",
+                exc_info=True,
+            )
+            await _report_graph_failure(
+                make_source(GRAPH_INVOCATION, GRAPH_ASYNC_QUERY), e, kwargs
+            )
+            return {"messages": [AIMessage(content=ENGINE_FALLBACK_MESSAGE)]}
 
     @interceptor(
         source=make_source(GRAPH_INVOCATION, GRAPH_ASYNC_STREAM),
@@ -1395,9 +1456,20 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 raise ValueError(
                     "Graph is not initialized. Call _ensure_async_setup first."
                 )
-            async for chunk in self._graph.astream(**kwargs):
-                filtered_chunk = self._filter_streaming_chunk(chunk)
-                yield dumpd(filtered_chunk)
+            try:
+                async for chunk in self._graph.astream(**kwargs):
+                    filtered_chunk = self._filter_streaming_chunk(chunk)
+                    yield dumpd(filtered_chunk)
+            except Exception as e:
+                logger.error(
+                    f"[async_stream_query] Falha no streaming do grafo; "
+                    f"devolvendo fallback: {e}",
+                    exc_info=True,
+                )
+                await _report_graph_failure(
+                    make_source(GRAPH_INVOCATION, GRAPH_ASYNC_STREAM), e, kwargs
+                )
+                yield dumpd({"messages": [AIMessage(content=ENGINE_FALLBACK_MESSAGE)]})
 
         return async_generator()
 
@@ -1412,13 +1484,26 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         if self._graph is None:
             raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
 
-        result = self._graph.invoke(**kwargs)
-        filtered_result = self._filter_current_interaction(result)
+        try:
+            result = self._graph.invoke(**kwargs)
+            filtered_result = self._filter_current_interaction(result)
 
-        # Simple tracing
-        self._trace_conversation(filtered_result, **kwargs)
+            # Simple tracing
+            self._trace_conversation(filtered_result, **kwargs)
 
-        return filtered_result
+            return filtered_result
+        except Exception as e:
+            # Rede de segurança: uma falha na execução do grafo (ex.: erro de
+            # protocolo MCP, recursion limit, falha de tool não-recuperável) NÃO
+            # deve propagar como erro cru — devolve um fallback amigável.
+            logger.error(
+                f"[query] Falha na execução do grafo; devolvendo fallback: {e}",
+                exc_info=True,
+            )
+            _report_graph_failure_sync(
+                make_source(GRAPH_INVOCATION, GRAPH_QUERY), e, kwargs
+            )
+            return {"messages": [AIMessage(content=ENGINE_FALLBACK_MESSAGE)]}
 
     @interceptor(
         source=make_source(GRAPH_INVOCATION, GRAPH_STREAM),
@@ -1430,9 +1515,19 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._ensure_sync_setup()
         if self._graph is None:
             raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
-        for chunk in self._graph.stream(**kwargs):
-            filtered_chunk = self._filter_streaming_chunk(chunk)
-            yield dumpd(filtered_chunk)
+        try:
+            for chunk in self._graph.stream(**kwargs):
+                filtered_chunk = self._filter_streaming_chunk(chunk)
+                yield dumpd(filtered_chunk)
+        except Exception as e:
+            logger.error(
+                f"[stream_query] Falha no streaming do grafo; devolvendo fallback: {e}",
+                exc_info=True,
+            )
+            _report_graph_failure_sync(
+                make_source(GRAPH_INVOCATION, GRAPH_STREAM), e, kwargs
+            )
+            yield dumpd({"messages": [AIMessage(content=ENGINE_FALLBACK_MESSAGE)]})
 
     @interceptor(
         source=make_source(RESPONSE_FILTER, RESPONSE_FILTER_FILTER),

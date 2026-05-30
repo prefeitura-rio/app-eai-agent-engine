@@ -1,183 +1,182 @@
 """
 Monitored Tool Node
 
-A wrapper around LangGraph's ToolNode that adds automatic error reporting
-for tool execution failures. This provides visibility into which tools are
-failing and why, helping with debugging and monitoring.
+Wrapper do ToolNode do LangGraph que reporta erros de execução de tool ao
+interceptor de erros, dando visibilidade de quais tools falham e por quê.
+
+IMPORTANTE (langgraph 1.x): os entry-points do ToolNode são `_func`/`_afunc`
+(NÃO `_run`/`_arun`). A versão anterior sobrescrevia `_run`/`_arun`, que o base
+nunca chama — ou seja, o monitoramento estava silenciosamente morto.
+
+Esta versão sobrescreve os métodos corretos cobrindo os DOIS caminhos pelos
+quais um erro de tool aparece nesta versão do langgraph:
+
+1. **Exceção propagada** — com o `handle_tool_errors` default, uma exceção
+   levantada no corpo da tool (ex.: Google Maps fora do ar em
+   `reverse_geocode_address`) é RE-LEVANTADA pelo base, não convertida. O
+   override captura, reporta e re-levanta (a rede de segurança do Agent.query
+   converte em fallback amigável pro cidadão). Esse é o caso comum.
+2. **ToolMessage(status="error")** — quando o erro É convertido (ex.:
+   ToolInvocationError, ou handle_tool_errors configurado como bool/str), ele
+   chega como ToolMessage no resultado. O override inspeciona e reporta.
+
+O override é PASSTHROUGH: não altera o error handling do base — só dá
+observabilidade. A recuperação de UX fica com `Agent.query` (rede de segurança).
 """
 
-import traceback
-from typing import Any, Dict, List, Union
-from langchain_core.tools import BaseTool
-from langgraph.prebuilt.tool_node import ToolNode
-from langgraph.types import interrupt
+import asyncio
+from typing import Any, List, Tuple
 
-from engine.utils import send_general_error, make_tool_source, TOOL_EXECUTION
+from langchain_core.messages import ToolMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.prebuilt.tool_node import ToolNode
+from langgraph.runtime import Runtime
+
+from engine.utils import send_general_error, make_tool_source
 from engine.log import logger
 
 
 class MonitoredToolNode(ToolNode):
-    """
-    Enhanced ToolNode that reports tool execution errors to the error interceptor.
-    
-    Wraps LangGraph's ToolNode to add automatic error monitoring without changing
-    the tool execution behavior. Errors are reported asynchronously and do not
-    block or interfere with normal error propagation.
-    
-    Usage:
-        Instead of:
-            tool_node = ToolNode(tools)
-        
-        Use:
-            tool_node = MonitoredToolNode(tools)
+    """ToolNode que reporta erros de execução de tool sem alterar o comportamento.
+
+    As assinaturas de `_func`/`_afunc` espelham EXATAMENTE as do base, incluindo
+    anotações (`config: RunnableConfig`, `runtime: Runtime`). O langgraph inspeciona
+    essas anotações para injetar config/runtime; com `Any`, ele trata `runtime`
+    como config key e levanta "Missing required config key" — quebraria em produção.
     """
 
-    async def _arun(
-        self,
-        tool_input: Dict[str, Any],
-        *,
-        store: Any = None,
-        config: Dict[str, Any],
-        **kwargs: Any,
+    async def _afunc(
+        self, input: Any, config: RunnableConfig, runtime: Runtime
     ) -> Any:
-        """
-        Execute tool with error monitoring.
-        
-        This overrides ToolNode's _arun to wrap it with error reporting.
-        All errors are reported to the error interceptor before being re-raised.
-        """
-        tool_name = "unknown"
-        thread_id = "unknown"
-        
         try:
-            # Extract context for error reporting
-            tool_name = tool_input.get("name", "unknown") if isinstance(tool_input, dict) else "unknown"
-            
-            # Extract thread_id from config
-            if isinstance(config, dict):
-                configurable = config.get("configurable", {})
-                thread_id = configurable.get("thread_id", "unknown")
-            
-            # Execute the tool using parent class method
-            return await super()._arun(tool_input, store=store, config=config, **kwargs)
-            
-        except Exception as e:
-            # Report error to interceptor
-            try:
-                # Extract tool arguments for context
-                tool_args = {}
-                if isinstance(tool_input, dict):
-                    tool_args = tool_input.get("args", {})
-                    # Limit size of args to avoid huge payloads
-                    if isinstance(tool_args, dict):
-                        tool_args = {k: str(v)[:100] for k, v in list(tool_args.items())[:10]}
-                
-                # Create source with tool context
-                source = make_tool_source(
-                    tool_name=tool_name,
-                    context={"args_preview": tool_args} if tool_args else None
-                )
-                
-                # Send error report (non-blocking)
-                await send_general_error(
-                    user_id=thread_id,
-                    source=source,
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                    traceback=traceback.format_exc(),
-                    input_body=tool_input,
-                )
-                
-                logger.info(
-                    f"[Error Monitor] Reported tool execution error: {tool_name} | "
-                    f"Error: {type(e).__name__}: {str(e)[:100]}"
-                )
-                
-            except Exception as report_error:
-                # If error reporting fails, log but don't interfere with original error
-                logger.warning(
-                    f"[Error Monitor] Failed to report tool error: {report_error}"
-                )
-            
-            # Re-raise original error to maintain normal error flow
+            result = await super()._afunc(input, config, runtime)
+        except Exception as exc:
+            await self._report(self._pending_tool_names(input), repr(exc), config)
             raise
+        for tool_name, content in self._extract_tool_errors(result):
+            await self._report(tool_name, content, config)
+        return result
 
-    def _run(
-        self,
-        tool_input: Dict[str, Any],
-        *,
-        store: Any = None,
-        config: Dict[str, Any],
-        **kwargs: Any,
-    ) -> Any:
-        """
-        Synchronous tool execution with error monitoring.
-        
-        Similar to _arun but for synchronous execution.
-        Note: Error reporting is still async, handled via event loop.
-        """
-        tool_name = "unknown"
-        thread_id = "unknown"
-        
+    def _func(self, input: Any, config: RunnableConfig, runtime: Runtime) -> Any:
         try:
-            # Extract context for error reporting
-            tool_name = tool_input.get("name", "unknown") if isinstance(tool_input, dict) else "unknown"
-            
-            # Extract thread_id from config
-            if isinstance(config, dict):
-                configurable = config.get("configurable", {})
-                thread_id = configurable.get("thread_id", "unknown")
-            
-            # Execute the tool using parent class method
-            return super()._run(tool_input, store=store, config=config, **kwargs)
-            
-        except Exception as e:
-            # Report error to interceptor
-            try:
-                import asyncio
-                
-                # Extract tool arguments for context
-                tool_args = {}
-                if isinstance(tool_input, dict):
-                    tool_args = tool_input.get("args", {})
-                    # Limit size of args to avoid huge payloads
-                    if isinstance(tool_args, dict):
-                        tool_args = {k: str(v)[:100] for k, v in list(tool_args.items())[:10]}
-                
-                # Create source with tool context
-                source = make_tool_source(
-                    tool_name=tool_name,
-                    context={"args_preview": tool_args} if tool_args else None
-                )
-                
-                # Send error report (try to run async in current event loop)
-                try:
-                    loop = asyncio.get_running_loop()
-                    # Schedule error reporting as a task (fire and forget)
-                    loop.create_task(send_general_error(
-                        user_id=thread_id,
-                        source=source,
-                        error_type=type(e).__name__,
-                        error_message=str(e),
-                        traceback=traceback.format_exc(),
-                        input_body=tool_input,
-                    ))
-                except RuntimeError:
-                    # No event loop, skip async error reporting
-                    logger.warning(
-                        f"[Error Monitor] Cannot report sync tool error (no event loop): {tool_name}"
+            result = super()._func(input, config, runtime)
+        except Exception as exc:
+            self._report_sync(
+                [(self._pending_tool_names(input), repr(exc))], config
+            )
+            raise
+        errors = self._extract_tool_errors(result)
+        if errors:
+            self._report_sync(errors, config)
+        return result
+
+    # ------------------------------------------------------------------ helpers
+
+    def _pending_tool_names(self, input: Any) -> str:
+        """Nomes dos tool_calls que o ToolNode ia executar, extraídos do input.
+
+        Quando a tool levanta no corpo, o base re-levanta antes de qualquer
+        ToolMessage existir — então o nome da tool tem que vir do input. O ToolNode
+        recebe o input em dois formatos:
+
+        - **v2 (default do react agent)**: o routing faz `Send("tools", [tool_call])`,
+          então `input` é uma LISTA de dicts de tool_call diretos (`{"name", "args",
+          "id"}`). Esse é o path de produção.
+        - **v1 / state**: `input` é o state (`{"messages": [...]}`) ou uma lista de
+          mensagens; o nome vem dos `tool_calls` da última AIMessage.
+
+        Com 1 call é exato; com vários, junta os nomes para o alerta apontar o
+        conjunto que falhou.
+        """
+        try:
+            if isinstance(input, dict):
+                messages = input.get(self._messages_key, []) or []
+            elif isinstance(input, list):
+                # v2: itens são dicts de tool_call diretos (têm "name", não .tool_calls)
+                direct = [
+                    str(item["name"])
+                    for item in input
+                    if isinstance(item, dict) and item.get("name")
+                ]
+                if direct:
+                    return ",".join(direct)
+                messages = input
+            else:
+                return "unknown"
+            for msg in reversed(messages):
+                tool_calls = getattr(msg, "tool_calls", None)
+                if tool_calls:
+                    names = [str(tc["name"]) for tc in tool_calls if tc.get("name")]
+                    if names:
+                        return ",".join(names)
+            return "unknown"
+        except Exception:
+            return "unknown"
+
+    def _extract_tool_errors(self, result: Any) -> List[Tuple[str, str]]:
+        """Extrai (tool_name, content) das ToolMessages com status='error'."""
+        try:
+            if isinstance(result, dict):
+                messages = result.get(self._messages_key, []) or []
+            elif isinstance(result, list):
+                messages = result
+            else:
+                return []
+            errors: List[Tuple[str, str]] = []
+            for msg in messages:
+                if (
+                    isinstance(msg, ToolMessage)
+                    and getattr(msg, "status", None) == "error"
+                ):
+                    errors.append(
+                        (
+                            getattr(msg, "name", None) or "unknown",
+                            str(getattr(msg, "content", "")),
+                        )
                     )
-                
-                logger.info(
-                    f"[Error Monitor] Reported tool execution error: {tool_name} | "
-                    f"Error: {type(e).__name__}: {str(e)[:100]}"
-                )
-                
-            except Exception as report_error:
-                # If error reporting fails, log but don't interfere with original error
-                logger.warning(
-                    f"[Error Monitor] Failed to report tool error: {report_error}"
-                )
-            
-            # Re-raise original error to maintain normal error flow
-            raise
+            return errors
+        except Exception:
+            return []
+
+    async def _report(self, tool_name: str, content: str, config: Any) -> None:
+        try:
+            thread_id = "unknown"
+            if isinstance(config, dict):
+                thread_id = config.get("configurable", {}).get("thread_id", "unknown")
+            await send_general_error(
+                user_id=thread_id,
+                source=make_tool_source(tool_name=tool_name),
+                error_type="ToolExecutionError",
+                error_message=content[:500],
+                traceback=None,
+            )
+            logger.info(
+                f"[Error Monitor] Tool error reportado: {tool_name} | {content[:100]}"
+            )
+        except Exception as report_error:
+            logger.warning(
+                f"[Error Monitor] Falha ao reportar erro de tool: {report_error}"
+            )
+
+    def _report_sync(self, errors: List[Tuple[str, str]], config: Any) -> None:
+        """Reporta erros de tool a partir do caminho síncrono.
+
+        Se há loop corrente, agenda (fire-and-forget). Senão (caso comum no path
+        sync `graph.invoke`/`Agent.query`, ou em thread de executor), roda um loop
+        efêmero via `asyncio.run` — sem isso o erro sync nunca chegaria ao monitor.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        for tool_name, content in errors:
+            if loop is not None:
+                loop.create_task(self._report(tool_name, content, config))
+            else:
+                try:
+                    asyncio.run(self._report(tool_name, content, config))
+                except Exception as report_error:
+                    logger.warning(
+                        f"[Error Monitor] Falha ao reportar erro de tool (sync): "
+                        f"{report_error}"
+                    )
