@@ -20,6 +20,7 @@ from unittest.mock import patch
 from langchain_core.messages import AIMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, START, END, MessagesState
+from langgraph.types import Send
 
 import engine.monitored_tool_node as mtn
 from engine.monitored_tool_node import MonitoredToolNode
@@ -59,6 +60,40 @@ def _build_graph_with_node(node):
     return g.compile()
 
 
+def _build_graph_with_send_dispatch(node):
+    """Mini-grafo que despacha pro ToolNode via `Send("tools", [tool_call])`.
+
+    Replica EXATAMENTE o routing v2 do engine (custom_react_agent.py:906/988):
+    o nó "tools" recebe `[tool_call_dict]` (lista), não o state — o path real de
+    produção. Garante que `_pending_tool_names` extraia o nome por dentro do
+    `_afunc`/grafo, não só no helper isolado.
+    """
+
+    def seed(state):
+        return {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "failing_tool", "args": {"x": "y"}, "id": "call_1"}
+                    ],
+                )
+            ]
+        }
+
+    def route(state):
+        last = state["messages"][-1]
+        return [Send("tools", [tc]) for tc in last.tool_calls]
+
+    g = StateGraph(MessagesState)
+    g.add_node("seed", seed)
+    g.add_node("tools", node)
+    g.add_edge(START, "seed")
+    g.add_conditional_edges("seed", route, ["tools"])
+    g.add_edge("tools", END)
+    return g.compile()
+
+
 def test_monitored_tool_node_reports_propagating_tool_error():
     """B: exceção no corpo da tool propaga (default handle_tool_errors) E é reportada.
 
@@ -86,6 +121,29 @@ def test_monitored_tool_node_reports_propagating_tool_error():
     reported = str(mock_report.call_args)
     assert "simulated tool failure" in reported
     assert "failing_tool" in reported  # nome extraído do input, não "unknown"
+
+
+def test_monitored_tool_node_reports_via_send_dispatch_v2():
+    """B (path de produção): com Send("tools", [tool_call]) o nó recebe a LISTA
+    de tool_call dicts — o input v2 real. O erro deve propagar E ser reportado
+    com o nome da tool extraído por dentro do _afunc (não "unknown")."""
+    app = _build_graph_with_send_dispatch(MonitoredToolNode([failing_tool]))
+
+    async def run():
+        with patch.object(mtn, "send_general_error") as mock_report:
+            with pytest.raises(Exception):
+                await app.ainvoke(
+                    {"messages": []},
+                    config={"configurable": {"thread_id": "5521999999999"}},
+                )
+            return mock_report
+
+    mock_report = asyncio.run(run())
+
+    assert mock_report.await_count >= 1 or mock_report.call_count >= 1
+    reported = str(mock_report.call_args)
+    assert "failing_tool" in reported  # nome extraído do [tool_call] via _afunc
+    assert "simulated tool failure" in reported
 
 
 def test_pending_tool_names_handles_v2_and_state_inputs():

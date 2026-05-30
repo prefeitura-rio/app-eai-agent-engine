@@ -35,6 +35,11 @@ from langgraph.runtime import Runtime
 from engine.utils import send_general_error, make_tool_source
 from engine.log import logger
 
+# Retém referência forte dos reports fire-and-forget. asyncio só mantém weakref
+# do task de create_task — sem isso, se o caller retorna antes do report
+# completar, o task pode ser coletado e o erro de tool nunca chega ao monitor.
+_PENDING_REPORT_TASKS: set = set()
+
 
 class MonitoredToolNode(ToolNode):
     """ToolNode que reporta erros de execução de tool sem alterar o comportamento.
@@ -171,7 +176,9 @@ class MonitoredToolNode(ToolNode):
             loop = None
         for tool_name, content in errors:
             if loop is not None:
-                loop.create_task(self._report(tool_name, content, config))
+                task = loop.create_task(self._report(tool_name, content, config))
+                _PENDING_REPORT_TASKS.add(task)
+                task.add_done_callback(_PENDING_REPORT_TASKS.discard)
             else:
                 try:
                     asyncio.run(self._report(tool_name, content, config))

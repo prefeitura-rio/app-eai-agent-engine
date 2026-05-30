@@ -107,12 +107,23 @@ async def _report_graph_failure(source: dict, exc: Exception, kwargs: dict) -> N
         logger.warning(f"[Engine] Falha ao reportar erro de grafo: {report_error}")
 
 
+# Retém referência forte dos reports fire-and-forget. Sem isso, o asyncio só
+# guarda uma weakref do task criado por create_task — se o caller retorna antes
+# do report completar, o task pode ser coletado e o erro nunca chega ao monitor.
+_PENDING_GRAPH_REPORT_TASKS: set = set()
+
+
 def _report_graph_failure_sync(source: dict, exc: Exception, kwargs: dict) -> None:
     """Variante sync-safe: usa o loop corrente se houver, senão roda um efêmero."""
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(_report_graph_failure(source, exc, kwargs))
     except RuntimeError:
+        loop = None
+    if loop is not None:
+        task = loop.create_task(_report_graph_failure(source, exc, kwargs))
+        _PENDING_GRAPH_REPORT_TASKS.add(task)
+        task.add_done_callback(_PENDING_GRAPH_REPORT_TASKS.discard)
+    else:
         try:
             asyncio.run(_report_graph_failure(source, exc, kwargs))
         except Exception as report_error:
