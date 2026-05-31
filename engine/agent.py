@@ -1444,9 +1444,8 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
             return filtered_result
         except Exception as e:
-            logger.error(
-                f"[async_query] Falha na execução do grafo; devolvendo fallback: {e}",
-                exc_info=True,
+            logger.opt(exception=True).error(
+                "[async_query] Falha na execução do grafo; devolvendo fallback: {}", e
             )
             await _report_graph_failure(
                 make_source(GRAPH_INVOCATION, GRAPH_ASYNC_QUERY), e, kwargs
@@ -1472,10 +1471,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                     filtered_chunk = self._filter_streaming_chunk(chunk)
                     yield dumpd(filtered_chunk)
             except Exception as e:
-                logger.error(
-                    f"[async_stream_query] Falha no streaming do grafo; "
-                    f"devolvendo fallback: {e}",
-                    exc_info=True,
+                logger.opt(exception=True).error(
+                    "[async_stream_query] Falha no streaming do grafo; "
+                    "devolvendo fallback: {}",
+                    e,
                 )
                 await _report_graph_failure(
                     make_source(GRAPH_INVOCATION, GRAPH_ASYNC_STREAM), e, kwargs
@@ -1507,9 +1506,8 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             # Rede de segurança: uma falha na execução do grafo (ex.: erro de
             # protocolo MCP, recursion limit, falha de tool não-recuperável) NÃO
             # deve propagar como erro cru — devolve um fallback amigável.
-            logger.error(
-                f"[query] Falha na execução do grafo; devolvendo fallback: {e}",
-                exc_info=True,
+            logger.opt(exception=True).error(
+                "[query] Falha na execução do grafo; devolvendo fallback: {}", e
             )
             _report_graph_failure_sync(
                 make_source(GRAPH_INVOCATION, GRAPH_QUERY), e, kwargs
@@ -1531,9 +1529,8 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 filtered_chunk = self._filter_streaming_chunk(chunk)
                 yield dumpd(filtered_chunk)
         except Exception as e:
-            logger.error(
-                f"[stream_query] Falha no streaming do grafo; devolvendo fallback: {e}",
-                exc_info=True,
+            logger.opt(exception=True).error(
+                "[stream_query] Falha no streaming do grafo; devolvendo fallback: {}", e
             )
             _report_graph_failure_sync(
                 make_source(GRAPH_INVOCATION, GRAPH_STREAM), e, kwargs

@@ -187,7 +187,10 @@ def test_query_returns_fallback_on_graph_error():
 
     class _BoomGraph:
         def invoke(self, **kwargs):
-            raise RuntimeError("graph boom")
+            # Mensagem com CHAVES de propósito: se o log de fallback usasse
+            # Loguru com kwarg (exc_info=True), o `.format()` estouraria KeyError
+            # aqui e derrotaria o fallback. Guarda de regressão.
+            raise RuntimeError("graph boom {with} {braces} in error body")
 
     fake_self = SimpleNamespace(
         _graph=_BoomGraph(),
