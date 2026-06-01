@@ -40,6 +40,7 @@ from src.prompt_modules import (
     media_inbound,
     media_response,
     session_close,
+    session_reset,
     video_inbound,
     vision_inbound,
     workflow_continuation,
@@ -122,6 +123,25 @@ _interactive_response_enabled = (
 _govbr_auth_raw = _getenv_or_action("ENABLE_GOVBR_AUTH", action="ignore", default="")
 _govbr_auth_enabled = (_govbr_auth_raw or "").strip().lower() != "false"
 
+# `session_reset` gate: registra a INSTRUÇÃO pra o LLM chamar a tool MCP
+# `reset_session_state` no encerramento. Mesma estratégia de
+# audio_response/media_response — sem o gate, o LLM seria instruído a chamar tool
+# não-bound e o turno de encerramento produziria erro de tool unknown. Por isso
+# este módulo é separado do `session_close` (sempre ativo, deliberadamente
+# sem-tool): a despedida continua funcionando mesmo sem a instrução de limpeza.
+#
+# Dois níveis de desligamento, com semânticas DIFERENTES (igual aos gates acima):
+#   1. 'reset_session_state' em MCP_EXCLUDED_TOOLS → desbinda a tool no deploy E
+#      remove o módulo: limpeza totalmente desligada.
+#   2. ENABLE_SESSION_RESET=false → remove só a INSTRUÇÃO do prompt. A tool, se
+#      ainda bound, segue chamável pelo modelo (a própria descrição dela orienta
+#      o uso) — é um "soft off" do nudge, não um unbind. Pra desligar de vez,
+#      use o nível 1.
+_session_reset_enabled = (
+    (_getenv_or_action("ENABLE_SESSION_RESET", action="ignore", default="true") or "true").lower() != "false"
+    and "reset_session_state" not in _excluded_tools
+)
+
 ENABLED_MODULES = [
     workflow_continuation,
     session_close,
@@ -139,6 +159,8 @@ if _interactive_response_enabled:
     ENABLED_MODULES.append(interactive_response)
 if _govbr_auth_enabled:
     ENABLED_MODULES.append(govbr_auth_gating)
+if _session_reset_enabled:
+    ENABLED_MODULES.append(session_reset)
 
 # Observability — os gates opcionais resolvem em import-time e ficam invisíveis
 # fora do sufixo de version. Logar a decisão (+ presença do flag govbr, SEM o
@@ -148,11 +170,13 @@ if _govbr_auth_enabled:
 # (ENABLE_GOVBR_AUTH=false).
 logger.info(
     "prompt_modules optional gates: audio_response={} media_response={} "
-    "interactive_response={} govbr_auth_gating={} (ENABLE_GOVBR_AUTH present={})",
+    "interactive_response={} govbr_auth_gating={} session_reset={} "
+    "(ENABLE_GOVBR_AUTH present={})",
     _audio_response_enabled,
     _media_response_enabled,
     _interactive_response_enabled,
     _govbr_auth_enabled,
+    _session_reset_enabled,
     bool((_govbr_auth_raw or "").strip()),
 )
 

@@ -14,6 +14,7 @@ from src.prompt_modules import (
     govbr_auth_gating,
     media_inbound,
     session_close,
+    session_reset,
     vision_inbound,
     workflow_continuation,
 )
@@ -506,3 +507,80 @@ def test_session_close_logout_after_workflow_resolution():
     p = session_close.MODULE_PROMPT.lower()
     assert "logout" in p
     assert "depois" in p
+
+
+# ---------- session_reset (limpeza de estado de workflow ao encerrar) ----------
+
+
+def test_session_reset_module_has_required_attributes():
+    """session_reset segue o contrato MODULE_NAME/MODULE_PROMPT."""
+    assert hasattr(session_reset, "MODULE_NAME")
+    assert hasattr(session_reset, "MODULE_PROMPT")
+    assert isinstance(session_reset.MODULE_NAME, str)
+    assert isinstance(session_reset.MODULE_PROMPT, str)
+
+
+def test_session_reset_module_name_is_stable():
+    """MODULE_NAME vira sufixo no version (e em logs OTel) — não pode mudar
+    silenciosamente."""
+    assert session_reset.MODULE_NAME == "session_reset"
+
+
+def test_session_reset_prompt_names_the_tool():
+    """Guard contra deleção do nome EXATO da tool MCP — sem ele o LLM não sabe
+    o que chamar pra limpar o estado de workflow."""
+    assert "reset_session_state" in session_reset.MODULE_PROMPT
+
+
+def test_session_reset_prompt_passes_user_id_like_other_tools():
+    """O alvo é o telefone autenticado (o engine sobrescreve o user_id). O
+    prompt deve instruir a passar user_id como nas demais tools — se instruísse
+    a NÃO passar, a tool-call omitiria o campo e o engine não teria o que
+    sobrescrever."""
+    p = session_reset.MODULE_PROMPT.lower()
+    assert "user_id" in p
+
+
+def test_session_reset_prompt_is_internal_only():
+    """O resultado da limpeza é interno — o prompt deve instruir a NÃO expor o
+    status ao cidadão (evita 'limpei seu estado' na despedida)."""
+    p = session_reset.MODULE_PROMPT.lower()
+    assert "não mencione" in p or "interno" in p
+
+
+def test_session_reset_prompt_calls_once_on_close_only():
+    """Guard anti-spam: a tool só pode ser chamada no encerramento, uma única
+    vez — não em respostas comuns nem no meio de um atendimento."""
+    p = session_reset.MODULE_PROMPT.lower()
+    assert "uma única vez" in p or "uma unica vez" in p
+    assert "encerr" in p
+
+
+def test_session_reset_enabled_by_default():
+    """Default ON (opt-out), gated na tool bound — mesmo padrão de
+    audio_response/govbr. Pula se o ambiente desliga via kill-switch ou exclui a
+    tool, pra o teste refletir o gate real de runtime."""
+    from src.utils.infisical import getenv_or_action
+
+    explicitly_off = (
+        getenv_or_action("ENABLE_SESSION_RESET", action="ignore", default="") or ""
+    ).strip().lower() == "false"
+    excluded = "reset_session_state" in (
+        getenv_or_action("MCP_EXCLUDED_TOOLS", action="ignore", default="") or ""
+    )
+    if explicitly_off or excluded:
+        import pytest
+
+        pytest.skip("session_reset desligado via env (kill-switch ou tool excluída)")
+    assert session_reset in ENABLED_MODULES
+
+
+def test_session_reset_after_session_close_when_enabled():
+    """Ordem semântica: quando ativo, session_reset vem DEPOIS de session_close
+    (o LLM lê primeiro a regra de resolver workflow ativo, depois a limpeza)."""
+    names = [m.MODULE_NAME for m in ENABLED_MODULES]
+    if "session_reset" not in names:
+        import pytest
+
+        pytest.skip("session_reset desligado via env")
+    assert names.index("session_close") < names.index("session_reset")
