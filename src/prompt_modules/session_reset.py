@@ -25,10 +25,11 @@ chamável — "soft off"). Em nenhum caso o LLM é instruído a chamar tool ause
 a despedida (``session_close``) continua funcionando mesmo sem a instrução.
 
 Segurança: o alvo do reset é SEMPRE o telefone autenticado do thread. O
-``user_id`` que o LLM passa é sobrescrito pelo engine
-(``engine/agent.py::_inject_thread_id_in_user_id_params``, genérico para todas as
-tools e os params ``user_id``/``user_number``) — o modelo não controla o alvo,
-mesma garantia já usada pelo ``multi_step_service``.
+``user_id`` que o LLM passa é sobrescrito pelo engine — ver
+``_inject_thread_id_in_user_id_params`` em ``<repo-root>/engine/agent.py`` (path
+relativo à RAIZ do repo, não a ``src/``; o hook é genérico para todas as tools e
+os params ``user_id``/``user_number``). O modelo não controla o alvo — mesma
+garantia já usada pelo ``multi_step_service``.
 
 Idempotência/concorrência (Flow tardio, tool em voo, disparo duplo) é endereçada
 na Fase 2 do redesenho (``session_epoch``). Este módulo é a Fase 1: fecha o
