@@ -40,7 +40,7 @@ from engine.text_match import is_human, message_text, normalize
 _SERVICE_NOUNS = (
     r"conta|contrato|matricula|inscricao|cadastro|plano|empresa|negocio|mei|"
     r"servico|chamado|protocolo|pedido|solicitacao|assinatura|beneficio|linha|"
-    r"cartao|divida|debito|parcelamento"
+    r"cartao|divida|debito|parcelamento|fila"
 )
 _CLOSE_PATTERNS = [
     r"\btchau\b",
@@ -54,6 +54,15 @@ _CLOSE_PATTERNS = [
     # "não preciso de mais nada" como fim, mas não "...nada além do boleto".
     r"nao preciso (de )?mais nada(?!\s+(alem|que|fora|exceto|a nao ser|so))",
     r"nao preciso de mais ajuda",
+    # "sair" como fim de atendimento ("quero sair", "sair"), com o MESMO
+    # negative-lookahead de servico de "encerrar" — pra NAO casar "sair da
+    # conta/cadastro/fila/chamado" (pedido de servico, nao fim de sessao).
+    rf"\bsair\b(?!\s+(da |do |de |a |o |um |uma |minha |meu |meus |minhas |esse |este |essa |esta )*({_SERVICE_NOUNS}))",
+    # "parar/cancelar atendimento|conversa" EXPLICITO. Bare "parar"/"cancelar"
+    # ficam de fora de proposito: colidiriam com comandos de audio ("parar o
+    # audio", "cancela audio" — ver engine/audio_mode.py) e com "cancelar o
+    # chamado" (pedido de servico).
+    r"\b(parar|cancelar)\s+(o |a |esse |este |meu |minha )?(atendimento|conversa)\b",
 ]
 _CLOSE_RE = [re.compile(p) for p in _CLOSE_PATTERNS]
 

@@ -37,6 +37,13 @@ def _a(text="ok"):
         "até logo",
         "não preciso de mais nada",
         "não preciso de mais ajuda",
+        # "sair" como fim de atendimento (bug do teste do Bruno 2026-06-01)
+        "sair",
+        "quero sair",
+        # "parar/cancelar atendimento|conversa" explícito
+        "cancelar atendimento",
+        "parar atendimento",
+        "pode cancelar a conversa",
     ],
 )
 def test_close_intent_detected(text):
@@ -62,6 +69,15 @@ def test_close_intent_detected(text):
         "quero encerrar o parcelamento da dívida",
         # gratidão com objeto pendente não encerra
         "não preciso de mais nada além do boleto",
+        # "sair <serviço>" é PEDIDO, não fim de sessão
+        "sair da conta de luz",
+        "quero sair do cadastro",
+        "quero sair da fila de espera",
+        # "parar/cancelar áudio" é comando de áudio (audio_mode), NÃO fim de sessão
+        "parar o áudio",
+        "cancela o áudio",
+        # "cancelar <serviço>" é pedido, não fim de sessão
+        "cancelar o chamado",
     ],
 )
 def test_close_intent_not_detected(text):
