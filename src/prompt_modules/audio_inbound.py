@@ -55,9 +55,14 @@ volte ao protocolo do módulo "Recepção de mídia".
 
 Use `analysis.workflow_sugerido` pra decidir:
 
-- `reparo_luminaria` → confirme se `confianca >= media`, depois
-  `multi_step_service(service_name="reparo_luminaria")`.
-- `poda_de_arvore` → mesma lógica.
+- `reparo_luminaria` → confirme se `confianca >= media` e **mande o Flow primeiro**:
+  `build_whatsapp_flow_envelope` prefillado com defeito/qtd/local extraídos do áudio
+  (ver REGRA CRÍTICA em "Resposta interativa"). **NÃO** chame `multi_step_service`
+  direto daqui nem peça/valide o endereço: o workflow (e o endereço) só vêm depois do
+  `nfm_reply` do Flow. (Só se não houver Flow disponível pro service, aí sim
+  `multi_step_service(service_name="reparo_luminaria")`.)
+- `poda_de_arvore` → confirme (se `confianca >= media`) e chame
+  `multi_step_service(service_name="poda_de_arvore")` direto — poda **não** tem Flow.
 - `nenhum` → use `analysis.transcricao` como mensagem real do cidadão e
   continue o fluxo normal.
 
@@ -86,7 +91,10 @@ responderia a texto.
 Quando `analysis.endereco_mencionado` está preenchido, o cidadão já
 forneceu o endereço por voz — pule a pergunta "qual o endereço?" e
 chame `validate_address(address=<endereco_mencionado>)` direto pra
-confirmar/geocodar antes de prosseguir com o workflow.
+confirmar/geocodar antes de prosseguir com o workflow. **Exceção
+`reparo_luminaria`:** NÃO valide o endereço antes do Flow — pra luminária o
+endereço (mesmo dito por voz) só é tratado depois do `nfm_reply`; mande o Flow
+primeiro (ver o bullet de `reparo_luminaria` acima).
 
 ### Exemplo de fluxo (PTT com pedido de reparo via Meta direto)
 
@@ -115,7 +123,7 @@ Retorno típico:
     "workflow_sugerido": "reparo_luminaria",
     "confianca": "alta"
   },
-  "suggested_reply_pt_br": "Ouvi seu áudio: Cidadão relata luminária pública queimada na Rua das Laranjeiras, 250. Vou abrir o chamado de reparo de luminária no endereço que você mencionou (Rua das Laranjeiras, 250, Laranjeiras) — confirma?"
+  "suggested_reply_pt_br": "Ouvi seu áudio: Cidadão relata luminária pública queimada na Rua das Laranjeiras, 250. Vou te mandar um formulário rapidinho pra confirmar os dados da luminária (o endereço eu pergunto depois)."
 }
 ```
 """

@@ -38,10 +38,12 @@ O `analysis` retornado tem o seguinte schema:
 
 Use `analysis.workflow_sugerido` pra decidir o próximo passo:
 
-- `reparo_luminaria` → confirme + chame
-  `multi_step_service(service_name="reparo_luminaria")`. Se
-  `analysis.transcricao_audio` mencionar endereço, considere chamar
-  `validate_address` direto.
+- `reparo_luminaria` → confirme e **mande o Flow primeiro**:
+  `build_whatsapp_flow_envelope` prefillado com defeito/qtd/local extraídos do vídeo
+  (ver REGRA CRÍTICA em "Resposta interativa"). **NÃO** chame `multi_step_service`
+  direto nem valide endereço antes: o workflow (e o endereço, mesmo o que o vídeo
+  mencionar) só vêm depois do `nfm_reply` do Flow. (Só se não houver Flow disponível,
+  aí sim `multi_step_service(service_name="reparo_luminaria")`.)
 - `poda_de_arvore` → confirme + chame
   `multi_step_service(service_name="poda_de_arvore")`.
 - `nenhum` → use `analysis.descricao` (e `transcricao_audio` se houver)
@@ -73,7 +75,7 @@ analysis = {
 }
 ```
 
-Próximo passo do LLM: "Recebi seu vídeo, a luminária está piscando — vou abrir um chamado de reparo. Pode confirmar o endereço (você mencionou número 30)?" + `validate_address` quando o cidadão completar.
+Próximo passo do LLM: manda o Flow prefillado (`build_whatsapp_flow_envelope`, `service_type="reparo_luminaria"`, `prefill_data={"defect_type": "Piscando"}`) com um body curto ("Recebi seu vídeo — confirma os dados da luminária no formulário."). O endereço (número 30) **não** vai no Flow — é coletado depois do `nfm_reply`.
 """
 
 

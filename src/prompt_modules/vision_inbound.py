@@ -49,9 +49,12 @@ O `analysis` retornado tem o seguinte schema:
 
 Use `analysis.workflow_sugerido` pra decidir o próximo passo:
 
-- `reparo_luminaria` → confirme com o cidadão a categoria detectada
-  ("Vi uma luminária com o globo quebrado — confirma que é isso?"),
-  depois chame `multi_step_service(service_name="reparo_luminaria")`.
+- `reparo_luminaria` → confirme a categoria detectada e **mande o Flow primeiro**:
+  `build_whatsapp_flow_envelope` prefillado com o defeito/local que a foto indicar
+  (ver REGRA CRÍTICA em "Resposta interativa"). **NÃO** chame `multi_step_service`
+  direto nem peça o endereço: o workflow (e o endereço) só vêm depois do `nfm_reply`
+  do Flow. (Só se não houver Flow disponível pro service, aí sim
+  `multi_step_service(service_name="reparo_luminaria")`.)
 - `poda_de_arvore` → confirme, depois
   `multi_step_service(service_name="poda_de_arvore")`.
 - `nenhum` → use o `suggested_reply_pt_br` da análise como base e siga o
@@ -92,7 +95,7 @@ Retorno típico:
     "workflow_sugerido": "reparo_luminaria",
     "confianca": "alta"
   },
-  "suggested_reply_pt_br": "Vi na foto que a luminária pública está com o globo quebrado. Posso abrir o pedido de reparo pra você? Me confirma o endereço (rua, número, bairro) e a gente segue."
+  "suggested_reply_pt_br": "Vi na foto que a luminária pública está com o globo quebrado. Vou te mandar um formulário rapidinho pra confirmar os dados (o endereço eu pergunto depois)."
 }
 ```
 """
