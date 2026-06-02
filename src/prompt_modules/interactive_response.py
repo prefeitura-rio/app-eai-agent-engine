@@ -105,6 +105,7 @@ ASSISTANT (tool call): build_whatsapp_flow_envelope(
 - **NUNCA** ponha endereço ou CPF em `prefill_data` — o endereço é perguntado depois, na conversa (workflow), não no Flow.
 - **NÃO chame `send_whatsapp_flow(user_number, service_type)` neste prompt** — risco de hallucination de número. Veja nota acima.
 - **Caption livre no body** — use `body` pra contextualizar, não pra duplicar o texto dos botões/rows. Cidadão vê body + lista; redundância polui.
+- **NÃO escreva texto DEPOIS de `build_whatsapp_flow_envelope` / `send_whatsapp_buttons` / `send_whatsapp_list`.** O envelope que a tool retorna **É** a mensagem entregue ao cidadão (o texto fica no `body` da tool). **Encerre o turno logo após a tool call.** Uma mensagem de texto adicional depois faz o **interativo ser DESCARTADO** — o cidadão recebe só o texto, sem o Flow/botões (a mensagem de texto sobrescreve o envelope no caminho de entrega engine→gateway→Mule). NÃO "confirme", NÃO repita o body, NÃO adicione nada após a tool.
 
 ### Como o cidadão responde
 
