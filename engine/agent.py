@@ -40,7 +40,7 @@ from vertexai.agent_engines import (
 # use custom graph without _validate_chat_history
 from engine.custom_react_agent import create_react_agent
 from engine.audio_mode import inject_audio_directive
-from engine.session_boundary import apply_session_reset
+from engine.session_boundary import apply_session_reset, inject_close_directive
 from engine.log import logger
 
 # Error monitoring utilities (safe fallback if not available)
@@ -1089,6 +1089,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # Entra só em llm_input_messages (não-persistente), igual ao filtro de
         # curto prazo. Antes do Step 5 para o token counting incluir a diretiva.
         final_state = inject_audio_directive(state, final_state)
+
+        # Step 4.6: Encerramento — quando o turno ATUAL é um pedido de encerrar,
+        # injeta uma diretiva determinística que dá precedência ao encerramento
+        # sobre o Flow-first de luminária (senão "Encerrar" logo após um relato
+        # reabre o Flow em vez de fechar). Por último pra ser a diretiva mais
+        # recente/forte; só entra em llm_input_messages (não-persistente).
+        final_state = inject_close_directive(state, final_state)
 
         # Step 5: Store the messages that will be sent to LLM for token counting later
         # The prompt_runnable will prepend system prompt to these messages

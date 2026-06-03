@@ -5,9 +5,11 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from engine.audio_mode import derive_audio_mode
 from engine.session_boundary import (
+    CLOSE_DIRECTIVE,
     apply_session_reset,
     current_session_messages,
     detect_close_intent,
+    inject_close_directive,
 )
 
 
@@ -315,3 +317,78 @@ def test_close_answer_with_punctuation_emoji_not_orphaned(answer):
     ]
     # handshake preservado (não trunca pro 'answer' órfão)
     assert current_session_messages(msgs) == msgs
+
+
+# --------------------------------------------------------------------------- #
+# inject_close_directive — precedência do encerramento sobre o Flow-first
+# --------------------------------------------------------------------------- #
+def test_inject_close_appends_directive_on_close_turn():
+    """Turno de encerramento → injeta a diretiva no llm_input (canal não-persist).
+    Reproduz o bug de campo (2026-06-03): 'Encerrar' logo após relato de luminária
+    reabria o Flow; a diretiva dá precedência ao encerramento."""
+    state = {
+        "messages": [_h("a luminária da rua tá apagada"), _a("[Flow]"), _h("Encerrar")]
+    }
+    base = [SystemMessage(content="sys"), _h("Encerrar")]
+    final_state = {"llm_input_messages": list(base), "extra": 1}
+
+    out = inject_close_directive(state, final_state)
+
+    assert out["extra"] == 1  # preserva o resto do final_state
+    assert len(out["llm_input_messages"]) == len(base) + 1
+    assert isinstance(out["llm_input_messages"][-1], SystemMessage)
+    assert out["llm_input_messages"][-1].content == CLOSE_DIRECTIVE
+    assert "ENCERRAMENTO SOLICITADO" in out["llm_input_messages"][-1].content
+
+
+def test_inject_close_creates_llm_input_from_messages_when_absent():
+    state = {"messages": [_h("pode encerrar o atendimento")]}
+    final_state = {"messages": [_h("pode encerrar o atendimento")]}
+
+    out = inject_close_directive(state, final_state)
+
+    assert "llm_input_messages" in out
+    assert isinstance(out["llm_input_messages"][-1], SystemMessage)
+    assert out["llm_input_messages"][-1].content == CLOSE_DIRECTIVE
+
+
+@pytest.mark.parametrize(
+    "last_text",
+    [
+        "a luminária da minha rua tá apagada",  # relato → Flow-first, não encerra
+        "sim",  # confirmação 'É este serviço?' → não pode suprimir o Flow
+        "rua das flores, 123",  # resposta de campo (endereço)
+        "quero sair da fila",  # lookalike de serviço (lookahead) → não encerra
+        "preciso encerrar minha conta de luz",  # 'encerrar <serviço>' → não encerra
+    ],
+)
+def test_inject_close_noop_when_not_a_close_turn(last_text):
+    """Caminho feliz preservado: a diretiva NÃO entra fora de um pedido de
+    encerrar — não regride o Flow-first nem o handshake 'É este serviço? → sim'."""
+    state = {"messages": [_a("É este serviço?"), _h(last_text)]}
+    final_state = {"llm_input_messages": [_a("É este serviço?"), _h(last_text)]}
+
+    out = inject_close_directive(state, final_state)
+
+    assert out is final_state  # inalterado (no-op)
+    assert all(
+        not (isinstance(m, SystemMessage) and m.content == CLOSE_DIRECTIVE)
+        for m in out["llm_input_messages"]
+    )
+
+
+def test_inject_close_uses_last_human_not_history():
+    """O gatilho olha o turno ATUAL (última msg do cidadão), não um 'encerrar'
+    antigo do histórico: depois de encerrar, um novo relato reabre o Flow."""
+    state = {
+        "messages": [
+            _h("tchau"),
+            _a("Até mais! 👋"),
+            _h("na verdade a luminária tá piscando"),
+        ]
+    }
+    final_state = {"llm_input_messages": list(state["messages"])}
+
+    out = inject_close_directive(state, final_state)
+
+    assert out is final_state  # último humano é relato, não encerramento → no-op

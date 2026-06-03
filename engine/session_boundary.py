@@ -73,6 +73,70 @@ def detect_close_intent(text: str) -> bool:
     return bool(norm) and any(rx.search(norm) for rx in _CLOSE_RE)
 
 
+# Diretiva reinjetada no turno em que o cidadão pede para encerrar. Resolve o
+# conflito de precedência com o Flow-first de luminária (``interactive_response``):
+# sem ela, um "encerrar"/"sair" logo após um relato de luminária faz o modelo
+# REENVIAR o Flow (a regra "SEMPRE comece pelo Flow" não tem carve-out de
+# encerramento), em vez de fechar o atendimento. Confirmado em campo (2026-06-03):
+# "Encerrar" reabriu o Flow da luminária. Determinística (deriva do regex
+# ``detect_close_intent``, não de inferência do modelo) e idempotente por turno.
+#
+# Embute a desambiguação do caso combinado (mensagem que é relato novo E
+# encerramento, ex.: "luminária apagada, era só isso") pra não regredir o
+# Flow-first quando há de fato um pedido novo.
+CLOSE_DIRECTIVE = (
+    "ENCERRAMENTO SOLICITADO. Nesta mensagem o cidadão sinalizou encerrar/sair "
+    "do atendimento. Se a mensagem é SOMENTE um pedido de encerrar (sem um relato "
+    "ou serviço novo): NÃO envie WhatsApp Flow, formulário, botões nem lista — não "
+    "reabra o formulário de luminária nem nenhum interativo, mesmo que o histórico "
+    "tenha um relato em aberto — e trate como FIM de atendimento, não como novo "
+    "relato. Siga a seção 'Encerramento de atendimento': se houver um workflow "
+    "ativo e ainda incompleto, pergunte se ele quer concluir ou cancelar antes de "
+    "fechar; quando o encerramento/cancelamento for confirmado, chame a tool "
+    "reset_session_state (se disponível) e despeça-se com cordialidade. NÃO "
+    "mencione ao cidadão nada sobre 'limpar estado' nem status de ferramenta. "
+    "Exceção: se a MESMA mensagem também traz um relato/serviço NOVO (ex.: "
+    "'a luminária tá apagada, era só isso'), atenda o relato primeiro pelo "
+    "Flow-first e só encerre depois — não ignore o pedido novo."
+)
+
+
+def close_directive_message() -> SystemMessage:
+    """SystemMessage com a diretiva de encerramento (reinjetada no turno do close)."""
+    return SystemMessage(content=CLOSE_DIRECTIVE)
+
+
+def _last_human_text(messages: Sequence[Any]) -> str:
+    """Texto da última mensagem do cidadão (turno atual)."""
+    for m in reversed(list(messages)):
+        if is_human(m):
+            return message_text(m)
+    return ""
+
+
+def inject_close_directive(state: Mapping[str, Any], final_state: dict) -> dict:
+    """Anexa a diretiva de encerramento ao input do LLM quando o turno ATUAL é
+    um pedido de encerrar.
+
+    Espelha ``audio_mode.inject_audio_directive``: pura, idempotente por turno,
+    e escreve só no canal não-persistente ``llm_input_messages`` (preserva memória
+    / filtro / thread_id / reset já aplicados em ``final_state``; não mexe em
+    ``messages``). Dispara apenas em ``detect_close_intent`` da última mensagem do
+    cidadão — conservador por construção (o lookahead de serviço evita falso
+    positivo de "cancelar a conta"/"sair da fila"), então NÃO afeta o caminho
+    feliz da luminária ("a luminária tá apagada" não é encerramento) nem a
+    confirmação "É este serviço? → sim" (um "sim" isolado não casa o regex).
+    """
+    if not detect_close_intent(_last_human_text(state.get("messages", []))):
+        return final_state
+
+    base = final_state.get("llm_input_messages")
+    if base is None:
+        base = final_state.get("messages") or list(state.get("messages", []))
+
+    return {**final_state, "llm_input_messages": [*base, close_directive_message()]}
+
+
 # Respostas curtas que RESOLVEM o handshake de encerramento ("quer cancelar ou
 # concluir?"). Formas normalizadas (sem acento, minúsculas — ver `normalize`).
 # Conservador de propósito: uma confirmação fora desta lista (rara) é tratada
