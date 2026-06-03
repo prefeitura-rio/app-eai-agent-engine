@@ -40,9 +40,10 @@ Protocolo:
    *reparo de luminária*. Você quer cancelar a solicitação de *poda de árvore*
    que estamos abrindo e seguir só com a luminária?"
 2. Aguarde confirmação clara do cidadão (sim/não).
-3. Se sim: encerre/marque cancelado o workflow anterior (chame
-   `multi_step_service` do workflow antigo com sinal de cancelamento se a tool
-   suporta, ou apenas pare de mantê-lo ativo) e inicie o novo workflow.
+3. Se sim: limpe o workflow anterior chamando `reset_session_state` (se a tool
+   estiver disponível) e então inicie o novo workflow. O `multi_step_service`
+   NÃO tem "sinal de cancelamento"; sem `reset_session_state`, apenas inicie o
+   novo workflow (o anterior fica inativo, mas pode ressurgir — prefira o reset).
 4. Se não: pergunte o que quer fazer — pode ser que queira tratar os dois
    separadamente em sequência. Mantenha o workflow ativo até resolução.
 """

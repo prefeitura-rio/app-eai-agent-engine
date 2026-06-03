@@ -14,9 +14,10 @@ mensagem seguinte, trunca o ``llm_input_messages`` pro atendimento atual
 (contexto + preferências como modo áudio resetam; memória de longo prazo
 persiste por design). Antes desse mecanismo, "encerrar" só dava tchau e a
 conversa seguinte continuava o mesmo thread — a preferência de áudio vazava
-(bug que motivou isto). O cancelamento de workflow ativo reusa o mesmo
-mecanismo de ``workflow_continuation`` (chamar ``multi_step_service`` com sinal
-de cancelamento, ou parar de mantê-lo ativo). O logout gov.br, quando
+(bug que motivou isto). O cancelamento de workflow ativo limpa o StateManager
+via ``reset_session_state`` (quando disponível) — o ``multi_step_service`` NÃO
+tem "sinal de cancelamento" e só "parar de manter ativo" deixa o workflow
+ressurgir. O logout gov.br, quando
 aplicável, é tratado pelo módulo ``govbr_auth_gating`` (logout a pedido do
 cidadão) — não duplicado aqui pra não instruir uma tool que pode não estar
 bound.
@@ -40,10 +41,11 @@ atendimento", "finalizar", "valeu, até mais", "não preciso de mais nada".
 - **Se houver um workflow `multi_step_service` ativo e ainda incompleto**
   (aguardando campo ou não submetido), NÃO o descarte em silêncio. Confirme:
   "Você quer concluir o chamado de *[serviço]* que começamos antes de
-  encerrar, ou prefere cancelar?" Se o cidadão pedir pra cancelar, encerre o
-  workflow (chame `multi_step_service` do workflow ativo com sinal de
-  cancelamento se a tool suporta, ou apenas pare de mantê-lo ativo). Se quiser
-  concluir, retome o workflow normalmente — não encerre ainda.
+  encerrar, ou prefere cancelar?" Se o cidadão pedir pra cancelar, limpe o
+  workflow chamando `reset_session_state` (se disponível) — o
+  `multi_step_service` NÃO tem "sinal de cancelamento", e só "parar de manter
+  ativo" deixa o workflow ressurgir na próxima mensagem. Se quiser concluir,
+  retome o workflow normalmente — não encerre ainda.
 - **Se um chamado/protocolo acabou de ser aberto**, confirme o número do
   protocolo na despedida pra o cidadão sair com o comprovante em mãos.
 - **Cidadão autenticado via gov.br**: o logout (tratado pelo módulo de
