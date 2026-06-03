@@ -520,8 +520,11 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 f"Short memory time limit set to {self._short_memory_time_limit} seconds"
             )
         if self._short_memory_token_limit is None:
+            # Default alinhado ao do deploy (src/config/env.py = 50000). Antes era
+            # "100" aqui: se a env não fosse injetada, o histórico era cortado a
+            # ~400 chars e o LLM perdia endereço/CPF que o cidadão já tinha dado.
             self._short_memory_token_limit = int(
-                getenv("SHORT_MEMORY_TOKEN_LIMIT", "100")
+                getenv("SHORT_MEMORY_TOKEN_LIMIT", "50000")
             )
             logger.info(
                 f"Short memory token limit set to {self._short_memory_token_limit} tokens"

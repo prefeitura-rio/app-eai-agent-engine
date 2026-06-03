@@ -73,6 +73,59 @@ def detect_close_intent(text: str) -> bool:
     return bool(norm) and any(rx.search(norm) for rx in _CLOSE_RE)
 
 
+# Respostas curtas que RESOLVEM o handshake de encerramento ("quer cancelar ou
+# concluir?"). Formas normalizadas (sem acento, minúsculas — ver `normalize`).
+# Conservador de propósito: uma confirmação fora desta lista (rara) é tratada
+# como sessão nova — pior caso é perder 1 turno de contexto, NÃO vazar pra
+# sempre. O objetivo é só não orfanar o "sim"/"cancelar" comum.
+_CLOSE_ANSWER = {
+    "sim", "s", "isso", "isso mesmo", "isso ai", "claro", "ok", "okay",
+    "pode", "pode sim", "aham", "uhum", "positivo", "confirmo", "confirma",
+    "nao", "n", "negativo",
+    "cancelar", "cancela", "pode cancelar", "quero cancelar", "sim cancelar",
+    "concluir", "quero concluir", "continuar", "manter", "completar",
+    "nao quero", "sim quero", "quero",
+}
+
+
+def _ends_with_question(text: str) -> bool:
+    """True se a mensagem termina numa PERGUNTA (último bloco de pontuação de
+    frase contém '?'), ignorando espaços/emoji finais. Trata '?', '? 🤔',
+    '?!', '?...'. Usado pra detectar que o turno anterior do bot foi pergunta.
+    """
+    s = (text or "").rstrip()
+    while s and not (s[-1].isalnum() or s[-1] in "?!."):
+        s = s[:-1].rstrip()
+    trailing = ""
+    while s and s[-1] in "?!.":
+        trailing = s[-1] + trailing
+        s = s[:-1]
+    return "?" in trailing
+
+
+def _resolves_close_handshake(prev: Any, human_text: str) -> bool:
+    """O cidadão está RESPONDENDO a uma pergunta de confirmação de encerramento?
+
+    True quando o turno anterior do bot (``prev``) é uma PERGUNTA e a mensagem do
+    cidadão é uma resposta de handshake (confirmar/cancelar) — caso em que ela
+    NÃO inicia sessão nova. Restrito a respostas curtas conhecidas (ou outro
+    sinal de encerrar) pra não engolir um pedido novo legítimo que por acaso
+    venha depois de uma pergunta de cortesia do bot.
+    """
+    if prev is None or is_human(prev) or not _ends_with_question(message_text(prev)):
+        return False
+    # `normalize` só minúscula + tira acento — NÃO tira pontuação/emoji/espaço.
+    # Tira das pontas pra casar as formas mais comuns no WhatsApp: "Sim.",
+    # "Sim!", "Sim 👍", "claro!", "👍 sim". Espaço interno preservado
+    # ("pode cancelar" continua casando).
+    norm = normalize(human_text).strip()
+    while norm and not norm[-1].isalnum():
+        norm = norm[:-1].rstrip()
+    while norm and not norm[0].isalnum():
+        norm = norm[1:].lstrip()
+    return norm in _CLOSE_ANSWER or detect_close_intent(human_text)
+
+
 def current_session_messages(messages: Sequence[Any]) -> List[Any]:
     """Mensagens do atendimento ATUAL (após o último encerramento já respondido).
 
@@ -93,10 +146,24 @@ def current_session_messages(messages: Sequence[Any]) -> List[Any]:
         return msgs
     # Do encerramento mais recente pro mais antigo: o primeiro que tiver uma
     # mensagem do cidadão depois dele marca o início do atendimento atual.
+    #
+    # EXCEÇÃO (handshake de encerramento): quando há workflow ativo, o
+    # ``session_close`` faz o bot CONFIRMAR antes ("quer concluir ou cancelar?").
+    # A resposta do cidadão ("sim"/"cancelar") NÃO inicia sessão nova — ela
+    # resolve o encerramento. Sem este guard, o "sim" era truncado pra fora do
+    # contexto e o LLM via um "sim" órfão ("Sim, mas sim o quê?"). Regra: só
+    # inicia sessão nova no 1º humano cujo turno anterior do bot NÃO foi pergunta.
     for close_idx in reversed(close_idxs):
         for j in range(close_idx + 1, len(msgs)):
-            if is_human(msgs[j]):
-                return msgs[j:]
+            if not is_human(msgs[j]):
+                continue
+            prev = msgs[j - 1] if j > 0 else None
+            if _resolves_close_handshake(prev, message_text(msgs[j])):
+                # cidadão confirmando/cancelando o encerramento — handshake em
+                # curso, NÃO é sessão nova. Um pedido novo legítimo (fora do set
+                # de respostas curtas) cai fora e inicia sessão normalmente.
+                continue
+            return msgs[j:]
     # Encerramento é o último turno do cidadão → ainda não resetou.
     return msgs
 

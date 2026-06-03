@@ -93,7 +93,7 @@ ASSISTANT (tool call): build_whatsapp_flow_envelope(
 (O Flow abre JÁ com defeito=Apagada e local=Rua marcados — cidadão só confirma/completa. Inbound volta com interactive.nfm_reply.response_json.)
 ```
 
-**Nota sobre `send_whatsapp_flow` (high-level):** existe também a tool `send_whatsapp_flow(user_number, service_type)` que dispara um Flow do registry interno do MCP por nome de serviço. **NÃO chame essa tool a partir deste prompt module** — ela requer `user_number` E.164 que o LLM não tem acesso confiável (a propagação determinística não está wired ainda no Engine framework). Use `build_whatsapp_flow_envelope` quando o agente precisa proativamente abrir Flow. O caminho via `multi_step_service` (que tem `user_id` resolvido no contexto) continua sendo o canal preferido pra workflows estruturados.
+**Nota sobre `send_whatsapp_flow` (high-level):** existe também a tool `send_whatsapp_flow(user_number, service_type)` que dispara um Flow do registry interno do MCP por nome de serviço. **NÃO chame essa tool a partir deste prompt module** — ela requer `user_number` E.164 que o LLM não tem acesso confiável (a propagação determinística não está wired ainda no Engine framework). Use `build_whatsapp_flow_envelope` quando o agente precisa proativamente abrir Flow. Pra workflows estruturados **sem Flow registrado**, `multi_step_service` (que tem `user_id` resolvido no contexto) é o canal preferido. **Exceção: `reparo_luminaria` é sempre Flow-first** — chame `build_whatsapp_flow_envelope` ANTES (ver regra abaixo), NUNCA `multi_step_service` direto.
 
 ### REGRA CRÍTICA
 

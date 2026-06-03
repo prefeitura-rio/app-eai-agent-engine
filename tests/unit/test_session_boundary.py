@@ -201,3 +201,117 @@ def test_audio_mode_persists_within_same_session():
         _h("qual o horário do posto?"),
     ]
     assert derive_audio_mode(current_session_messages(full)) is True
+
+
+# --------------------------------------------------------------------------- #
+# Handshake de encerramento (2026-06-03): "sair" → bot pergunta "quer
+# cancelar?" → "sim". A resposta NÃO pode ser truncada pra fora do contexto.
+# --------------------------------------------------------------------------- #
+def test_close_confirmation_answer_not_treated_as_new_session():
+    """'sair' → bot pergunta confirmação → 'sim': o 'sim' responde o handshake,
+    não inicia sessão nova. current_session_messages devolve TUDO (sem truncar)
+    pra o LLM entender que 'sim' = confirmar o encerramento."""
+    msgs = [
+        _h("oi, tenho uma luminária apagada"),
+        _a("Vou abrir o chamado. [Flow]"),
+        _h("sair"),  # close intent
+        _a("Você quer cancelar a solicitação de reparo de luminária? 🤔"),  # pergunta
+        _h("Sim"),  # resposta ao handshake — NÃO é sessão nova
+    ]
+    assert current_session_messages(msgs) == msgs
+
+
+def test_apply_reset_noop_during_close_confirmation():
+    """apply_session_reset não trunca enquanto o handshake de cancelamento
+    está em curso (senão o 'sim' vira órfão → 'Sim, mas sim o quê?')."""
+    full = [
+        _h("quero abrir chamado de luminária"),
+        _a("Confirma os dados no formulário [Flow]"),
+        _h("sair"),
+        _a("Quer cancelar a solicitação que estamos abrindo?"),
+        _h("Sim"),
+    ]
+    state = {"messages": full}
+    final_state = {"llm_input_messages": list(full)}
+    out = apply_session_reset(state, final_state)
+    # noop: o handshake inteiro é preservado (o bot precisa do contexto p/ fechar)
+    assert out is final_state
+
+
+def test_reset_after_close_confirmation_resolved():
+    """Depois que o cancelamento foi confirmado e o bot se despediu, a PRÓXIMA
+    mensagem (turno do bot anterior NÃO é pergunta) inicia sessão nova."""
+    msgs = [
+        _h("quero abrir chamado de luminária"),
+        _a("Confirma no formulário [Flow]"),
+        _h("sair"),
+        _a("Quer cancelar a solicitação?"),  # pergunta
+        _h("Sim"),  # resolve o handshake
+        _a("Cancelado. Qualquer coisa é só chamar 👋"),  # despedida (sem '?')
+        _h("na verdade, quero pagar o IPTU"),  # sessão nova começa AQUI
+    ]
+    out = current_session_messages(msgs)
+    assert out == msgs[6:]
+    assert out[0].content.startswith("na verdade")
+
+
+def test_new_topic_after_courtesy_question_still_resets():
+    """Guard NÃO engole pedido novo: se o bot fechou com pergunta de cortesia
+    ('posso ajudar em mais algo?') e o cidadão traz tópico NOVO (fora do set de
+    respostas de handshake), a sessão reseta normalmente (sem vazar contexto)."""
+    msgs = [
+        _h("responde sempre em áudio"),
+        _a("ok, áudio ligado"),
+        _h("tchau"),  # close
+        _a("Prontinho! Posso ajudar em mais alguma coisa? 😊"),  # cortesia c/ '?'
+        _h("quero pagar o IPTU"),  # tópico NOVO — não é resposta de handshake
+    ]
+    out = current_session_messages(msgs)
+    assert out == msgs[4:]
+    assert out[0].content == "quero pagar o IPTU"
+    # áudio reseta (contexto não vazou)
+    assert derive_audio_mode(out) is False
+
+
+def test_no_infinite_context_leak_with_repeated_questions():
+    """Mesmo se vários turnos do bot terminam em '?', um pedido substantivo
+    (fora do set de handshake) reseta — sem vazamento infinito."""
+    msgs = [
+        _h("oi"),
+        _a("olá, como ajudo?"),
+        _h("encerrar atendimento"),  # close
+        _a("Quer mesmo encerrar?"),
+        _h("quero abrir um chamado de poda de árvore na minha rua"),  # novo
+    ]
+    out = current_session_messages(msgs)
+    assert out == msgs[4:]
+
+
+def test_ends_with_question_robustness():
+    from engine.session_boundary import _ends_with_question
+
+    assert _ends_with_question("Quer cancelar?") is True
+    assert _ends_with_question("Quer cancelar? 🤔") is True
+    assert _ends_with_question("Quer mesmo cancelar?!") is True
+    assert _ends_with_question("Quer cancelar?...") is True
+    assert _ends_with_question("Prontinho! Até mais 👋") is False
+    assert _ends_with_question("Vou aguardar.") is False
+    assert _ends_with_question("") is False
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["Sim", "Sim.", "Sim!", "Sim 👍", "  sim  ", "claro!", "Pode cancelar.", "👍 sim"],
+)
+def test_close_answer_with_punctuation_emoji_not_orphaned(answer):
+    """Formas comuns no WhatsApp ('Sim.', 'Sim!', 'Sim 👍') respondendo à
+    confirmação NÃO podem orfanar — a sessão não reseta no meio do handshake."""
+    msgs = [
+        _h("quero abrir chamado de luminária"),
+        _a("Confirma no formulário [Flow]"),
+        _h("sair"),
+        _a("Quer cancelar a solicitação que estamos abrindo?"),
+        _h(answer),
+    ]
+    # handshake preservado (não trunca pro 'answer' órfão)
+    assert current_session_messages(msgs) == msgs
