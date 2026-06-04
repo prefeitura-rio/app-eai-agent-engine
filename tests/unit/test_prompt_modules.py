@@ -464,6 +464,32 @@ def test_workflow_continuation_prompt_handles_cpf_refusal():
     assert "sem chamar a tool" in p
 
 
+def test_workflow_continuation_prompt_handles_sgrc_retry():
+    """Retry após erro do SGRC ("tentar novamente") continua o workflow ativo
+    (open_ticket idempotente), NUNCA reabre o Flow — raiz do bug de retry."""
+    p = workflow_continuation.MODULE_PROMPT.lower()
+    assert "retry" in p
+    assert "tentar novamente" in p or "tenta de novo" in p
+    assert "idempotente" in p
+    assert "multi_step_service" in p
+    assert "nunca volte pro flow" in p  # proíbe explicitamente reabrir o Flow
+
+
+def test_interactive_response_continuation_precedence_over_flow_first():
+    """O Flow-first NÃO pode reabrir o Flow quando há atendimento de luminária
+    em curso (pós-nfm_reply): a continuação tem precedência."""
+    p = interactive_response.MODULE_PROMPT
+    low = p.lower()
+    assert "continuação de workflow tem precedência" in low or (
+        "continuação" in low and "precedência" in low
+    ), "Falta a regra de precedência da continuação sobre o Flow-first"
+    assert "em curso" in low, "Falta o conceito de atendimento em curso"
+    assert "nfm_reply" in p, "Falta o sinal de submissão do Flow (nfm_reply)"
+    assert "tentar novamente" in low or "tenta de novo" in low, (
+        "Falta o caso de retry na precedência da continuação"
+    )
+
+
 # ---------- regressão: idempotência de chamada ----------
 
 

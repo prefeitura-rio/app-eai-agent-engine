@@ -25,6 +25,15 @@ equivalente, continue o workflow marcando CPF ausente/recusado (ex.:
 `cpf=null` ou campo equivalente esperado pelo workflow). Nao responda apenas
 "vou seguir sem CPF" sem chamar a tool.
 
+Caso critico — RETRY apos erro do SGRC: se o ultimo retorno do workflow foi um
+erro ao abrir o chamado (ex: "houve um erro ao abrir o chamado") e o cidadao
+pede pra tentar de novo ("tenta de novo", "tentar novamente", "pode tentar?",
+"de novo", "tenta ai"), NAO reabra o Flow nem peca os dados de novo: chame
+`multi_step_service` no MESMO workflow ativo. A abertura do chamado e idempotente
+e o estado (defeito, local, endereco, identificacao) foi preservado — o retry so
+re-tenta a abertura, sem recomecar do zero. Se falhar de novo, informe com
+empatia e ofereca tentar mais tarde ou encerrar; nunca volte pro Flow.
+
 ## Detecção de pivot (troca de serviço mid-workflow)
 
 Se o cidadão estiver com um workflow X ativo e enviar mensagem mencionando um
