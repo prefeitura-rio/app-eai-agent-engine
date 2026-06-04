@@ -90,11 +90,11 @@ CLOSE_DIRECTIVE = (
     "ou serviço novo): NÃO envie WhatsApp Flow, formulário, botões nem lista — não "
     "reabra o formulário de luminária nem nenhum interativo, mesmo que o histórico "
     "tenha um relato em aberto — e trate como FIM de atendimento, não como novo "
-    "relato. Siga a seção 'Encerramento de atendimento': se houver um workflow "
-    "ativo e ainda incompleto, pergunte se ele quer concluir ou cancelar antes de "
-    "fechar; quando o encerramento/cancelamento for confirmado, chame a tool "
-    "reset_session_state (se disponível) e despeça-se com cordialidade. NÃO "
-    "mencione ao cidadão nada sobre 'limpar estado' nem status de ferramenta. "
+    "relato. ENCERRE DIRETO, sem pergunta de confirmação: NÃO pergunte 'quer "
+    "concluir ou cancelar?' — o pedido de encerrar já é a decisão. Se houver um "
+    "workflow ativo e ainda incompleto, apenas chame a tool reset_session_state "
+    "(se disponível) pra limpar e despeça-se com cordialidade NA MESMA resposta. "
+    "NÃO mencione ao cidadão nada sobre 'limpar estado' nem status de ferramenta. "
     "Exceção: se a MESMA mensagem também traz um relato/serviço NOVO (ex.: "
     "'a luminária tá apagada, era só isso'), atenda o relato primeiro pelo "
     "Flow-first e só encerre depois — não ignore o pedido novo."
@@ -211,12 +211,14 @@ def current_session_messages(messages: Sequence[Any]) -> List[Any]:
     # Do encerramento mais recente pro mais antigo: o primeiro que tiver uma
     # mensagem do cidadão depois dele marca o início do atendimento atual.
     #
-    # EXCEÇÃO (handshake de encerramento): quando há workflow ativo, o
-    # ``session_close`` faz o bot CONFIRMAR antes ("quer concluir ou cancelar?").
-    # A resposta do cidadão ("sim"/"cancelar") NÃO inicia sessão nova — ela
-    # resolve o encerramento. Sem este guard, o "sim" era truncado pra fora do
-    # contexto e o LLM via um "sim" órfão ("Sim, mas sim o quê?"). Regra: só
-    # inicia sessão nova no 1º humano cujo turno anterior do bot NÃO foi pergunta.
+    # EXCEÇÃO (handshake de encerramento — defensivo): hoje o ``session_close``
+    # encerra DIRETO, sem perguntar "concluir ou cancelar?". Mas se em algum turno
+    # o bot AINDA fizer uma pergunta de confirmação (modelo desviando, ou histórico
+    # antigo de quando confirmava), a resposta do cidadão ("sim"/"cancelar") NÃO
+    # deve iniciar sessão nova — ela resolve o encerramento. Sem este guard, o "sim"
+    # era truncado pra fora do contexto e o LLM via um "sim" órfão ("Sim, mas sim o
+    # quê?"). Regra: só inicia sessão nova no 1º humano cujo turno anterior do bot
+    # NÃO foi pergunta.
     for close_idx in reversed(close_idxs):
         for j in range(close_idx + 1, len(msgs)):
             if not is_human(msgs[j]):

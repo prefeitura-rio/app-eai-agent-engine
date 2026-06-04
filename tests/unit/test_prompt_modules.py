@@ -476,13 +476,15 @@ def test_session_close_prompt_recognizes_end_intent():
     assert "tchau" in p or "era só isso" in p
 
 
-def test_session_close_prompt_protects_active_workflow():
-    """Encerrar não pode descartar workflow ativo em silêncio: deve confirmar
-    antes de cancelar, reusando o mecanismo de multi_step_service."""
+def test_session_close_cleans_active_workflow_without_confirm():
+    """Encerrar é DIRETO: NÃO pergunta "concluir ou cancelar?". Se houver
+    workflow ativo, só limpa chamando reset_session_state e despede."""
     p = session_close.MODULE_PROMPT.lower()
     assert "workflow" in p
-    assert "cancel" in p
-    assert "multi_step_service" in p
+    assert "reset_session_state" in p
+    assert "não pergunte" in p  # encerra direto, sem confirmação
+    # "concluir ou cancelar" aparece só pra PROIBIR a pergunta
+    assert "concluir ou cancelar" in p
 
 
 def test_session_close_defers_field_answer_to_workflow():
@@ -500,13 +502,12 @@ def test_session_close_before_media_modules_in_enabled():
     assert names.index("session_close") < names.index("media_inbound")
 
 
-def test_session_close_logout_after_workflow_resolution():
-    """Precedência (achado de review claude+codex): pra cidadão autenticado, o
-    logout só ocorre DEPOIS de resolver concluir/cancelar o workflow ativo —
-    nunca no meio de um atendimento em aberto."""
+def test_session_close_logout_with_close():
+    """Pra cidadão autenticado, o logout acontece JUNTO do encerramento — não há
+    mais etapa de confirmar concluir/cancelar antes."""
     p = session_close.MODULE_PROMPT.lower()
     assert "logout" in p
-    assert "depois" in p
+    assert "junto do encerramento" in p
 
 
 # ---------- session_reset (limpeza de estado de workflow ao encerrar) ----------
