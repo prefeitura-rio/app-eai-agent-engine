@@ -316,6 +316,22 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     def _set_up_opentelemetry(self):
         if self._opentelemetry_setup_complete:
             return
+        # 2026-06-04: NÃO montar o exporter OTLP sem endpoint configurado. No
+        # ambiente do Vertex Reasoning Engine o coletor (host público
+        # services.staging.app.dados.rio) é INALCANÇÁVEL (ConnectTimeout 10s por
+        # export); com ALWAYS_ON + flush a cada 1s isso gerava milhares de exports
+        # falhos, pressionando a instância (thread de export presa em timeouts) →
+        # "Service Unavailable"/FAILED_PRECONDITION no :query. Sem endpoint o
+        # tracer e o batch_processor ficam None — todos os usos têm guard
+        # (`if self._tracer` nos spans; `if self._batch_processor` no cleanup).
+        # Re-habilita com um endpoint ALCANÇÁVEL do ambiente.
+        if not (self._otlp_endpoint or "").strip():
+            self._opentelemetry_setup_complete = True
+            logger.info(
+                "[OpenTelemetry] sem OTEL_EXPORTER_OTLP_TRACES_ENDPOINT — "
+                "export de traces DESLIGADO (evita spam de export falho)."
+            )
+            return
         provider = TracerProvider(
             resource=Resource.create({"service.name": self._otpl_service}),
             sampler=ALWAYS_ON,  # Garantir 100% de sampling

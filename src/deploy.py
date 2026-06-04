@@ -109,7 +109,14 @@ def deploy(deploy_timestamp=None):
             "DATABASE": env.DATABASE,
             "DATABASE_USER": env.DATABASE_USER,
             "DATABASE_PASSWORD": env.DATABASE_PASSWORD,
-            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
+            # OTEL DESLIGADO no Vertex Reasoning Engine (2026-06-04): o coletor
+            # `services.staging.app.dados.rio` é INALCANÇÁVEL daqui (ConnectTimeout
+            # 10s por export → milhares de exports falhos pressionavam a instância
+            # → "Service Unavailable"/FAILED_PRECONDITION no :query). Endpoint vazio
+            # = sem exporter (ver `agent._set_up_opentelemetry`). Pra re-habilitar,
+            # aponte pra um coletor ALCANÇÁVEL do ambiente do engine (não o host
+            # público — o engine só alcança a rede privada/MCP interno).
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "",
             "OTEL_EXPORTER_OTLP_TRACES_HEADERS": env.OTEL_EXPORTER_OTLP_TRACES_HEADERS,
             "MCP_SERVER_URL": env.MCP_SERVER_URL,
             "MCP_API_TOKEN": env.MCP_API_TOKEN,
