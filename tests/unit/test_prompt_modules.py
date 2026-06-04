@@ -12,6 +12,7 @@ from src.prompt_modules import compose, ENABLED_MODULES
 from src.prompt_modules import (
     audio_inbound,
     govbr_auth_gating,
+    interactive_response,
     media_inbound,
     session_close,
     session_reset,
@@ -307,6 +308,36 @@ def test_vision_inbound_workflow_suggestions_in_prompt():
     p = vision_inbound.MODULE_PROMPT
     for workflow in ["reparo_luminaria", "poda_de_arvore"]:
         assert workflow in p, f"workflow '{workflow}' não documentado"
+
+
+def test_interactive_response_prefills_qty_pattern():
+    """O exemplo canônico do Flow e a regra de pré-preenchimento devem cobrir
+    `qty_pattern` (não só defect_type/location) — senão o modelo imita o exemplo
+    e nunca extrai quantidade (logs live: prefill_keys=['defect_type','location'])."""
+    p = interactive_response.MODULE_PROMPT
+    assert "qty_pattern" in p, "qty_pattern ausente na guidance de prefill"
+    # o exemplo canônico precisa demonstrar o prefill da quantidade
+    assert '"qty_pattern": "uma"' in p, (
+        "exemplo canônico do build_whatsapp_flow_envelope não prefilla qty_pattern"
+    )
+    # mapeamento de linguagem natural pros IDs canônicos
+    for canonical in ("uma", "bloco", "intercaladas"):
+        assert canonical in p, f"ID canônico de quantidade '{canonical}' ausente"
+
+
+def test_vision_inbound_prompt_has_safety_and_out_of_scope_routing():
+    """A análise visual pode revelar perigo (poste caído/fios) ou caso fora de
+    escopo (falta de energia/semáforo). O prompt deve rotear pra Defesa Civil
+    (199) e Light (0800 0210196) ANTES de sugerir abrir chamado — paridade com
+    a guidance do caminho de texto."""
+    p = vision_inbound.MODULE_PROMPT
+    assert "199" in p, "Defesa Civil (199) ausente na guidance de visão"
+    assert "0800 0210196" in p, "Light (0800 0210196) ausente na guidance de visão"
+    low = p.lower()
+    assert "risco iminente" in low or "perigo elétrico" in low, (
+        "Falta a noção de risco iminente / perigo na análise visual"
+    )
+    assert "escopo" in low, "Falta a noção de fora de escopo na análise visual"
 
 
 # ---------- módulo audio_inbound ----------

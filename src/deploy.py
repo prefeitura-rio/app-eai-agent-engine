@@ -27,9 +27,9 @@ def deploy(deploy_timestamp=None):
 
     # Tools will be loaded at runtime from MCP server (not at deployment time)
     # This allows deployment from local machine where MCP private network is not accessible
-    # LLM tuning vem de env vars com defaults preservando comportamento atual.
-    # Set THINKING_BUDGET=4096 (ou similar) pra reduzir latencia em queries
-    # complexas — testar com eval suite antes de promover pra producao.
+    # LLM tuning vem de env vars. THINKING_BUDGET default agora e' 1024 (capado;
+    # era -1/unbounded) pra cortar latencia — ver racional em config/env.py. Suba
+    # via env (2048-4096) se query complexa regredir; o valor efetivo vai logado.
     local_agent = Agent(
         model=model,
         system_prompt=system_prompt,
@@ -40,6 +40,16 @@ def deploy(deploy_timestamp=None):
         otpl_service=f"eai-langgraph-v{system_prompt_version}",
     )
     service_account = f"{env.PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+    # Loga a config de tuning EFETIVA baked no agent (cloudpickle). O
+    # thinking_budget aqui e' o que vale em runtime — o env var propagado em
+    # env_vars (abaixo) e' inerte (agent.py le do atributo pickled, nao do env).
+    # Torna o bake auditavel no log do deploy (cumpre a promessa em config/env.py).
+    print(
+        f"[deploy] LLM tuning baked: model={model} "
+        f"thinking_budget={env.THINKING_BUDGET} "
+        f"include_thoughts={env.INCLUDE_THOUGHTS} temperature={env.LLM_TEMPERATURE}"
+    )
 
     # VPC network configuration for private MCP server access
     # IMPORTANT: psc_interface_config affects ALL network connections from the agent,
