@@ -112,12 +112,16 @@ def deploy(deploy_timestamp=None):
             # OTEL DESLIGADO no Vertex Reasoning Engine (2026-06-04): o coletor
             # `services.staging.app.dados.rio` é INALCANÇÁVEL daqui (ConnectTimeout
             # 10s por export → milhares de exports falhos pressionavam a instância
-            # → "Service Unavailable"/FAILED_PRECONDITION no :query). NÃO passamos as
-            # vars OTEL_* aqui: o Vertex REJEITA env com value vazio (400 "Required
-            # field is not set"), então omiti-las é o jeito certo — o engine lê ""
-            # via getenv → não monta o exporter (ver `agent._set_up_opentelemetry`).
-            # Pra re-habilitar, passe um endpoint ALCANÇÁVEL do ambiente do engine
-            # (não o host público — o engine só alcança a rede privada/MCP interno).
+            # → "Service Unavailable"/FAILED_PRECONDITION no :query). Setamos o flag
+            # padrão do OpenTelemetry `OTEL_SDK_DISABLED=true` (value NÃO-vazio, o
+            # Vertex aceita) — `agent._set_up_opentelemetry` honra esse flag e NÃO
+            # monta o exporter. Por que o flag e não só omitir o endpoint: omitir o
+            # endpoint do env_vars NÃO bastou (engine 7480 seguiu exportando — o
+            # `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` ainda chegava via .env/runtime do
+            # próprio ambiente), então o desligamento tem que ser explícito e
+            # independente da fonte do endpoint. Pra re-habilitar: remova esta linha
+            # e aponte pra um coletor ALCANÇÁVEL da rede privada do engine.
+            "OTEL_SDK_DISABLED": "true",
             "MCP_SERVER_URL": env.MCP_SERVER_URL,
             "MCP_API_TOKEN": env.MCP_API_TOKEN,
             "EAI_AGENT_URL": env.EAI_AGENT_URL,

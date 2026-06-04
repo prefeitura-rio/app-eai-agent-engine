@@ -316,20 +316,28 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     def _set_up_opentelemetry(self):
         if self._opentelemetry_setup_complete:
             return
-        # 2026-06-04: NÃO montar o exporter OTLP sem endpoint configurado. No
-        # ambiente do Vertex Reasoning Engine o coletor (host público
+        # 2026-06-04: NÃO montar o exporter OTLP quando OTEL está desligado OU sem
+        # endpoint. No Vertex Reasoning Engine o coletor (host público
         # services.staging.app.dados.rio) é INALCANÇÁVEL (ConnectTimeout 10s por
         # export); com ALWAYS_ON + flush a cada 1s isso gerava milhares de exports
         # falhos, pressionando a instância (thread de export presa em timeouts) →
-        # "Service Unavailable"/FAILED_PRECONDITION no :query. Sem endpoint o
-        # tracer e o batch_processor ficam None — todos os usos têm guard
-        # (`if self._tracer` nos spans; `if self._batch_processor` no cleanup).
-        # Re-habilita com um endpoint ALCANÇÁVEL do ambiente.
-        if not (self._otlp_endpoint or "").strip():
+        # "Service Unavailable"/FAILED_PRECONDITION no :query. O deploy seta
+        # `OTEL_SDK_DISABLED=true` pro Vertex (o endpoint pode vir de .env/runtime,
+        # então gatear só por endpoint vazio NÃO bastava). Sem setup, o tracer e o
+        # batch_processor ficam None — todos os usos têm guard (`if self._tracer`
+        # nos spans; `if self._batch_processor` no cleanup). Re-habilita removendo
+        # OTEL_SDK_DISABLED e apontando pra um coletor ALCANÇÁVEL do ambiente.
+        _otel_disabled = getenv("OTEL_SDK_DISABLED", "").strip().lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+        if _otel_disabled or not (self._otlp_endpoint or "").strip():
             self._opentelemetry_setup_complete = True
             logger.info(
-                "[OpenTelemetry] sem OTEL_EXPORTER_OTLP_TRACES_ENDPOINT — "
-                "export de traces DESLIGADO (evita spam de export falho)."
+                "[OpenTelemetry] export de traces DESLIGADO "
+                f"(OTEL_SDK_DISABLED={_otel_disabled}, "
+                f"endpoint_vazio={not (self._otlp_endpoint or '').strip()})."
             )
             return
         provider = TracerProvider(
