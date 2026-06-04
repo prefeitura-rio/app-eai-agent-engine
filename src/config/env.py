@@ -75,11 +75,14 @@ LLM_TEMPERATURE = float(
     getenv_or_action("LLM_TEMPERATURE", default="0.7") or "0.7"
 )
 
+# OTEL opcional (default ""): o export de traces fica DESLIGADO sem endpoint
+# (ver agent._set_up_opentelemetry). Não obrigar a var presente no deploy — o
+# Vertex engine roda com OTEL off de propósito (coletor inalcançável daqui).
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = getenv_or_action(
-    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", default=""
 )
 OTEL_EXPORTER_OTLP_TRACES_HEADERS = getenv_or_action(
-    "OTEL_EXPORTER_OTLP_TRACES_HEADERS"
+    "OTEL_EXPORTER_OTLP_TRACES_HEADERS", default=""
 )
 
 # Short-term memory limits (kept as strings for deployment)

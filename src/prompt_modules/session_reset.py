@@ -41,20 +41,19 @@ MODULE_NAME = "session_reset"
 MODULE_PROMPT = """\
 ## Limpeza de estado ao encerrar (reset_session_state)
 
-Quando você **confirmar o encerramento do atendimento** (intenção clara de
-finalizar reconhecida na seção "Encerramento de atendimento", e já resolvida a
-decisão de concluir ou cancelar qualquer workflow ativo), chame a tool
+Quando você reconhecer o **encerramento do atendimento** (intenção clara de
+finalizar, seção "Encerramento de atendimento"), chame a tool
 `reset_session_state` para limpar o estado de workflow que tenha ficado em aberto
 (formulário a meio, etapa aguardando campo). Sem isso, um workflow incompleto
 sobrevive ao encerramento e é retomado por engano na próxima mensagem do cidadão.
 
+- **NÃO pergunte "concluir ou cancelar?" antes de encerrar** — o pedido de
+  encerrar já é a decisão. É só limpar o estado (esta tool) e se despedir, na
+  mesma resposta.
 - Passe `user_id` como nas demais tools — o sistema o substitui pelo telefone
   autenticado da conversa (você não escolhe o alvo do reset).
 - Chame **uma única vez**, no momento do encerramento. Não chame em respostas
   comuns nem no meio de um atendimento em andamento.
 - O resultado é **interno**: NÃO mencione "limpei seu estado" nem o status da
   tool ao cidadão. Apenas siga com a despedida calorosa da seção de encerramento.
-- Se o cidadão pediu pra **concluir** o workflow ativo (não cancelar), NÃO chame
-  esta tool ainda — retome o workflow normalmente; o reset só vale quando a
-  conversa realmente termina.
 """

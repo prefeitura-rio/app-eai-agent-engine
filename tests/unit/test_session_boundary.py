@@ -5,9 +5,11 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from engine.audio_mode import derive_audio_mode
 from engine.session_boundary import (
+    CLOSE_DIRECTIVE,
     apply_session_reset,
     current_session_messages,
     detect_close_intent,
+    inject_close_directive,
 )
 
 
@@ -201,3 +203,192 @@ def test_audio_mode_persists_within_same_session():
         _h("qual o horário do posto?"),
     ]
     assert derive_audio_mode(current_session_messages(full)) is True
+
+
+# --------------------------------------------------------------------------- #
+# Handshake de encerramento (2026-06-03): "sair" → bot pergunta "quer
+# cancelar?" → "sim". A resposta NÃO pode ser truncada pra fora do contexto.
+# --------------------------------------------------------------------------- #
+def test_close_confirmation_answer_not_treated_as_new_session():
+    """'sair' → bot pergunta confirmação → 'sim': o 'sim' responde o handshake,
+    não inicia sessão nova. current_session_messages devolve TUDO (sem truncar)
+    pra o LLM entender que 'sim' = confirmar o encerramento."""
+    msgs = [
+        _h("oi, tenho uma luminária apagada"),
+        _a("Vou abrir o chamado. [Flow]"),
+        _h("sair"),  # close intent
+        _a("Você quer cancelar a solicitação de reparo de luminária? 🤔"),  # pergunta
+        _h("Sim"),  # resposta ao handshake — NÃO é sessão nova
+    ]
+    assert current_session_messages(msgs) == msgs
+
+
+def test_apply_reset_noop_during_close_confirmation():
+    """apply_session_reset não trunca enquanto o handshake de cancelamento
+    está em curso (senão o 'sim' vira órfão → 'Sim, mas sim o quê?')."""
+    full = [
+        _h("quero abrir chamado de luminária"),
+        _a("Confirma os dados no formulário [Flow]"),
+        _h("sair"),
+        _a("Quer cancelar a solicitação que estamos abrindo?"),
+        _h("Sim"),
+    ]
+    state = {"messages": full}
+    final_state = {"llm_input_messages": list(full)}
+    out = apply_session_reset(state, final_state)
+    # noop: o handshake inteiro é preservado (o bot precisa do contexto p/ fechar)
+    assert out is final_state
+
+
+def test_reset_after_close_confirmation_resolved():
+    """Depois que o cancelamento foi confirmado e o bot se despediu, a PRÓXIMA
+    mensagem (turno do bot anterior NÃO é pergunta) inicia sessão nova."""
+    msgs = [
+        _h("quero abrir chamado de luminária"),
+        _a("Confirma no formulário [Flow]"),
+        _h("sair"),
+        _a("Quer cancelar a solicitação?"),  # pergunta
+        _h("Sim"),  # resolve o handshake
+        _a("Cancelado. Qualquer coisa é só chamar 👋"),  # despedida (sem '?')
+        _h("na verdade, quero pagar o IPTU"),  # sessão nova começa AQUI
+    ]
+    out = current_session_messages(msgs)
+    assert out == msgs[6:]
+    assert out[0].content.startswith("na verdade")
+
+
+def test_new_topic_after_courtesy_question_still_resets():
+    """Guard NÃO engole pedido novo: se o bot fechou com pergunta de cortesia
+    ('posso ajudar em mais algo?') e o cidadão traz tópico NOVO (fora do set de
+    respostas de handshake), a sessão reseta normalmente (sem vazar contexto)."""
+    msgs = [
+        _h("responde sempre em áudio"),
+        _a("ok, áudio ligado"),
+        _h("tchau"),  # close
+        _a("Prontinho! Posso ajudar em mais alguma coisa? 😊"),  # cortesia c/ '?'
+        _h("quero pagar o IPTU"),  # tópico NOVO — não é resposta de handshake
+    ]
+    out = current_session_messages(msgs)
+    assert out == msgs[4:]
+    assert out[0].content == "quero pagar o IPTU"
+    # áudio reseta (contexto não vazou)
+    assert derive_audio_mode(out) is False
+
+
+def test_no_infinite_context_leak_with_repeated_questions():
+    """Mesmo se vários turnos do bot terminam em '?', um pedido substantivo
+    (fora do set de handshake) reseta — sem vazamento infinito."""
+    msgs = [
+        _h("oi"),
+        _a("olá, como ajudo?"),
+        _h("encerrar atendimento"),  # close
+        _a("Quer mesmo encerrar?"),
+        _h("quero abrir um chamado de poda de árvore na minha rua"),  # novo
+    ]
+    out = current_session_messages(msgs)
+    assert out == msgs[4:]
+
+
+def test_ends_with_question_robustness():
+    from engine.session_boundary import _ends_with_question
+
+    assert _ends_with_question("Quer cancelar?") is True
+    assert _ends_with_question("Quer cancelar? 🤔") is True
+    assert _ends_with_question("Quer mesmo cancelar?!") is True
+    assert _ends_with_question("Quer cancelar?...") is True
+    assert _ends_with_question("Prontinho! Até mais 👋") is False
+    assert _ends_with_question("Vou aguardar.") is False
+    assert _ends_with_question("") is False
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["Sim", "Sim.", "Sim!", "Sim 👍", "  sim  ", "claro!", "Pode cancelar.", "👍 sim"],
+)
+def test_close_answer_with_punctuation_emoji_not_orphaned(answer):
+    """Formas comuns no WhatsApp ('Sim.', 'Sim!', 'Sim 👍') respondendo à
+    confirmação NÃO podem orfanar — a sessão não reseta no meio do handshake."""
+    msgs = [
+        _h("quero abrir chamado de luminária"),
+        _a("Confirma no formulário [Flow]"),
+        _h("sair"),
+        _a("Quer cancelar a solicitação que estamos abrindo?"),
+        _h(answer),
+    ]
+    # handshake preservado (não trunca pro 'answer' órfão)
+    assert current_session_messages(msgs) == msgs
+
+
+# --------------------------------------------------------------------------- #
+# inject_close_directive — precedência do encerramento sobre o Flow-first
+# --------------------------------------------------------------------------- #
+def test_inject_close_appends_directive_on_close_turn():
+    """Turno de encerramento → injeta a diretiva no llm_input (canal não-persist).
+    Reproduz o bug de campo (2026-06-03): 'Encerrar' logo após relato de luminária
+    reabria o Flow; a diretiva dá precedência ao encerramento."""
+    state = {
+        "messages": [_h("a luminária da rua tá apagada"), _a("[Flow]"), _h("Encerrar")]
+    }
+    base = [SystemMessage(content="sys"), _h("Encerrar")]
+    final_state = {"llm_input_messages": list(base), "extra": 1}
+
+    out = inject_close_directive(state, final_state)
+
+    assert out["extra"] == 1  # preserva o resto do final_state
+    assert len(out["llm_input_messages"]) == len(base) + 1
+    assert isinstance(out["llm_input_messages"][-1], SystemMessage)
+    assert out["llm_input_messages"][-1].content == CLOSE_DIRECTIVE
+    assert "ENCERRAMENTO SOLICITADO" in out["llm_input_messages"][-1].content
+
+
+def test_inject_close_creates_llm_input_from_messages_when_absent():
+    state = {"messages": [_h("pode encerrar o atendimento")]}
+    final_state = {"messages": [_h("pode encerrar o atendimento")]}
+
+    out = inject_close_directive(state, final_state)
+
+    assert "llm_input_messages" in out
+    assert isinstance(out["llm_input_messages"][-1], SystemMessage)
+    assert out["llm_input_messages"][-1].content == CLOSE_DIRECTIVE
+
+
+@pytest.mark.parametrize(
+    "last_text",
+    [
+        "a luminária da minha rua tá apagada",  # relato → Flow-first, não encerra
+        "sim",  # confirmação 'É este serviço?' → não pode suprimir o Flow
+        "rua das flores, 123",  # resposta de campo (endereço)
+        "quero sair da fila",  # lookalike de serviço (lookahead) → não encerra
+        "preciso encerrar minha conta de luz",  # 'encerrar <serviço>' → não encerra
+    ],
+)
+def test_inject_close_noop_when_not_a_close_turn(last_text):
+    """Caminho feliz preservado: a diretiva NÃO entra fora de um pedido de
+    encerrar — não regride o Flow-first nem o handshake 'É este serviço? → sim'."""
+    state = {"messages": [_a("É este serviço?"), _h(last_text)]}
+    final_state = {"llm_input_messages": [_a("É este serviço?"), _h(last_text)]}
+
+    out = inject_close_directive(state, final_state)
+
+    assert out is final_state  # inalterado (no-op)
+    assert all(
+        not (isinstance(m, SystemMessage) and m.content == CLOSE_DIRECTIVE)
+        for m in out["llm_input_messages"]
+    )
+
+
+def test_inject_close_uses_last_human_not_history():
+    """O gatilho olha o turno ATUAL (última msg do cidadão), não um 'encerrar'
+    antigo do histórico: depois de encerrar, um novo relato reabre o Flow."""
+    state = {
+        "messages": [
+            _h("tchau"),
+            _a("Até mais! 👋"),
+            _h("na verdade a luminária tá piscando"),
+        ]
+    }
+    final_state = {"llm_input_messages": list(state["messages"])}
+
+    out = inject_close_directive(state, final_state)
+
+    assert out is final_state  # último humano é relato, não encerramento → no-op

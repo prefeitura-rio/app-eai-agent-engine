@@ -40,7 +40,7 @@ from vertexai.agent_engines import (
 # use custom graph without _validate_chat_history
 from engine.custom_react_agent import create_react_agent
 from engine.audio_mode import inject_audio_directive
-from engine.session_boundary import apply_session_reset
+from engine.session_boundary import apply_session_reset, inject_close_directive
 from engine.log import logger
 
 # Error monitoring utilities (safe fallback if not available)
@@ -316,6 +316,30 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     def _set_up_opentelemetry(self):
         if self._opentelemetry_setup_complete:
             return
+        # 2026-06-04: NÃO montar o exporter OTLP quando OTEL está desligado OU sem
+        # endpoint. No Vertex Reasoning Engine o coletor (host público
+        # services.staging.app.dados.rio) é INALCANÇÁVEL (ConnectTimeout 10s por
+        # export); com ALWAYS_ON + flush a cada 1s isso gerava milhares de exports
+        # falhos, pressionando a instância (thread de export presa em timeouts) →
+        # "Service Unavailable"/FAILED_PRECONDITION no :query. O deploy seta
+        # `OTEL_SDK_DISABLED=true` pro Vertex (o endpoint pode vir de .env/runtime,
+        # então gatear só por endpoint vazio NÃO bastava). Sem setup, o tracer e o
+        # batch_processor ficam None — todos os usos têm guard (`if self._tracer`
+        # nos spans; `if self._batch_processor` no cleanup). Re-habilita removendo
+        # OTEL_SDK_DISABLED e apontando pra um coletor ALCANÇÁVEL do ambiente.
+        _otel_disabled = getenv("OTEL_SDK_DISABLED", "").strip().lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+        if _otel_disabled or not (self._otlp_endpoint or "").strip():
+            self._opentelemetry_setup_complete = True
+            logger.info(
+                "[OpenTelemetry] export de traces DESLIGADO "
+                f"(OTEL_SDK_DISABLED={_otel_disabled}, "
+                f"endpoint_vazio={not (self._otlp_endpoint or '').strip()})."
+            )
+            return
         provider = TracerProvider(
             resource=Resource.create({"service.name": self._otpl_service}),
             sampler=ALWAYS_ON,  # Garantir 100% de sampling
@@ -520,8 +544,11 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 f"Short memory time limit set to {self._short_memory_time_limit} seconds"
             )
         if self._short_memory_token_limit is None:
+            # Default alinhado ao do deploy (src/config/env.py = 50000). Antes era
+            # "100" aqui: se a env não fosse injetada, o histórico era cortado a
+            # ~400 chars e o LLM perdia endereço/CPF que o cidadão já tinha dado.
             self._short_memory_token_limit = int(
-                getenv("SHORT_MEMORY_TOKEN_LIMIT", "100")
+                getenv("SHORT_MEMORY_TOKEN_LIMIT", "50000")
             )
             logger.info(
                 f"Short memory token limit set to {self._short_memory_token_limit} tokens"
@@ -1086,6 +1113,13 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # Entra só em llm_input_messages (não-persistente), igual ao filtro de
         # curto prazo. Antes do Step 5 para o token counting incluir a diretiva.
         final_state = inject_audio_directive(state, final_state)
+
+        # Step 4.6: Encerramento — quando o turno ATUAL é um pedido de encerrar,
+        # injeta uma diretiva determinística que dá precedência ao encerramento
+        # sobre o Flow-first de luminária (senão "Encerrar" logo após um relato
+        # reabre o Flow em vez de fechar). Por último pra ser a diretiva mais
+        # recente/forte; só entra em llm_input_messages (não-persistente).
+        final_state = inject_close_directive(state, final_state)
 
         # Step 5: Store the messages that will be sent to LLM for token counting later
         # The prompt_runnable will prepend system prompt to these messages
