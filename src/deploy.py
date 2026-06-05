@@ -27,9 +27,9 @@ def deploy(deploy_timestamp=None):
 
     # Tools will be loaded at runtime from MCP server (not at deployment time)
     # This allows deployment from local machine where MCP private network is not accessible
-    # LLM tuning vem de env vars. THINKING_BUDGET default agora e' 1024 (capado;
-    # era -1/unbounded) pra cortar latencia — ver racional em config/env.py. Suba
-    # via env (2048-4096) se query complexa regredir; o valor efetivo vai logado.
+    # LLM tuning vem de env vars. THINKING_BUDGET default -1 (unbounded) — capar
+    # baixo derruba tool-calling/qualidade (eval 26984264727 reprovou 1024). Nao
+    # mexer sem eval-on-deploy. Ver racional em config/env.py; valor efetivo logado.
     local_agent = Agent(
         model=model,
         system_prompt=system_prompt,

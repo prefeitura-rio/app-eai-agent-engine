@@ -57,17 +57,17 @@ ENABLE_INTERACTIVE_RESPONSE = getenv_or_action(
 
 # === LLM tuning (latency vs quality trade-offs) ===
 # THINKING_BUDGET: tokens maximos que o Gemini 2.5 Flash pode gastar em
-# chain-of-thought antes de responder. Default CAPADO em 1024 (era -1/unbounded):
-# o prompt deste bot e' fortemente escaffoldado (regras explicitas, Flow-first
-# deterministico), entao 1024 tokens de raciocinio sao amplos pras decisoes de
-# roteamento/tool e cortam ~5-15s/turn de latencia (e custo). E' so um teto — o
-# modelo usa MENOS quando nao precisa. Tunavel via env THINKING_BUDGET, mas
-# EFETIVO SO NO PROXIMO DEPLOY: o valor e' resolvido aqui em deploy-time e baked
-# no agent via cloudpickle (agent.py le do atributo, NAO do env em runtime —
-# mesma pegadinha do OTEL_SDK_DISABLED). O deploy loga o valor efetivo; medir p95
-# e qualidade no Signoz pos-deploy. Se query complexa/ambigua regredir, suba pra
-# 2048-4096 e re-deploye. 0 desliga, -1 volta ao unbounded.
-THINKING_BUDGET = int(getenv_or_action("THINKING_BUDGET", default="1024") or "1024")
+# chain-of-thought antes de responder. Default -1 (unbounded/dynamic — o modelo
+# decide quanto pensar). NAO CAPAR sem eval: a tentativa de capar em 1024
+# (engine 5038677510783500288, eval run 26984264727, v179->v180) foi
+# CATASTROFICA — token_usage -65%, tool_usage 0.79->0.01, activate_search
+# 0.81->0.08, qualidade global caindo pra ~1/4 em TODOS os datasets. O cap
+# matou o tool-calling/search do agente (sem budget pra planejar a chamada).
+# Qualquer tuning de latencia aqui PRECISA passar pelo eval-on-deploy antes de
+# promover (sweep medido 8192/4096/...), nunca chutar um teto baixo. Lido em
+# deploy-time e baked via cloudpickle (agent.py le do atributo, nao do env em
+# runtime). O deploy loga o valor efetivo. 0 desliga thinking; -1 unbounded.
+THINKING_BUDGET = int(getenv_or_action("THINKING_BUDGET", default="-1") or "-1")
 # INCLUDE_THOUGHTS: se o LLM retorna o texto de chain-of-thought no
 # response (alem da resposta final). Default true mantem traces visiveis
 # em logs/OTel pra debug. Setar false reduz payload de saida mas nao
