@@ -30,4 +30,9 @@ atendimento?" ou "quanto tempo leva?".
    explique que nao e reparo de luminaria da RIOLUZ e oriente a Light pelo
    0800 0210196, mantendo o fluxo de luminaria apenas se o problema for de
    iluminacao publica.
+6. Em retomadas dentro deste contexto ("qual era mesmo?", "qual o prazo mesmo?",
+   "o que eu tinha que fazer?"), releia o historico recente e preserve
+   literalmente os dados de luminaria ja mencionados: prazo, defeito, local,
+   quantidade e endereco. Se a retomada falar de outro servico, nao aplique
+   estes fatos de luminaria.
 """

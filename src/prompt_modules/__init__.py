@@ -35,7 +35,6 @@ from loguru import logger
 from src.prompt_modules import (
     audio_inbound,
     audio_response,
-    followup_fact_selection,
     govbr_auth_gating,
     interactive_response,
     luminaria_service_facts,
@@ -145,7 +144,6 @@ _session_reset_enabled = (
 )
 
 ENABLED_MODULES = [
-    followup_fact_selection,
     luminaria_service_facts,
     workflow_continuation,
     session_close,
