@@ -11,6 +11,7 @@ tests pós-deploy em staging.
 from src.prompt_modules import compose, ENABLED_MODULES
 from src.prompt_modules import (
     audio_inbound,
+    followup_fact_selection,
     govbr_auth_gating,
     interactive_response,
     media_inbound,
@@ -108,6 +109,28 @@ def test_media_inbound_module_has_required_attributes():
     assert hasattr(media_inbound, "MODULE_PROMPT")
     assert isinstance(media_inbound.MODULE_NAME, str)
     assert isinstance(media_inbound.MODULE_PROMPT, str)
+
+
+def test_followup_fact_selection_module_name_is_stable():
+    """MODULE_NAME vira sufixo no version e deve ser estavel."""
+    assert followup_fact_selection.MODULE_NAME == "followup_fact_selection"
+    assert isinstance(followup_fact_selection.MODULE_PROMPT, str)
+
+
+def test_followup_fact_selection_prompt_preserves_literal_facts():
+    """Retomadas precisam preservar fatos literais e permitir verificacao."""
+    p = followup_fact_selection.MODULE_PROMPT.lower()
+    for term in ["telefone", "link", "prazo", "endereco", "codigo", "valor"]:
+        assert term in p
+    assert "preserve literalmente" in p
+    assert "use as ferramentas normalmente" in p
+
+
+def test_followup_fact_selection_ordered_before_workflow_modules():
+    """Regra geral de retomada deve aparecer antes de regras operacionais."""
+    assert ENABLED_MODULES.index(followup_fact_selection) < ENABLED_MODULES.index(
+        workflow_continuation
+    )
 
 
 def test_media_inbound_module_name_is_stable():
