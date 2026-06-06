@@ -776,7 +776,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         source=make_source(PRE_MODEL_HOOK, PRE_MODEL_INJECT_MEMORY),
         extract_user_id=extract_thread_id_from_config
     )
-    def _inject_long_term_memory(self, state, config=None):
+    async def _inject_long_term_memory(self, state, config=None):
         """Inject long-term memory as a SystemMessage.
 
         This hook:
@@ -831,25 +831,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                     f"[Long-Term Memory] Fetching memory (cache_fresh={cache_is_fresh}, needs_refresh={self._memory_needs_refresh})"
                 )
 
-                # Fetch memory data
-                # Note: We need to run async function in sync context
-                try:
-                    # Try to get the current event loop
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # We're in an async context, create a task
-                        # This is a workaround - ideally the hook should be async
-                        logger.warning(
-                            "[Long-Term Memory] Cannot fetch memory in running event loop, skipping"
-                        )
-                        memory_data = None
-                    else:
-                        memory_data = loop.run_until_complete(
-                            self._fetch_long_term_memory(thread_id)
-                        )
-                except RuntimeError:
-                    # No event loop, create one
-                    memory_data = asyncio.run(self._fetch_long_term_memory(thread_id))
+                memory_data = await self._fetch_long_term_memory(thread_id)
 
                 # Update cache regardless of whether memory_data exists or not
                 # This prevents repeated calls when there's no memory
@@ -973,14 +955,14 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         source=make_source(PRE_MODEL_HOOK, PRE_MODEL_COMBINED),
         extract_user_id=extract_thread_id_from_config
     )
-    def _combined_pre_model_hook(self, state, config=None):
+    async def _combined_pre_model_hook(self, state, config=None):
         # Step 1: Add timestamps to new ToolMessages (safe update, modifies in-place)
         # We invoke this for the side-effect on state['messages'], relying on
         # _inject_long_term_memory or subsequent steps to return the messages list.
         self._add_timestamp_to_tool_messages(state)
 
         # Step 2: Inject long-term memory as SystemMessage
-        state = self._inject_long_term_memory(state, config)
+        state = await self._inject_long_term_memory(state, config)
 
         # Step 3: Apply short-term memory filtering
         # This returns llm_input_messages which should NOT be overwritten
