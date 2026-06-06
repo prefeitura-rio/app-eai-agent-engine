@@ -385,6 +385,15 @@ def test_interactive_response_maps_wire_theft_to_valid_defect_type():
     assert "Nunca use `defect_type` fora dessa lista" in p
 
 
+def test_interactive_response_wire_theft_is_flow_first():
+    """Roubo/furto de fios de poste não deve desviar só para denúncia."""
+    p = interactive_response.MODULE_PROMPT
+    assert "cabo/fios/furto/roubo de fios" in p
+    assert "reparo de luminária Flow-first" in p
+    assert "não substitua por `google_search`" in p
+    assert "nem responda só com Disque Denúncia" in p
+
+
 def test_vision_inbound_prompt_has_safety_and_out_of_scope_routing():
     """A análise visual pode revelar perigo (poste caído/fios) ou caso fora de
     escopo (falta de energia/semáforo). O prompt deve rotear pra Defesa Civil
