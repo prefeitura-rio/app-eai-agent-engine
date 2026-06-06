@@ -604,7 +604,7 @@ def create_react_agent(
         tool_node = tools
     else:
         llm_builtin_tools = [t for t in tools if isinstance(t, dict)]
-        tool_node = ToolNode([t for t in tools if not isinstance(t, dict)])
+        tool_node = ToolNode([t for t in tools if not isinstance(t, dict)], handle_tool_errors=True)
         tool_classes = list(tool_node.tools_by_name.values())
 
     is_dynamic_model = not isinstance(model, (str, Runnable)) and callable(model)
