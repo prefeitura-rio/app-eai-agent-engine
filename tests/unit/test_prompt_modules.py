@@ -377,6 +377,14 @@ def test_interactive_response_prefills_qty_pattern():
         assert canonical in p, f"ID canônico de quantidade '{canonical}' ausente"
 
 
+def test_interactive_response_maps_wire_theft_to_valid_defect_type():
+    """Furto/cabo/fios deve usar ID canônico do Flow, não valor inventado."""
+    p = interactive_response.MODULE_PROMPT
+    assert 'defect_type="Danificada"' in p
+    assert "furto/roubo de fios" in p
+    assert "Nunca use `defect_type` fora dessa lista" in p
+
+
 def test_vision_inbound_prompt_has_safety_and_out_of_scope_routing():
     """A análise visual pode revelar perigo (poste caído/fios) ou caso fora de
     escopo (falta de energia/semáforo). O prompt deve rotear pra Defesa Civil
