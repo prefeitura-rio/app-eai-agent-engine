@@ -11,7 +11,6 @@ tests pós-deploy em staging.
 from src.prompt_modules import compose, ENABLED_MODULES
 from src.prompt_modules import (
     audio_inbound,
-    factual_recall,
     govbr_auth_gating,
     interactive_response,
     media_inbound,
@@ -109,45 +108,6 @@ def test_media_inbound_module_has_required_attributes():
     assert hasattr(media_inbound, "MODULE_PROMPT")
     assert isinstance(media_inbound.MODULE_NAME, str)
     assert isinstance(media_inbound.MODULE_PROMPT, str)
-
-
-# ---------- factual_recall ----------
-
-
-def test_factual_recall_module_has_required_attributes():
-    """factual_recall segue o contrato MODULE_NAME/MODULE_PROMPT."""
-    assert hasattr(factual_recall, "MODULE_NAME")
-    assert hasattr(factual_recall, "MODULE_PROMPT")
-    assert isinstance(factual_recall.MODULE_NAME, str)
-    assert isinstance(factual_recall.MODULE_PROMPT, str)
-
-
-def test_factual_recall_module_name_is_stable():
-    """MODULE_NAME vira sufixo no version do prompt composto."""
-    assert factual_recall.MODULE_NAME == "factual_recall"
-
-
-def test_factual_recall_enabled_before_workflow_modules():
-    """A regra geral de retomada factual deve aparecer cedo no prompt composto."""
-    names = [m.MODULE_NAME for m in ENABLED_MODULES]
-    assert "factual_recall" in names
-    assert names.index("factual_recall") < names.index("workflow_continuation")
-
-
-def test_factual_recall_preserves_literal_public_service_facts():
-    """Guarda contra regressao do eval de memoria: 'qual era mesmo...' deve
-    copiar fatos ja ditos, sem trocar URL especifica, prazo ou numero."""
-    p = factual_recall.MODULE_PROMPT
-    low = p.lower()
-    assert "qual era mesmo" in low
-    assert "historico" in low
-    assert "literal" in low
-    assert "3 dias corridos" in p
-    assert "3 dias uteis" in p
-    assert "https://www.1746.rio/hc/pt-br/p/solicitacoes" in p
-    assert "www.1746.rio" in p
-    assert "nao faca nova busca" in low
-    assert "nao chame tool" in low
 
 
 def test_media_inbound_module_name_is_stable():
