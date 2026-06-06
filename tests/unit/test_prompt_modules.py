@@ -14,6 +14,7 @@ from src.prompt_modules import (
     followup_fact_selection,
     govbr_auth_gating,
     interactive_response,
+    luminaria_service_facts,
     media_inbound,
     session_close,
     session_reset,
@@ -129,6 +130,34 @@ def test_followup_fact_selection_prompt_preserves_literal_facts():
 def test_followup_fact_selection_ordered_before_workflow_modules():
     """Regra geral de retomada deve aparecer antes de regras operacionais."""
     assert ENABLED_MODULES.index(followup_fact_selection) < ENABLED_MODULES.index(
+        workflow_continuation
+    )
+
+
+def test_luminaria_service_facts_module_name_is_stable():
+    """MODULE_NAME vira sufixo no version e deve ser estavel."""
+    assert luminaria_service_facts.MODULE_NAME == "luminaria_service_facts"
+    assert isinstance(luminaria_service_facts.MODULE_PROMPT, str)
+
+
+def test_luminaria_service_facts_prompt_anchors_official_deadlines():
+    """Prazos de luminaria nao podem depender de busca livre instavel."""
+    p = luminaria_service_facts.MODULE_PROMPT.lower()
+    assert "3 dias corridos" in p
+    assert "4 dias corridos" in p
+    assert "acesa de dia" in p
+    assert "furto/roubo de fios" in p
+    assert "nunca troque" in p
+    assert "dias uteis" in p
+    assert "nao chame google_search" in p
+
+
+def test_luminaria_service_facts_ordered_before_workflow_modules():
+    """Facts de luminaria devem anteceder regras operacionais de Flow/workflow."""
+    assert ENABLED_MODULES.index(followup_fact_selection) < ENABLED_MODULES.index(
+        luminaria_service_facts
+    )
+    assert ENABLED_MODULES.index(luminaria_service_facts) < ENABLED_MODULES.index(
         workflow_continuation
     )
 
