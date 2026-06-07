@@ -686,6 +686,30 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A lâmpada perto do nº 200 está piscando")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz próximo ao número 50 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada próxima ao nr 120 queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz próximo ao mercado apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada próxima da escola queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz na altura do número 50 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada na altura do mercado queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz defronte ao número 50 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada defronte da igreja queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Luz em frente minha casa apagou")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1413,6 +1437,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Lâmpada frente minha cama queimada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz próxima da cama apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada próxima do espelho queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV próxima ao número 50 apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz na altura da sala apagou")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A TV em frente ao número 50 apagou")]
