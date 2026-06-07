@@ -32,6 +32,21 @@ from engine.session_boundary import CLOSE_DIRECTIVE
 from src.prompt_modules import compose, interactive_response
 
 
+_FORBIDDEN_REMOTE_MODULE_PREFIXES = (
+    "engine.agent",
+    "engine.mcp_tools",
+    "google.cloud.aiplatform",
+    "langchain_google_vertexai",
+    "langgraph.checkpoint.postgres",
+    "psycopg",
+    "src.deploy",
+    "src.interactive_test",
+    "src.utils.cleanup_reasoning_engines",
+    "src.utils.gateway_chat",
+    "vertexai",
+)
+
+
 @dataclass(frozen=True)
 class GateCase:
     id: str
@@ -47,6 +62,21 @@ class CheckResult:
     expected: Any
     actual: Any
     reason: str
+
+
+def _module_matches_prefix(module_name: str, prefix: str) -> bool:
+    return module_name == prefix or module_name.startswith(f"{prefix}.")
+
+
+def _loaded_forbidden_remote_modules() -> list[str]:
+    return sorted(
+        module_name
+        for module_name in sys.modules
+        if any(
+            _module_matches_prefix(module_name, prefix)
+            for prefix in _FORBIDDEN_REMOTE_MODULE_PREFIXES
+        )
+    )
 
 
 def _flow_submission_text() -> str:
@@ -463,11 +493,28 @@ def _evaluate_injection() -> list[CheckResult]:
     ]
 
 
+def _evaluate_locality_contract() -> list[CheckResult]:
+    loaded_forbidden_modules = _loaded_forbidden_remote_modules()
+    return [
+        CheckResult(
+            id="locality::no_remote_modules_loaded",
+            passed=loaded_forbidden_modules == [],
+            expected=[],
+            actual=loaded_forbidden_modules,
+            reason=(
+                "eval local nao deve carregar Agent, Gateway, Vertex, MCP "
+                "ou Postgres"
+            ),
+        )
+    ]
+
+
 def run_eval() -> dict[str, Any]:
     checks = [
         *_evaluate_gate(),
         *_evaluate_prompt_contract(),
         *_evaluate_injection(),
+        *_evaluate_locality_contract(),
     ]
     failures = [check for check in checks if not check.passed]
     groups: dict[str, dict[str, Any]] = {}
@@ -479,14 +526,39 @@ def run_eval() -> dict[str, Any]:
     for data in groups.values():
         data["score"] = data["passed"] / data["total"] if data["total"] else 0.0
 
+    loaded_forbidden_modules = _loaded_forbidden_remote_modules()
     return {
         "name": "local_luminaria_eval",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "offline": True,
-        "calls_gateway": False,
-        "calls_reasoning_engine": False,
-        "calls_vertex": False,
-        "calls_mcp": False,
+        "calls_gateway": any(
+            _module_matches_prefix(module_name, "src.utils.gateway_chat")
+            for module_name in loaded_forbidden_modules
+        ),
+        "calls_reasoning_engine": any(
+            _module_matches_prefix(module_name, prefix)
+            for module_name in loaded_forbidden_modules
+            for prefix in (
+                "engine.agent",
+                "src.deploy",
+                "src.interactive_test",
+                "src.utils.cleanup_reasoning_engines",
+            )
+        ),
+        "calls_vertex": any(
+            _module_matches_prefix(module_name, prefix)
+            for module_name in loaded_forbidden_modules
+            for prefix in (
+                "google.cloud.aiplatform",
+                "langchain_google_vertexai",
+                "vertexai",
+            )
+        ),
+        "calls_mcp": any(
+            _module_matches_prefix(module_name, "engine.mcp_tools")
+            for module_name in loaded_forbidden_modules
+        ),
+        "loaded_forbidden_modules": loaded_forbidden_modules,
         "dynamic_enabled": interactive_response_dynamic_enabled(),
         "summary": {
             "total": len(checks),
