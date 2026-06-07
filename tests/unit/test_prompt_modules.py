@@ -575,6 +575,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="O poste fica aceso de dia")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste apaga e acende toda hora")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da rua fica apagando e acendendo")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste está oscilando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária está em meia luz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da praça está em meia fase")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da esquina fica intermitente")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Tem fio caído com faísca perto do poste da Rioluz")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -657,6 +675,21 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz da varanda fica acesa de dia")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV apaga e acende toda hora")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da sala fica apagando e acendendo")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do quarto está oscilando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da garagem está em meia luz")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A tela do celular fica piscando de madrugada")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Meu quarto está escuro")]
