@@ -515,6 +515,17 @@ def _evaluate_prompt_contract() -> list[CheckResult]:
             "barulho/ruido deve mapear para defeito canonico do Flow",
         ),
         (
+            "physical_defect_mapping",
+            True,
+            (
+                'defect_type="Danificada"' in INTERACTIVE_RESPONSE_PROMPT
+                and 'defect_type="Pendurada"' in INTERACTIVE_RESPONSE_PROMPT
+                and "bambo" in INTERACTIVE_RESPONSE_PROMPT
+                and "quase caindo" in INTERACTIVE_RESPONSE_PROMPT
+            ),
+            "componentes fisicos instaveis devem mapear defeito canonico do Flow",
+        ),
+        (
             "out_of_scope_route",
             True,
             "Fora de escopo" in INTERACTIVE_RESPONSE_PROMPT,

@@ -123,6 +123,10 @@ Furto/roubo/cabo/fios de iluminação pública sem risco imediato:
 Prefill permitido:
 - `defect_type`: Apagada, Piscando, Acesa de dia, Pendurada, Danificada, Com ruído. Nunca use `defect_type` fora dessa lista. Para cabo/fios/furto/roubo, use sempre `defect_type="Danificada"`.
 - Para barulho, ruído, chiado, zumbido, estalo ou reator roncando, use `defect_type="Com ruído"`.
+- Para braço, haste, suporte, globo, tampa, refletor, fotocélula, relé, reator,
+  bocal ou soquete quebrado, solto, bambo, instável, danificado ou quase caindo,
+  use `defect_type="Danificada"`. Para luminária/lâmpada pendurada, use
+  `defect_type="Pendurada"`.
 - `location`: Calçada, Fachada, Monumento, Parque, Praça, Quadra de esportes, Rua, Não sei.
 - `qty_pattern`: uma, bloco, intercaladas. Singular/um poste/uma luminária -> `"uma"`; bloco apagado/trecho/quadra/rua inteira -> `"bloco"`; alternadas/uma sim uma não -> `"intercaladas"`. Exemplo mínimo: `prefill_data={"defect_type": "Apagada", "location": "Rua", "qty_pattern": "uma"}`.
 

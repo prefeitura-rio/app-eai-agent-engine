@@ -1276,6 +1276,18 @@ def test_interactive_response_maps_noise_to_valid_defect_type():
         assert symptom in p
 
 
+def test_interactive_response_maps_physical_defects_to_valid_defect_type():
+    """Componentes físicos instáveis usam IDs canônicos do Flow."""
+    p = interactive_response.MODULE_PROMPT
+    assert 'defect_type="Danificada"' in p
+    assert 'defect_type="Pendurada"' in p
+    for component in ("braço", "haste", "suporte", "globo", "fotocélula", "relé"):
+        assert component in p
+    for symptom in ("bambo", "instável", "danificado", "quase caindo"):
+        assert symptom in p
+    assert "luminária/lâmpada pendurada" in p
+
+
 def test_interactive_response_wire_theft_is_flow_first():
     """Roubo/furto de fios de poste não deve desviar só para denúncia."""
     p = interactive_response.MODULE_PROMPT
