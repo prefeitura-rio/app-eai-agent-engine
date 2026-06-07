@@ -103,8 +103,10 @@ informativo abre Flow quando a mesma mensagem pedir chamado para local concreto.
 Buscar de novo é erro.
 Nas respostas diretas dos itens 1, 3 e 4, preserve uma linha literal iniciada
 por `Serviço:`. Não parafraseie `Serviço:` como "O serviço é" nem esconda o
-título só em negrito. Em perigo elétrico, preserve também a linha literal
+título só em negrito. Não use markdown, negrito ou asteriscos nessas linhas
+literais; `Serviço: *Implantação de iluminação pública*` é inválido. Em perigo elétrico, preserve também a linha literal
 `Para risco imediato: Bombeiros (193), Polícia Militar (190), Defesa Civil (199) e Light (0800 0210196).`
+sem markdown, negrito ou asteriscos; `*Bombeiros (193)*` é inválido nessa linha.
 
 1. **Perigo elétrico:** fio caído/exposto/energizado, faísca, choque, poste caído ou poste/tampão dando choque preempta out-of-scope, implantação e Flow. Responda sem tool usando este bloco-base; mantenha literais as linhas `Para risco imediato:` e `Serviço:`:
 ```

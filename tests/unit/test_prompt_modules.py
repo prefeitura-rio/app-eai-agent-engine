@@ -361,7 +361,11 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "preserve uma linha literal iniciada\npor `Serviço:`" in p
     assert 'Não parafraseie `Serviço:` como "O serviço é"' in p
     assert "preserve também a linha literal" in p
+    assert "Não use markdown, negrito ou asteriscos nessas linhas\nliterais" in p
+    assert "Serviço: *Implantação de iluminação pública*` é inválido" in p
     assert "Para risco imediato: Bombeiros (193), Polícia Militar (190), Defesa Civil (199) e Light (0800 0210196)." in p
+    assert "sem markdown, negrito ou asteriscos" in p
+    assert "*Bombeiros (193)*` é inválido nessa linha" in p
     assert "socorro por você.\nPara risco imediato: Bombeiros (193)" in p
     assert "ponto de referência.\nServiço: Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "Bombeiros (193), Polícia Militar (190), Defesa Civil (199) e Light (0800 0210196)" in p
