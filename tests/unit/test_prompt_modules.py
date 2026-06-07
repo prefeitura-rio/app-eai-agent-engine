@@ -358,6 +358,8 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "até 6 horas" in p
     assert "Serviço: Reparo de poste ou tampão da Rioluz dando choque" in p
+    assert "Templates obrigatórios de luminária" in p
+    assert "Bombeiros (193) ou Polícia Militar (190)" in p
     assert "redireciona para a Light" in p
 
 
@@ -418,6 +420,10 @@ def test_interactive_response_enriches_luminaria_flow_body():
     assert "Bloco ou grupo de luminárias apagadas" in p
     assert "Reparo de cabo de iluminação pública" in p
     assert "cite literalmente **Reparo de cabo de iluminação pública**" in p
+    assert "body=\"Reparo de cabo de iluminação pública (Rioluz)" in p
+    assert 'prefill_data={"defect_type": "Danificada"}' in p
+    assert 'Adicione `qty_pattern` no `prefill_data` somente se' in p
+    assert "Informe endereço completo e ponto de referência" in p
     assert (
         "https://www.1746.rio/hc/pt-br/articles/14191400984987-"
         "Reparo-de-cabo-de-ilumina%C3%A7%C3%A3o-p%C3%BAblica"
