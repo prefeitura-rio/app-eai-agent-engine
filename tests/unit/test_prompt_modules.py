@@ -650,6 +650,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A luz do poste está oscilando")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da rua estourou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da praça estourou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste explodiu")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste pifou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da rua fica apagando direto")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da esquina vive apagando")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luminária está em meia luz")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -825,6 +843,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz do quarto está oscilando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da sala estourou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da loja estourou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da cozinha explodiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV pifou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do quarto fica apagando direto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do escritório vive apagando")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luminária da garagem está em meia luz")]
