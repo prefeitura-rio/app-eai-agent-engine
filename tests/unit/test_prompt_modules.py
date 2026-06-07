@@ -352,6 +352,7 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "Polícia Militar (190)" in p
     assert "Defesa Civil (199)" in p
     assert "Light (0800 0210196)" in p
+    assert "A resposta de perigo é obrigatoriamente incompleta" in p
     assert "não consegue acionar/chamar socorro" in p
     assert "não envie o Flow como primeira ação" in p
     assert "Reparo de poste ou tampão da Rioluz dando choque" in p
@@ -406,10 +407,13 @@ def test_interactive_response_enriches_luminaria_flow_body():
         "https://www.1746.rio/hc/pt-br/articles/14187518715931-"
         "Reparo-de-Lumin%C3%A1ria"
     ) in p
+    assert "Para \"qual número\"" in p
+    assert "nome do serviço oficial e o link aplicável" in p
     assert "site ou app 1746" in p
     assert "Acesa de dia" in p
     assert "Bloco ou grupo de luminárias apagadas" in p
     assert "Reparo de cabo de iluminação pública" in p
+    assert "cite literalmente **Reparo de cabo de iluminação pública**" in p
     assert (
         "https://www.1746.rio/hc/pt-br/articles/14191400984987-"
         "Reparo-de-cabo-de-ilumina%C3%A7%C3%A3o-p%C3%BAblica"
