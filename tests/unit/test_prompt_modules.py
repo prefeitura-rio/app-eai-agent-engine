@@ -1005,6 +1005,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="O poste da praça deu curto")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto no poste da praça")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto na luminária da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem curto no poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto no poste em frente minha casa")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz do poste soltando faísca")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1744,6 +1756,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A tomada da sala deu curto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto na tomada da sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto no chuveiro")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto na extensão da loja")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto no quadro de energia do prédio")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O quadro de energia do prédio está com curto")]

@@ -103,7 +103,7 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"pendurad[ao]|danificad[ao]|defeito|defeituos[ao]s?|"
     rf"ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
     rf"expost[ao]s?|energizad[ao]s?|faiscando|soltando\s+fa[ií]sca|"
-    rf"curto(?:-|\s)?circuito|dando\s+curto|deu\s+curto|com\s+curto|"
+    rf"curto(?:-|\s)?circuito|curto|dando\s+curto|deu\s+curto|com\s+curto|"
     rf"solt[ao]s?|soltou|entortad[ao]s?|entortou|"
     rf"tort[ao]s?|"
     rf"balan[cç]ando|bamb[ao]s?|inst[aá]ve(?:l|is)|"
@@ -129,7 +129,7 @@ _LUMINARIA_DEFECT_CONTEXT_RE = re.compile(
     r"frac[ao]s?|mal\s+iluminad[ao]s?|pendurad[ao]|danificad[ao]|"
     r"defeito|defeituos[ao]s?|ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
     r"expost[ao]s?|energizad[ao]s?|faiscando|soltando\s+fa[ií]sca|"
-    r"curto(?:-|\s)?circuito|dando\s+curto|deu\s+curto|com\s+curto|"
+    r"curto(?:-|\s)?circuito|curto|dando\s+curto|deu\s+curto|com\s+curto|"
     r"solt[ao]s?|soltou|entortad[ao]s?|entortou|balan[cç]ando|"
     r"tort[ao]s?|bamb[ao]s?|inst[aá]ve(?:l|is)|"
     r"(?:prestes\s+a|quase)\s+cair|"
@@ -205,7 +205,7 @@ _LUMINARIA_PROXIMITY_CONTEXT_RE = re.compile(
 _LUMINARIA_RISK_TRIGGER_RE = re.compile(
     r"(?i)\b("
     r"fio(?:s)?|fia[cç][aã]o|cabo(?:s)?|fa[ií]sca|faiscando|choque|"
-    r"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|"
+    r"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|curto|"
     r"dando\s+curto|deu\s+curto|com\s+curto"
     r")\b"
 )
