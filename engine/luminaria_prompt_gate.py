@@ -71,6 +71,7 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"frac[ao]s?|mal\s+iluminad[ao]s?|"
     rf"pendurad[ao]|danificad[ao]|"
     rf"ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
+    rf"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|dando\s+curto|"
     rf"solt[ao]s?|soltou|entortad[ao]s?|entortou|"
     rf"n[aã]o\s+(?:acende|liga|funciona|est[aá]\s+funcionando)|"
     rf"escur[ao]s?|sem\s+(?:luz|tampa)"
@@ -85,7 +86,12 @@ _LUMINARIA_PROXIMITY_CONTEXT_RE = re.compile(
     r"com[eé]rcio|escola|hospital|posto|pr[eé]dio|condom[ií]nio)"
     r")\b"
 )
-_LUMINARIA_RISK_TRIGGER_RE = re.compile(r"(?i)\b(fio(?:s)?|cabo(?:s)?|f[aá]isca|choque)\b")
+_LUMINARIA_RISK_TRIGGER_RE = re.compile(
+    r"(?i)\b("
+    r"fio(?:s)?|fia[cç][aã]o|cabo(?:s)?|f[aá]isca|choque|"
+    r"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|dando\s+curto"
+    r")\b"
+)
 _LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
     rf"(?i)\b("
     rf"lumin[aá]rias?|ilumina[cç][aã]o|rio\s*-?\s*luz|rioluz|"

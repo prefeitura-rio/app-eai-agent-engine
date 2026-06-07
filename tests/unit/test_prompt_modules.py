@@ -601,6 +601,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="O poste caiu com fios expostos")]
     )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A fiação do poste está exposta")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste está energizado")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste está dando curto")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem curto-circuito no poste da praça")]
+    )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Como faço para solicitar poda de árvore?")]
     )
@@ -795,6 +807,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O cabo da Vivo no poste arrebentou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O cabo de internet está exposto no poste")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O fio da Claro está exposto na calçada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A tomada da sala está dando curto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O quadro de energia do prédio está energizado")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Minha internet da Rio Luz caiu")]
