@@ -48,8 +48,10 @@ from engine.interactive_tools import (
 )
 from engine.session_boundary import apply_session_reset, inject_close_directive
 from engine.log import logger
-from src.prompt_modules import INTERACTIVE_RESPONSE_DYNAMIC_ENABLED
-from src.prompt_modules.interactive_response import MODULE_PROMPT as INTERACTIVE_RESPONSE_PROMPT
+from engine.luminaria_interactive_prompt import (
+    MODULE_PROMPT as INTERACTIVE_RESPONSE_PROMPT,
+    interactive_response_dynamic_enabled,
+)
 
 # Error monitoring utilities (safe fallback if not available)
 from engine.utils import (
@@ -147,7 +149,7 @@ def _message_text_for_prompt_gate(content: Any) -> str:
 
 
 def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
-    if not INTERACTIVE_RESPONSE_DYNAMIC_ENABLED:
+    if not interactive_response_dynamic_enabled():
         return False
     for message in reversed(messages):
         if isinstance(message, HumanMessage):
