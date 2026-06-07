@@ -427,6 +427,8 @@ def test_interactive_response_enriches_luminaria_flow_body():
     assert "Informativo" in p
     assert "esta exceção vence a regra geral de buscar fonte oficial" in p
     assert "Só abra Flow se a mesma mensagem pedir abrir/registrar chamado para local concreto" in p
+    assert "Toda resposta informativa deve conter linha `Serviço: ...`" in p
+    assert "canal/prazo/link sem título oficial é incompleto" in p
     assert "Prazo para defeitos comuns: até 3 dias corridos" in p
     assert "site ou app 1746" in p
     assert "Acesa de dia" in p
@@ -434,6 +436,7 @@ def test_interactive_response_enriches_luminaria_flow_body():
     assert "Reparo de cabo de iluminação pública" in p
     assert "Não altere os títulos oficiais" in p
     assert "body=\"Reparo de cabo de iluminação pública (Rioluz)" in p
+    assert "Serviço: Reparo de cabo de iluminação pública" in p
     assert 'prefill_data={"defect_type": "Danificada"}' in p
     assert "adicione `qty_pattern` só se houver pista de quantidade" in p
     assert "Informe endereço completo e ponto de referência" in p
