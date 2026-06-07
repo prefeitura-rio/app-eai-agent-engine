@@ -145,6 +145,14 @@ _NON_LUMINARIA_PRIVATE_ASSET_RE = re.compile(
     r"jardim\s+(?:de\s+)?casa"
     r")\b"
 )
+_NON_LUMINARIA_POST_ASSET_RE = re.compile(
+    r"(?i)\bpostes?\s+(?:da|do|de|na|no|nas|nos)\s+("
+    r"(?:madeira\s+(?:da|do|de)\s+)?"
+    r"(?:cercas?|var(?:al|ais)|antenas?|placas?|alambrados?|"
+    r"redes?\s+de\s+v[oô]lei|s[ií]tios?|fazendas?|"
+    r"terrenos?|lotes?|quintais?|port[õo]es?|jardins?"
+    r"))\b"
+)
 _TELECOM_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
     r"(?i)\b("
     r"lumin[aá]rias?|l[aâ]mpadas?|"
@@ -240,6 +248,7 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 (
                     _NON_LUMINARIA_PRIVATE_PLACE_RE.search(text)
                     or _NON_LUMINARIA_PRIVATE_ASSET_RE.search(text)
+                    or _NON_LUMINARIA_POST_ASSET_RE.search(text)
                 )
                 and not _PRIVATE_PLACE_WITH_LUMINARIA_OVERRIDE_RE.search(text)
             ):
