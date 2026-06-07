@@ -1526,6 +1526,24 @@ def test_interactive_response_maps_wire_theft_to_valid_defect_type():
     assert "Nunca use `defect_type` fora dessa lista" in p
 
 
+def test_interactive_response_maps_common_defects_to_valid_defect_type():
+    """Defeitos comuns também devem usar IDs fechados do Flow.
+
+    O Flow não aceita valores como `Fraca`, `Intermitente` ou `Sem claridade`.
+    """
+    p = interactive_response.MODULE_PROMPT
+    expected = {
+        'defect_type="Apagada"': ("apagada", "sem claridade", "sem visibilidade"),
+        'defect_type="Piscando"': ("piscando", "oscilando", "uma sim uma não"),
+        'defect_type="Acesa de dia"': ("acesa de dia", "durante o dia"),
+        'defect_type="Danificada"': ("fraca", "mal iluminada", "fraquejando"),
+    }
+    for canonical, symptoms in expected.items():
+        assert canonical in p
+        for symptom in symptoms:
+            assert symptom in p
+
+
 def test_interactive_response_maps_noise_to_valid_defect_type():
     """Ruído/barulho deve usar ID canônico do Flow."""
     p = interactive_response.MODULE_PROMPT

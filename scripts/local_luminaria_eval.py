@@ -585,6 +585,20 @@ def _evaluate_prompt_contract() -> list[CheckResult]:
             "furto/cabo/fios deve mapear para defeito canonico do Flow",
         ),
         (
+            "common_defect_mapping",
+            True,
+            (
+                'defect_type="Apagada"' in INTERACTIVE_RESPONSE_PROMPT
+                and 'defect_type="Piscando"' in INTERACTIVE_RESPONSE_PROMPT
+                and 'defect_type="Acesa de dia"' in INTERACTIVE_RESPONSE_PROMPT
+                and "sem claridade" in INTERACTIVE_RESPONSE_PROMPT
+                and "uma sim uma não" in INTERACTIVE_RESPONSE_PROMPT
+                and "mal iluminada" in INTERACTIVE_RESPONSE_PROMPT
+                and "fraquejando" in INTERACTIVE_RESPONSE_PROMPT
+            ),
+            "defeitos comuns devem mapear para defect_type canonico do Flow",
+        ),
+        (
             "noise_defect_mapping",
             True,
             'defect_type="Com ruído"' in INTERACTIVE_RESPONSE_PROMPT,

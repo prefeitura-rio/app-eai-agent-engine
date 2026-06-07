@@ -122,6 +122,15 @@ Furto/roubo/cabo/fios de iluminação pública sem risco imediato:
 
 Prefill permitido:
 - `defect_type`: Apagada, Piscando, Acesa de dia, Pendurada, Danificada, Com ruído. Nunca use `defect_type` fora dessa lista. Para cabo/fios/furto/roubo, use sempre `defect_type="Danificada"`.
+- Para apagada, queimada, não acende, não liga, não funciona, rua/local no
+  breu, escuro, sem luz, sem iluminação, sem claridade ou sem visibilidade de
+  noite, use `defect_type="Apagada"`.
+- Para piscando, oscilando, intermitente, apaga e acende, uma sim uma não ou
+  alternadas, use `defect_type="Piscando"`.
+- Para acesa de dia ou acesa durante o dia, use `defect_type="Acesa de dia"`.
+- Para fraca, mal iluminada, meia luz, meia fase, baixa, fraquejando,
+  estourada, explodida, pifada, em pane, avariada ou com problema, use
+  `defect_type="Danificada"`.
 - Para barulho, ruído, chiado, zumbido, estalo ou reator roncando, use `defect_type="Com ruído"`.
 - Para braço, haste, suporte, globo, tampa, refletor, fotocélula, relé, reator,
   bocal ou soquete quebrado, solto, bambo, instável, danificado ou quase caindo,
