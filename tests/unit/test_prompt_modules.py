@@ -1372,6 +1372,42 @@ def test_analyzable_media_prompts_reject_telecom_before_luminaria_flow():
         )
 
 
+def test_analyzable_media_prompts_reject_private_luminaria_assets():
+    """Mídia/transcrição de ativo privado não deve virar reparo de luminária."""
+    prompts = {
+        "vision": vision_inbound.MODULE_PROMPT,
+        "audio": audio_inbound.MODULE_PROMPT,
+        "video": video_inbound.MODULE_PROMPT,
+    }
+    for name, prompt in prompts.items():
+        low = prompt.lower()
+        for private_place in ("loja", "restaurante", "prédio", "garagem", "sala"):
+            assert private_place in low, f"{name}: falta ativo privado {private_place}"
+        assert "não é reparo de iluminação pública" in low or "não trate como `reparo_luminaria`" in low, (
+            f"{name}: falta bloquear ativo privado antes do Flow"
+        )
+        assert "rioluz" in low and "luz" in low and "pública" in low, (
+            f"{name}: falta override público"
+        )
+        assert "em frente/perto" in low, f"{name}: falta preservar referência pública"
+
+
+def test_analyzable_media_prompts_map_noise_to_flow_defect_type():
+    """Mídia/transcrição com ruído de luminária deve prefillar `Com ruído`."""
+    prompts = {
+        "vision": vision_inbound.MODULE_PROMPT,
+        "audio": audio_inbound.MODULE_PROMPT,
+        "video": video_inbound.MODULE_PROMPT,
+    }
+    for name, prompt in prompts.items():
+        assert 'defect_type="Com ruído"' in prompt, (
+            f"{name}: falta mapeamento canonico de ruido"
+        )
+        low = prompt.lower()
+        for symptom in ("barulho", "ruído", "chiado", "zumbido", "estalo"):
+            assert symptom in low, f"{name}: falta sintoma de ruido {symptom}"
+
+
 # ---------- módulo audio_inbound ----------
 
 

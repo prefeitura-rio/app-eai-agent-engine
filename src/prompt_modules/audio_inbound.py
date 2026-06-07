@@ -58,6 +58,12 @@ se `analysis.transcricao` mencionar cabo/fio de internet, telefonia, TV a cabo,
 fibra ou operadora (Claro/Net/Vivo/Tim/Oi etc.), **não** trate como
 `reparo_luminaria` e não mande Flow. Oriente a operadora responsável, salvo se a
 mesma transcrição também mencionar claramente iluminação pública/Rioluz.
+Também não trate como `reparo_luminaria` quando a transcrição falar de
+luminária/lâmpada/luz/refletor de loja, mercado, bar, restaurante, shopping,
+escritório, clínica, prédio, garagem, portaria, quintal, sala, quarto, cozinha,
+varanda ou fachada privada. Só siga para luminária quando o relato indicar luz
+pública/Rioluz, poste da rua, calçada, praça, via pública ou em frente/perto de
+um ponto privado mas claramente no espaço público.
 
 Use `analysis.workflow_sugerido` pra decidir:
 
@@ -67,6 +73,8 @@ Use `analysis.workflow_sugerido` pra decidir:
   direto daqui nem peça/valide o endereço: o workflow (e o endereço) só vêm depois do
   `nfm_reply` do Flow. (Só se não houver Flow disponível pro service, aí sim
   `multi_step_service(service_name="reparo_luminaria")`.)
+  Para barulho, ruído, chiado, zumbido, estalo ou reator roncando em luminária
+  pública, preencha `defect_type="Com ruído"`.
 - `poda_de_arvore` → confirme (se `confianca >= media`) e chame
   `multi_step_service(service_name="poda_de_arvore")` direto — poda **não** tem Flow.
 - `nenhum` → use `analysis.transcricao` como mensagem real do cidadão e
