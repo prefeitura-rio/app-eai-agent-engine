@@ -455,6 +455,33 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A avenida está escura")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está escuro na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tá muito escuro na avenida")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Sem luz na praça")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Sem iluminação na calçada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está no breu no ponto de ônibus")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está na escuridão no beco")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Sem claridade na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está mal iluminado no parque")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tá escuro na esquina")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A rua está no breu")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1061,7 +1088,34 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A garagem está sem claridade")]
     )
     assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está escuro no quarto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Sem luz na garagem")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Sem iluminação na sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está no breu no quintal")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está na escuridão na sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está mal iluminado na cozinha")]
+    )
+    assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A Rua das Flores não está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não está escuro na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não está sem luz na praça")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não está sem iluminação na calçada")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A rua não está no breu")]

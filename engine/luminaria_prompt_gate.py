@@ -50,6 +50,15 @@ _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE = re.compile(
     rf"visibilidade\s+(?:de\s+noite|[àa]\s+noite))|"
     rf"mal\s+iluminad[ao]s?)\b"
 )
+_LUMINARIA_INVERTED_DARK_PUBLIC_PLACE_RE = re.compile(
+    rf"(?i)\b("
+    rf"(?:(?:est[aá]|t[aá]|ficou|ficaram|fica|ficam)\s+(?:muito\s+)?"
+    rf"(?:escur[ao]s?|(?:no|na|um)\s+breu|na\s+escurid[aã]o|"
+    rf"mal\s+iluminad[ao]s?))|"
+    rf"sem\s+(?:luz|ilumina[cç][aã]o|claridade|"
+    rf"visibilidade\s+(?:de\s+noite|[àa]\s+noite))"
+    rf")\s+(?:na|no|nas|nos|em)\s+(?:{_LUMINARIA_PUBLIC_PLACE_PATTERN})\b"
+)
 _LUMINARIA_LAMP_TRIGGER_RE = re.compile(r"(?i)\bl[aâ]mpadas?\b")
 _LUMINARIA_POST_TRIGGER_RE = re.compile(r"(?i)\bpostes?\b")
 _LUMINARIA_LIGHT_TRIGGER_RE = re.compile(
@@ -288,9 +297,12 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 return False
             if _LUMINARIA_SCOPE_NEGATION_RE.search(text):
                 return False
+            if _LUMINARIA_NEGATED_NO_ISSUE_RE.search(text):
+                return False
             if (
                 _LUMINARIA_CORE_TRIGGER_RE.search(text)
                 or _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE.search(text)
+                or _LUMINARIA_INVERTED_DARK_PUBLIC_PLACE_RE.search(text)
             ):
                 return True
             has_public_lighting_context = (
@@ -330,7 +342,6 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                     or has_fixture_public_context
                 )
                 and not _NON_LUMINARIA_SERVICE_RE.search(text)
-                and not _LUMINARIA_NEGATED_NO_ISSUE_RE.search(text)
             ):
                 return True
             return bool(
