@@ -360,6 +360,8 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "templates oficiais" in p
     assert "Bombeiros (193) ou Polícia Militar (190)" in p
     assert "Remoção do risco em até 6 horas" in p
+    assert "Nunca encerre perigo só nos telefones" in p
+    assert "a resposta é incompleta se não trouxer serviço, prazo de 6h e link" in p
     assert "Se o poste/rede não for da Rioluz" in p
     assert "Light/distribuição elétrica" in p
     assert "redirecionar para a Light ou operadora responsável" in p
@@ -399,7 +401,8 @@ def test_interactive_response_routes_luminaria_implantation_before_repair_flow()
     assert "luz mais forte" in p
     assert "Implantação de iluminação pública" in p
     assert "não abra Flow de reparo" in p
-    assert "use `google_search` se precisar URL atual" in p
+    assert "Responda diretamente com esse título oficial" in p
+    assert "não use `google_search` salvo se o cidadão pedir link/URL direto" in p
     assert "endereço + referência + descrição" in p
     assert "Rioluz avalia/executa" in p
     assert "Reinstalação de ponto de luz" in p
