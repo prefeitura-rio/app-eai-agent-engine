@@ -357,6 +357,7 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "não envie o Flow como primeira ação" in p
     assert "Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "até 6 horas" in p
+    assert "Serviço: Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "redireciona para a Light" in p
 
 
@@ -408,6 +409,9 @@ def test_interactive_response_enriches_luminaria_flow_body():
         "Reparo-de-Lumin%C3%A1ria"
     ) in p
     assert "Para \"qual número\"" in p
+    assert "não abra Flow" in p
+    assert "mesmo que a pergunta cite exemplo de luminária apagada/queimada" in p
+    assert "sobre o Flow-first" in p
     assert "nome do serviço oficial e o link aplicável" in p
     assert "site ou app 1746" in p
     assert "Acesa de dia" in p
