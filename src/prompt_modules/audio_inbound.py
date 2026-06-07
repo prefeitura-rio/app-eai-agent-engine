@@ -53,6 +53,12 @@ volte ao protocolo do módulo "Recepção de mídia".
 
 ### Workflows triggerable a partir da transcrição
 
+Antes de seguir `analysis.workflow_sugerido`, aplique a triagem de escopo:
+se `analysis.transcricao` mencionar cabo/fio de internet, telefonia, TV a cabo,
+fibra ou operadora (Claro/Net/Vivo/Tim/Oi etc.), **não** trate como
+`reparo_luminaria` e não mande Flow. Oriente a operadora responsável, salvo se a
+mesma transcrição também mencionar claramente iluminação pública/Rioluz.
+
 Use `analysis.workflow_sugerido` pra decidir:
 
 - `reparo_luminaria` → confirme se `confianca >= media` e **mande o Flow primeiro**:

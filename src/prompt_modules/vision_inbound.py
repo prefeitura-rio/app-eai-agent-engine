@@ -58,9 +58,10 @@ chamado de luminária, independentemente do `workflow_sugerido`:
   **Light (0800 0210196)** quando envolver a rede elétrica (poste/fios da
   concessionária). Deixe claro que é prioridade de emergência, não um chamado comum.
 - **Fora do escopo deste serviço** — se a imagem é de **falta de energia**, luz
-  apagada **dentro de casa/imóvel**, ou **semáforo** apagado: o reparo de
-  iluminação pública NÃO cobre esses casos. Oriente a acionar a **Light pelo
-  0800 0210196** (energia/semáforo) e não abra chamado de luminária.
+  apagada **dentro de casa/imóvel**, **semáforo** apagado, ou cabo/fio de
+  **internet, telefonia, TV a cabo, fibra ou operadora**: o reparo de iluminação
+  pública NÃO cobre esses casos. Oriente a acionar a **Light pelo 0800 0210196**
+  (energia/semáforo) ou a operadora responsável (telecom/fibra) e não abra chamado de luminária.
 
 Só siga pro `workflow_sugerido` quando a foto for de fato **iluminação pública**
 (poste/luminária da via apagada, piscando ou danificada) **sem** risco iminente.

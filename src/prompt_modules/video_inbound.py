@@ -36,6 +36,12 @@ O `analysis` retornado tem o seguinte schema:
 
 ### Workflows triggerable a partir da análise do vídeo
 
+Antes de seguir `analysis.workflow_sugerido`, aplique a triagem de escopo:
+se a descrição ou `transcricao_audio` indicar cabo/fio de internet, telefonia,
+TV a cabo, fibra ou operadora (Claro/Net/Vivo/Tim/Oi etc.), **não** trate como
+`reparo_luminaria` e não mande Flow. Oriente a operadora responsável, salvo se o
+mesmo vídeo também mostrar/mencionar claramente iluminação pública/Rioluz.
+
 Use `analysis.workflow_sugerido` pra decidir o próximo passo:
 
 - `reparo_luminaria` → confirme e **mande o Flow primeiro**:

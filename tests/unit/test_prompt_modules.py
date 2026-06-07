@@ -20,6 +20,7 @@ from src.prompt_modules import (
     media_inbound,
     session_close,
     session_reset,
+    video_inbound,
     vision_inbound,
     workflow_continuation,
 )
@@ -736,6 +737,24 @@ def test_vision_inbound_prompt_has_safety_and_out_of_scope_routing():
         "Falta a noção de risco iminente / perigo na análise visual"
     )
     assert "escopo" in low, "Falta a noção de fora de escopo na análise visual"
+
+
+def test_analyzable_media_prompts_reject_telecom_before_luminaria_flow():
+    """Mídia/transcrição de cabo de telecom não deve virar Flow de luminária."""
+    prompts = {
+        "vision": vision_inbound.MODULE_PROMPT,
+        "audio": audio_inbound.MODULE_PROMPT,
+        "video": video_inbound.MODULE_PROMPT,
+    }
+    for name, prompt in prompts.items():
+        low = prompt.lower()
+        assert "internet" in low, f"{name}: falta internet como fora de escopo"
+        assert "telefonia" in low, f"{name}: falta telefonia como fora de escopo"
+        assert "fibra" in low, f"{name}: falta fibra como fora de escopo"
+        assert "operadora" in low, f"{name}: falta operadora responsavel"
+        assert "não mande flow" in low or "não abra chamado de luminária" in low, (
+            f"{name}: falta bloquear Flow/chamado de luminária para telecom"
+        )
 
 
 # ---------- módulo audio_inbound ----------
