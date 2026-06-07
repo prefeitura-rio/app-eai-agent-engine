@@ -135,6 +135,15 @@ _LUMINARIA_LAMP_TRIGGER_RE = re.compile(
 _LUMINARIA_POST_TRIGGER_RE = re.compile(
     r"(?i)\bposte\b"
 )
+_LUMINARIA_LIGHT_TRIGGER_RE = re.compile(
+    r"(?i)\b(luz|ilumina[cç][aã]o)\b"
+)
+_LUMINARIA_PUBLIC_LOCATION_RE = re.compile(
+    r"(?i)\b("
+    r"poste|rua|cal[cç]ada|via\s+p[uú]blica|pra[cç]a|parque|quadra|"
+    r"rioluz"
+    r")\b"
+)
 _LUMINARIA_PUBLIC_PLACE_RE = re.compile(
     r"(?i)\b("
     r"poste|rua|cal[cç]ada|via\s+p[uú]blica|pra[cç]a|parque|quadra|"
@@ -191,6 +200,10 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
             text = _message_text_for_prompt_gate(message.content)
             if _LUMINARIA_CORE_TRIGGER_RE.search(text):
                 return True
+            has_public_lighting_context = (
+                _LUMINARIA_LIGHT_TRIGGER_RE.search(text)
+                and _LUMINARIA_PUBLIC_LOCATION_RE.search(text)
+            )
             has_lamp_public_context = (
                 _LUMINARIA_LAMP_TRIGGER_RE.search(text)
                 and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
@@ -200,7 +213,11 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
             )
             if (
-                (has_lamp_public_context or has_post_context)
+                (
+                    has_public_lighting_context
+                    or has_lamp_public_context
+                    or has_post_context
+                )
                 and not _NON_LUMINARIA_SERVICE_RE.search(text)
             ):
                 return True

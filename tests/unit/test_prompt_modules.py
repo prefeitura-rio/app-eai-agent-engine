@@ -370,6 +370,12 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A rua está escura porque a iluminação pública falhou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A iluminação da minha rua apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da praça apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Tem fio caído com faísca perto do poste da Rioluz")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -397,6 +403,12 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A lâmpada do quarto queimou")]
     )
     assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A iluminação da sala está ruim")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz acabou na minha casa")]
+    )
+    assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O semáforo apagou no cruzamento")]
     )
 
@@ -419,6 +431,44 @@ def test_interactive_response_dynamic_prompt_keeps_system_order():
         "HumanMessage",
     ]
     assert injected[1].content == interactive_response.MODULE_PROMPT
+
+
+def test_interactive_response_dynamic_gate_uses_latest_human_turn_only():
+    """Histórico antigo de luminária não contamina o próximo serviço."""
+    from engine.agent import _should_inject_interactive_response_prompt
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    assert not _should_inject_interactive_response_prompt(
+        [
+            HumanMessage(content="A luminária da rua está apagada"),
+            AIMessage(content="[Flow de luminária]"),
+            HumanMessage(content="Agora quero solicitar poda de árvore"),
+        ]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [
+            HumanMessage(content="Como faço para solicitar poda de árvore?"),
+            AIMessage(content="Posso te orientar."),
+            HumanMessage(content="Também tem uma luminária apagada na rua"),
+        ]
+    )
+
+
+def test_interactive_response_dynamic_gate_reads_multipart_text_blocks():
+    """Mensagens multimodais preservam texto suficiente para o gate."""
+    from engine.agent import _should_inject_interactive_response_prompt
+    from langchain_core.messages import HumanMessage
+
+    assert _should_inject_interactive_response_prompt(
+        [
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": "A luminária da rua apagou"},
+                    {"type": "image_url", "image_url": {"url": "https://example/img"}},
+                ]
+            )
+        ]
+    )
 
 
 def test_interactive_response_maps_wire_theft_to_valid_defect_type():
