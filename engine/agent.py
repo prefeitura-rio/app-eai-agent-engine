@@ -1127,6 +1127,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 max_size=10,
                 timeout=30.0,
                 open=True,  # Auto-open on creation
+                check=AsyncConnectionPool.check_connection,  # Validate before use — discards idle-timeout'd connections
+                reconnect_timeout=60,  # Keep retrying to reconnect for up to 60s before raising
+                max_idle=300,  # Close connections idle for 5+ min before the DB kills them server-side
             )
             logger.info("[Agent Setup] ✓ Connection pool created")
 
