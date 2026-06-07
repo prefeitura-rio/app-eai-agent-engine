@@ -1,0 +1,219 @@
+"""Pure local gate for the dynamic `reparo_luminaria` prompt."""
+
+import re
+from typing import Any
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from engine.luminaria_interactive_prompt import (
+    MODULE_PROMPT as INTERACTIVE_RESPONSE_PROMPT,
+    interactive_response_dynamic_enabled,
+)
+
+
+_LUMINARIA_PUBLIC_PLACE_PATTERN = (
+    r"ruas?|avenidas?|travessas?|estradas?|becos?|vielas?|cal[cç]adas?|"
+    r"pra[cç]as?|parques?|quadras?|vias?\s+p[uú]blicas?|"
+    r"t[uú]ne(?:l|is)|viadutos?|passarelas?|ciclovias?|escadarias?|orlas?|"
+    r"pontos?\s+de\s+[ôo]nibus|"
+    r"esta[cç][aã]o\s+(?:do|de)\s+brt|"
+    r"esta[cç][õo]es\s+(?:do|de)\s+brt"
+)
+
+
+_LUMINARIA_CORE_TRIGGER_RE = re.compile(
+    rf"(?i)\b("
+    rf"lumin[aá]rias?|rio\s*-?\s*luz|rioluz|"
+    rf"ilumina[cç][aã]o\s+p[uú]blica|"
+    rf"luz\s+p[uú]blica|"
+    rf"(?:{_LUMINARIA_PUBLIC_PLACE_PATTERN})"
+    rf"\s+(?:(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|ficam|fica)\s+)?"
+    rf"escur[ao]s?"
+    rf")\b"
+)
+_LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE = re.compile(
+    rf"(?i)\b(?:{_LUMINARIA_PUBLIC_PLACE_PATTERN})"
+    rf"(?:\s+(?!n[aã]o\b|est[aá]\b|est[aã]o\b|t[aá]\b|"
+    rf"ficou\b|ficaram\b|ficam\b|fica\b|sem\b|escur[ao]s?\b|"
+    rf"no\b|[àa]s\b)[\wÀ-ÿ0-9.-]+){{0,6}}"
+    rf"\s+(?:(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|ficam|fica)\s+"
+    rf"(?:muito\s+)?)?"
+    rf"(?:escur[ao]s?|no\s+escuro|[àa]s\s+escuras|"
+    rf"sem\s+(?:ilumina[cç][aã]o|luz))\b"
+)
+_LUMINARIA_LAMP_TRIGGER_RE = re.compile(r"(?i)\bl[aâ]mpadas?\b")
+_LUMINARIA_POST_TRIGGER_RE = re.compile(r"(?i)\bpostes?\b")
+_LUMINARIA_LIGHT_TRIGGER_RE = re.compile(
+    r"(?i)\b(luz(?:es)?|ilumina[cç][aã]o)\b"
+)
+_LUMINARIA_PUBLIC_LOCATION_RE = re.compile(
+    rf"(?i)\b(postes?|{_LUMINARIA_PUBLIC_PLACE_PATTERN}|rio\s*-?\s*luz|rioluz)\b"
+)
+_LUMINARIA_PUBLIC_PLACE_RE = re.compile(
+    rf"(?i)\b("
+    rf"postes?|{_LUMINARIA_PUBLIC_PLACE_PATTERN}|"
+    rf"luz\s+p[uú]blica|ilumina[cç][aã]o|p[uú]blic[ao]|"
+    rf"rio\s*-?\s*luz|rioluz"
+    rf")\b"
+)
+_LUMINARIA_ASSET_CONTEXT_RE = re.compile(
+    rf"(?i)\b("
+    rf"{_LUMINARIA_PUBLIC_PLACE_PATTERN}|"
+    rf"luz(?:es)?|ilumina[cç][aã]o|p[uú]blic[ao]|rio\s*-?\s*luz|rioluz|"
+    rf"apagad[ao]s?|"
+    rf"apagou|queimad[ao]|queimou|piscando|piscou|aces[ao]|"
+    rf"pendurad[ao]|danificad[ao]|"
+    rf"ca[ií]d[ao]|caiu|escur[ao]s?|sem\s+luz"
+    rf")\b"
+)
+_LUMINARIA_RISK_TRIGGER_RE = re.compile(r"(?i)\b(fio(?:s)?|cabo(?:s)?|f[aá]isca|choque)\b")
+_LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
+    rf"(?i)\b("
+    rf"lumin[aá]rias?|ilumina[cç][aã]o|rio\s*-?\s*luz|rioluz|"
+    rf"l[aâ]mpadas?|postes?|luz\s+p[uú]blica|"
+    rf"{_LUMINARIA_PUBLIC_PLACE_PATTERN}"
+    rf")\b"
+)
+_NON_LUMINARIA_TELECOM_RE = re.compile(
+    r"(?i)\b("
+    r"internet|telefon(?:e|ia)|tv\s+a\s+cabo|fibra(?:\s+[óo]ptica)?|"
+    r"banda\s+larga|provedor|operadora|"
+    r"(?:cabo|fio)s?\s+(?:da|do|de)\s+(?:claro|net|vivo|tim|oi)|"
+    r"(?:claro|net|vivo|tim|oi)\s+(?:fibra|internet|telefone|tv|cabo)"
+    r")\b"
+)
+_NON_LUMINARIA_DISTRIBUTION_RE = re.compile(
+    r"(?i)\b("
+    r"light|concession[aá]ria|rede\s+el[eé]trica|energia|"
+    r"medidor|padr[aã]o\s+de\s+entrada|liga[cç][aã]o\s+nova"
+    r")\b"
+)
+_NON_LUMINARIA_POWER_OUTAGE_RE = re.compile(
+    r"(?i)\b("
+    r"(?:falta(?:ndo)?|acabou|queda)\s+(?:de\s+)?(?:luz|energia)|"
+    r"sem\s+energia|falta\s+de\s+energia"
+    r")\b"
+)
+_TELECOM_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
+    r"(?i)\b("
+    r"lumin[aá]rias?|l[aâ]mpadas?|"
+    r"luz\s+p[uú]blica|ilumina[cç][aã]o\s+p[uú]blica"
+    r")\b"
+)
+_POWER_OUTAGE_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
+    r"(?i)\b("
+    r"lumin[aá]rias?|l[aâ]mpadas?|postes?|rio\s*-?\s*luz|rioluz|"
+    r"luz\s+p[uú]blica|ilumina[cç][aã]o\s+p[uú]blica"
+    r")\b"
+)
+_NON_LUMINARIA_SERVICE_RE = re.compile(
+    r"(?i)\b([aá]rvore|poda|galho|sem[aá]foro|internet|telefone|tv\s+a\s+cabo)\b"
+)
+_LUMINARIA_RISK_OVERRIDE_RE = re.compile(r"(?i)\b(f[aá]isca|choque|rioluz)\b")
+_LUMINARIA_NEGATED_NO_ISSUE_RE = re.compile(
+    r"(?i)\bn[aã]o\s+(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|fica|ficam)\s+"
+    r"(?:sem\s+(?:ilumina[cç][aã]o|luz)|escur[ao]s?|"
+    r"no\s+escuro|[àa]s\s+escuras)\b"
+)
+_WHATSAPP_FLOW_SUBMISSION_RE = re.compile(
+    r"(?i)^\s*\[SYSTEM\]\s*O cidad[aã]o preencheu o formul[aá]rio WhatsApp"
+)
+
+
+def _message_text_for_prompt_gate(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(parts)
+    return ""
+
+
+def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
+    if not interactive_response_dynamic_enabled():
+        return False
+    for message in reversed(messages):
+        if isinstance(message, HumanMessage):
+            text = _message_text_for_prompt_gate(message.content)
+            if _WHATSAPP_FLOW_SUBMISSION_RE.search(text):
+                return False
+            has_immediate_public_risk = (
+                _LUMINARIA_RISK_OVERRIDE_RE.search(text)
+                and _LUMINARIA_PUBLIC_CONTEXT_RE.search(text)
+            )
+            if (
+                _NON_LUMINARIA_TELECOM_RE.search(text)
+                and not _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+            ):
+                return False
+            if (
+                _NON_LUMINARIA_DISTRIBUTION_RE.search(text)
+                and not _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+                and not has_immediate_public_risk
+            ):
+                return False
+            if (
+                _NON_LUMINARIA_POWER_OUTAGE_RE.search(text)
+                and not _POWER_OUTAGE_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+            ):
+                return False
+            if (
+                _LUMINARIA_CORE_TRIGGER_RE.search(text)
+                or _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE.search(text)
+            ):
+                return True
+            has_public_lighting_context = (
+                _LUMINARIA_LIGHT_TRIGGER_RE.search(text)
+                and _LUMINARIA_PUBLIC_LOCATION_RE.search(text)
+            )
+            has_lamp_public_context = (
+                _LUMINARIA_LAMP_TRIGGER_RE.search(text)
+                and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
+            )
+            has_post_context = (
+                _LUMINARIA_POST_TRIGGER_RE.search(text)
+                and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+            )
+            if (
+                (
+                    has_public_lighting_context
+                    or has_lamp_public_context
+                    or has_post_context
+                )
+                and not _NON_LUMINARIA_SERVICE_RE.search(text)
+                and not _LUMINARIA_NEGATED_NO_ISSUE_RE.search(text)
+            ):
+                return True
+            return bool(
+                _LUMINARIA_RISK_TRIGGER_RE.search(text)
+                and _LUMINARIA_PUBLIC_CONTEXT_RE.search(text)
+                and not (
+                    _NON_LUMINARIA_SERVICE_RE.search(text)
+                    and not _LUMINARIA_RISK_OVERRIDE_RE.search(text)
+                )
+            )
+    return False
+
+
+def _inject_interactive_response_prompt(messages: list[Any]) -> list[Any]:
+    if any(
+        isinstance(message, SystemMessage)
+        and message.content == INTERACTIVE_RESPONSE_PROMPT
+        for message in messages
+    ):
+        return messages
+
+    injected = SystemMessage(content=INTERACTIVE_RESPONSE_PROMPT)
+    insert_at = 0
+    for index, message in enumerate(messages):
+        if not isinstance(message, SystemMessage):
+            break
+        insert_at = index + 1
+    return [*messages[:insert_at], injected, *messages[insert_at:]]

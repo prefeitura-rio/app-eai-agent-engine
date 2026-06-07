@@ -361,7 +361,7 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
 
         pytest.skip("ENABLE_INTERACTIVE_RESPONSE=false")
 
-    from engine.agent import _should_inject_interactive_response_prompt
+    from engine.luminaria_prompt_gate import _should_inject_interactive_response_prompt
     from langchain_core.messages import HumanMessage
 
     assert _should_inject_interactive_response_prompt(
@@ -632,7 +632,7 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
 
 def test_interactive_response_dynamic_prompt_keeps_system_order():
     """Prompt dinâmico entra como SystemMessage antes da conversa."""
-    from engine.agent import _inject_interactive_response_prompt
+    from engine.luminaria_prompt_gate import _inject_interactive_response_prompt
     from langchain_core.messages import HumanMessage, SystemMessage
 
     messages = [
@@ -652,7 +652,7 @@ def test_interactive_response_dynamic_prompt_keeps_system_order():
 
 def test_interactive_response_dynamic_prompt_preserves_trailing_directives():
     """Diretivas transitórias no fim continuam com maior precedência."""
-    from engine.agent import _inject_interactive_response_prompt
+    from engine.luminaria_prompt_gate import _inject_interactive_response_prompt
     from engine.session_boundary import CLOSE_DIRECTIVE
     from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -677,7 +677,7 @@ def test_interactive_response_dynamic_prompt_preserves_trailing_directives():
 
 def test_interactive_response_dynamic_gate_uses_latest_human_turn_only():
     """Histórico antigo de luminária não contamina o próximo serviço."""
-    from engine.agent import _should_inject_interactive_response_prompt
+    from engine.luminaria_prompt_gate import _should_inject_interactive_response_prompt
     from langchain_core.messages import AIMessage, HumanMessage
 
     assert not _should_inject_interactive_response_prompt(
@@ -698,7 +698,7 @@ def test_interactive_response_dynamic_gate_uses_latest_human_turn_only():
 
 def test_interactive_response_dynamic_gate_reads_multipart_text_blocks():
     """Mensagens multimodais preservam texto suficiente para o gate."""
-    from engine.agent import _should_inject_interactive_response_prompt
+    from engine.luminaria_prompt_gate import _should_inject_interactive_response_prompt
     from langchain_core.messages import HumanMessage
 
     assert _should_inject_interactive_response_prompt(
@@ -715,7 +715,7 @@ def test_interactive_response_dynamic_gate_reads_multipart_text_blocks():
 
 def test_interactive_response_dynamic_gate_skips_whatsapp_flow_submission():
     """Submissão do Flow é tratada pelo módulo global whatsapp_flow_inbound."""
-    from engine.agent import _should_inject_interactive_response_prompt
+    from engine.luminaria_prompt_gate import _should_inject_interactive_response_prompt
     from langchain_core.messages import AIMessage, HumanMessage
 
     flow_submission = (

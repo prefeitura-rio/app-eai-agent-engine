@@ -22,7 +22,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from engine.agent import (
+from engine.luminaria_prompt_gate import (
     INTERACTIVE_RESPONSE_PROMPT,
     _inject_interactive_response_prompt,
     _should_inject_interactive_response_prompt,
