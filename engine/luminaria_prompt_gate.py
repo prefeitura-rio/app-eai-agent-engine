@@ -33,7 +33,8 @@ _LUMINARIA_CORE_TRIGGER_RE = re.compile(
     rf"luz\s+p[uú]blica|"
     rf"(?:{_LUMINARIA_PUBLIC_PLACE_PATTERN})"
     rf"\s+(?:(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|ficam|fica)\s+)?"
-    rf"escur[ao]s?"
+    rf"(?:escur[ao]s?|(?:no|na|um)\s+breu|na\s+escurid[aã]o|"
+    rf"sem\s+(?:claridade|visibilidade\s+(?:de\s+noite|[àa]\s+noite)))"
     rf")\b"
 )
 _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE = re.compile(
@@ -44,7 +45,10 @@ _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE = re.compile(
     rf"\s+(?:(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|ficam|fica)\s+"
     rf"(?:muito\s+)?)?"
     rf"(?:escur[ao]s?|no\s+escuro|[àa]s\s+escuras|"
-    rf"sem\s+(?:ilumina[cç][aã]o|luz)|mal\s+iluminad[ao]s?)\b"
+    rf"(?:no|na|um)\s+breu|na\s+escurid[aã]o|"
+    rf"sem\s+(?:ilumina[cç][aã]o|luz|claridade|"
+    rf"visibilidade\s+(?:de\s+noite|[àa]\s+noite))|"
+    rf"mal\s+iluminad[ao]s?)\b"
 )
 _LUMINARIA_LAMP_TRIGGER_RE = re.compile(r"(?i)\bl[aâ]mpadas?\b")
 _LUMINARIA_POST_TRIGGER_RE = re.compile(r"(?i)\bpostes?\b")
@@ -209,7 +213,10 @@ _LUMINARIA_NEGATED_NO_ISSUE_RE = re.compile(
     rf"(?i)\b("
     rf"n[aã]o\s+(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|fica|ficam)\s+"
     rf"(?:sem\s+(?:ilumina[cç][aã]o|luz)|escur[ao]s?|"
-    rf"no\s+escuro|[àa]s\s+escuras|mal\s+iluminad[ao]s?)|"
+    rf"no\s+escuro|[àa]s\s+escuras|(?:no|na|um)\s+breu|"
+    rf"na\s+escurid[aã]o|sem\s+(?:claridade|"
+    rf"visibilidade\s+(?:de\s+noite|[àa]\s+noite))|"
+    rf"mal\s+iluminad[ao]s?)|"
     rf"(?:{_LUMINARIA_PUBLIC_PLACE_PATTERN})"
     rf"(?:\s+[\wÀ-ÿ0-9.-]+){{0,6}}\s+"
     rf"n[aã]o\s+precisa\s+de\s+"
