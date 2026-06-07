@@ -359,6 +359,8 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "Serviço: Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "templates oficiais" in p
     assert "Bombeiros (193) ou Polícia Militar (190)" in p
+    assert "Cite literalmente os quatro canais" in p
+    assert "não substitua por só Defesa Civil/Light" in p
     assert "Remoção do risco em até 6 horas" in p
     assert "Nunca encerre perigo só nos telefones" in p
     assert "a resposta é incompleta se não trouxer serviço, prazo de 6h e link" in p
@@ -442,6 +444,7 @@ def test_interactive_response_enriches_luminaria_flow_body():
     assert "de forma anônima" in p
     assert "pedido anônimo" in p
     assert "telefone 1746 e (21) 3460-1746 de fora do município" in p
+    assert "Em pergunta de cabo/furto, a resposta é incompleta" in p
     assert "retirada de risco imediata" in p
     assert "Rioluz" in p
     assert "até 3 dias corridos" in p
