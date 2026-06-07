@@ -680,6 +680,15 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A lâmpada perto do nº 200 está piscando")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Luz em frente minha casa apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Lâmpada frente minha casa queimada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz frente meu portão apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A lâmpada da Tv. Alice queimou")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1352,10 +1361,16 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A lâmpada da cozinha queimou")]
     )
     assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Lâmpada minha casa queimada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz da varanda apagou")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A lâmpada em frente ao espelho queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Lâmpada frente minha cama queimada")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A TV em frente ao número 50 apagou")]

@@ -155,6 +155,8 @@ _LUMINARIA_SERVICE_INTENT_CONTEXT_RE = re.compile(
 )
 _LUMINARIA_PROXIMITY_CONTEXT_RE = re.compile(
     r"(?i)\b("
+    r"(?:em\s+)?frente\s+(?:(?:minha|nossa)\s+casa|"
+    r"(?:meu|nosso)\s+port[aã]o)|"
     r"em\s+frente\s+(?:a|ao|[àa]|da|do|de)\s+(?:minha\s+)?(?:casa|"
     r"(?:n[uú]mero|num(?:ero)?|n[º°.]?|\d+)|"
     r"mercado|bar|loja|com[eé]rcio|"
