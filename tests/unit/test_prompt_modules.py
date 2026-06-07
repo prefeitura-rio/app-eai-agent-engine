@@ -665,6 +665,21 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A luz em frente a UPA apagou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz na porta da minha casa apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada na porta da escola queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz ao lado da igreja está piscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada atrás do mercado está queimada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do lado da UPA apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz perto da minha casa apagou")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1293,6 +1308,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luminária da UPA está com problema")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da porta da minha casa apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da porta da escola queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz lateral da igreja está piscando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada dos fundos do mercado queimou")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luminária do prédio apagou")]
