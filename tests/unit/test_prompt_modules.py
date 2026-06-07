@@ -650,6 +650,27 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="O cabo da Rioluz arrebentou no poste")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Roubaram os fios da iluminação pública")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Furtaram o cabo da luminária da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Levaram a fiação do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Cortaram os fios da Rioluz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da rua foi vandalizado")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da praça foi depredada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quebraram a luminária da calçada de propósito")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Quero pedir mais postes na minha rua")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -942,6 +963,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O quadro de energia do prédio está energizado")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Roubaram meu celular na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Furtaram o cabo da internet")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Levaram a fiação da minha casa")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Cortaram os fios da Claro")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O portão foi vandalizado")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da sala foi quebrada de propósito")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Quero pedir mais postes de energia para a Light")]
