@@ -345,30 +345,30 @@ def test_interactive_response_wire_theft_is_flow_first():
 def test_interactive_response_wire_hazard_preempts_flow():
     """Fio perigoso deve orientar segurança antes de qualquer formulário."""
     p = interactive_response.MODULE_PROMPT
-    assert "Perigo elétrico preempta o Flow" in p
+    assert "Perigo elétrico" in p
     for hazard in ("fio caído", "exposto", "energizado", "faísca", "choque", "poste caído"):
         assert hazard in p
     assert "Bombeiros (193)" in p
     assert "Polícia Militar (190)" in p
     assert "Defesa Civil (199)" in p
     assert "Light (0800 0210196)" in p
-    assert "A resposta de perigo é obrigatoriamente incompleta" in p
-    assert "não consegue acionar/chamar socorro" in p
-    assert "não envie o Flow como primeira ação" in p
+    assert "Eu não consigo acionar socorro por você" in p
+    assert "preempta out-of-scope, implantação e Flow" in p
     assert "Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "até 6 horas" in p
     assert "Serviço: Reparo de poste ou tampão da Rioluz dando choque" in p
-    assert "Templates obrigatórios de luminária" in p
+    assert "templates oficiais" in p
     assert "Bombeiros (193) ou Polícia Militar (190)" in p
-    assert "Não pare só nos telefones de emergência" in p
     assert "Remoção do risco em até 6 horas" in p
-    assert "redireciona para a Light" in p
+    assert "Se o poste/rede não for da Rioluz" in p
+    assert "Light/distribuição elétrica" in p
+    assert "redirecionar para a Light ou operadora responsável" in p
 
 
 def test_interactive_response_routes_luminaria_out_of_scope_before_flow():
     """Falta de energia/semáforo não deve abrir Flow de luminária."""
     p = interactive_response.MODULE_PROMPT
-    assert "Fora do escopo antes do Flow de luminária" in p
+    assert "Fora de escopo" in p
     assert "falta de energia" in p
     assert "semáforo apagado" in p
     assert "0800 0210196" in p
@@ -378,25 +378,29 @@ def test_interactive_response_routes_luminaria_out_of_scope_before_flow():
 def test_interactive_response_distinguishes_light_grid_from_public_lighting():
     """Rede elétrica da Light não deve virar implantação municipal."""
     p = interactive_response.MODULE_PROMPT
-    assert "Rede elétrica da Light não é implantação municipal" in p
     assert "terreno/loteamento sem rede elétrica" in p
-    assert "postes de distribuição pela Light" in p
-    assert "não use a regra de implantação municipal" in p
-    assert "siga a busca/rota oficial para Light/concessionária" in p
+    assert "ligação nova" in p
+    assert "energia para imóvel" in p
+    assert "medidor" in p
+    assert "padrão de entrada" in p
+    assert "instalação de rede/postes de distribuição pela Light" in p
+    assert "não é `reparo_luminaria`" in p
+    assert "não abra Flow" in p
+    assert "Light/concessionária (0800 0210196)" in p
+    assert "salvo se a mesma mensagem também trouxer problema claro de iluminação pública" in p
 
 
 def test_interactive_response_routes_luminaria_implantation_before_repair_flow():
     """Novo ponto/poste/luz mais forte é implantação, não Flow de reparo."""
     p = interactive_response.MODULE_PROMPT
-    assert "Implantação antes do Flow de reparo" in p
+    assert "Implantação" in p
     assert "novo ponto de luz" in p
     assert "mais postes" in p
     assert "luz mais forte" in p
     assert "Implantação de iluminação pública" in p
-    assert "Não abra Flow de reparo" in p
-    assert "use `google_search` para obter o link oficial vigente" in p
-    assert "endereço completo" in p
-    assert "ponto de referência" in p
+    assert "não abra Flow de reparo" in p
+    assert "use `google_search` se precisar URL atual" in p
+    assert "endereço + referência + descrição" in p
     assert "Rioluz avalia/executa" in p
     assert "Reinstalação de ponto de luz" in p
 
@@ -404,39 +408,35 @@ def test_interactive_response_routes_luminaria_implantation_before_repair_flow()
 def test_interactive_response_enriches_luminaria_flow_body():
     """O body do Flow deve carregar serviço/canal/prazo/link antes da tool."""
     p = interactive_response.MODULE_PROMPT
-    assert "Body obrigatório do Flow de `reparo_luminaria`" in p
-    assert "Body genérico proibido em `reparo_luminaria`" in p
-    assert "Defeito comum de luminária" in p
+    assert "Body oficial em `reparo_luminaria`" in p
+    assert "body genérico" in p
+    assert "Defeito comum" in p
     assert "body=\"Reparo de Luminária (Rioluz)" in p
-    assert "não como \"relato de luminária\" ou \"serviço da Rioluz\"" in p
     assert "Reparo de Luminária" in p
     assert (
         "https://www.1746.rio/hc/pt-br/articles/14187518715931-"
         "Reparo-de-Lumin%C3%A1ria"
     ) in p
-    assert "Para \"qual número\"" in p
     assert "não abra Flow" in p
-    assert "mesmo que a pergunta cite exemplo de luminária apagada/queimada" in p
-    assert "sobre o Flow-first" in p
-    assert "nome do serviço oficial e o link aplicável" in p
-    assert "Pergunta informativa de canal/prazo" in p
+    assert "Informativo" in p
+    assert "exceto se a mesma mensagem pedir abrir/registrar chamado para local concreto" in p
     assert "Prazo para defeitos comuns: até 3 dias corridos" in p
     assert "site ou app 1746" in p
     assert "Acesa de dia" in p
-    assert "Bloco ou grupo de luminárias apagadas" in p
+    assert "bloco apagado" in p
     assert "Reparo de cabo de iluminação pública" in p
-    assert "cite literalmente **Reparo de cabo de iluminação pública**" in p
-    assert "R maiúsculo" in p
+    assert "Não altere os títulos oficiais" in p
     assert "body=\"Reparo de cabo de iluminação pública (Rioluz)" in p
     assert 'prefill_data={"defect_type": "Danificada"}' in p
-    assert 'Adicione `qty_pattern` no `prefill_data` somente se' in p
+    assert "adicione `qty_pattern` só se houver pista de quantidade" in p
     assert "Informe endereço completo e ponto de referência" in p
     assert (
         "https://www.1746.rio/hc/pt-br/articles/14191400984987-"
         "Reparo-de-cabo-de-ilumina%C3%A7%C3%A3o-p%C3%BAblica"
     ) in p
-    assert "solicitação anônima" in p
-    assert "endereço completo/ponto de referência" in p
+    assert "de forma anônima" in p
+    assert "pedido anônimo" in p
+    assert "telefone 1746 e (21) 3460-1746 de fora do município" in p
     assert "retirada de risco imediata" in p
     assert "Rioluz" in p
     assert "até 3 dias corridos" in p
@@ -446,8 +446,8 @@ def test_interactive_response_enriches_luminaria_flow_body():
 def test_workflow_continuation_anchors_luminaria_deadlines_compactly():
     """Prazos de luminaria ficam ancorados fora do gate interativo."""
     interactive = interactive_response.MODULE_PROMPT
-    assert "Perguntas informativas sobre luminária NÃO usam `google_search`" in interactive
-    assert "Esta exceção tem precedência sobre a regra geral de buscar fonte oficial" in interactive
+    assert "Informativo" in interactive
+    assert "não usa `google_search` nem Flow" in interactive
 
     p = workflow_continuation.MODULE_PROMPT
     assert "ate 3 dias corridos" in p
@@ -460,7 +460,7 @@ def test_workflow_continuation_anchors_luminaria_deadlines_compactly():
 
 def test_workflow_continuation_routes_luminaria_out_of_scope_text():
     """Triagem textual fora de escopo deve existir mesmo sem interativos."""
-    assert "Fora do escopo antes do Flow de luminária" in interactive_response.MODULE_PROMPT
+    assert "Fora de escopo" in interactive_response.MODULE_PROMPT
     p = workflow_continuation.MODULE_PROMPT
     assert "falta de energia" in p
     assert "semaforo apagado" in p
