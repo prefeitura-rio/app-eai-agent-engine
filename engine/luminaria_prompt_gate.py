@@ -76,6 +76,10 @@ _LUMINARIA_FIXTURE_TRIGGER_RE = re.compile(
 _LUMINARIA_PUBLIC_LOCATION_RE = re.compile(
     rf"(?i)\b(postes?|{_LUMINARIA_PUBLIC_PLACE_PATTERN}|rio\s*-?\s*luz|rioluz)\b"
 )
+_LUMINARIA_PUBLIC_AREA_RE = re.compile(
+    rf"(?i)\b({_LUMINARIA_PUBLIC_PLACE_PATTERN}|luz\s+p[uú]blica|"
+    rf"ilumina[cç][aã]o\s+p[uú]blica|rio\s*-?\s*luz|rioluz)\b"
+)
 _LUMINARIA_PUBLIC_PLACE_RE = re.compile(
     rf"(?i)\b("
     rf"postes?|{_LUMINARIA_PUBLIC_PLACE_PATTERN}|"
@@ -88,9 +92,11 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"{_LUMINARIA_PUBLIC_PLACE_PATTERN}|"
     rf"luz(?:es)?|ilumina[cç][aã]o|p[uú]blic[ao]|rio\s*-?\s*luz|rioluz|"
     rf"apagad[ao]s?|"
-    rf"apagou|apagando|apaga|acende\s+e\s+apaga|"
-    rf"queimad[ao]|queimou|piscando|piscou|oscilando|intermitente|"
+    rf"apagou|apagaram|apagando|apaga|acende\s+e\s+apaga|"
+    rf"queimad[ao]|queimou|queimaram|piscando|piscou|oscilando|intermitente|"
     rf"meia\s+(?:luz|fase)|aces[ao]|"
+    rf"uma\s+sim\s+uma\s+n[aã]o|alternad[ao]s?|"
+    rf"pifou|estourou|explodiu|problema|parou\s+de\s+funcionar|"
     rf"barulho|ru[ií]do|zumbido|chiando|chiou|estalo|estalando|roncando|"
     rf"frac[ao]s?|mal\s+iluminad[ao]s?|"
     rf"pendurad[ao]|danificad[ao]|defeito|defeituos[ao]s?|"
@@ -99,25 +105,52 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"solt[ao]s?|soltou|entortad[ao]s?|entortou|"
     rf"balan[cç]ando|bamb[ao]s?|inst[aá]ve(?:l|is)|"
     rf"(?:prestes\s+a|quase)\s+cair|"
+    rf"vandalizad[ao]s?|depredad[ao]s?|"
     rf"troca|trocar|substitui(?:r|[cç][aã]o)|"
     rf"repor|reposi[cç][aã]o|"
     rf"n[aã]o\s+(?:acende|liga|funciona|est[aá]\s+funcionando)|"
+    rf"falta(?:ndo)?\s+(?:de\s+)?luz|"
+    rf"n[aã]o\s+tem\s+(?:ilumina[cç][aã]o|luz)|"
     rf"escur[ao]s?|sem\s+(?:luz|tampa)"
     rf")\b"
 )
 _LUMINARIA_DEFECT_CONTEXT_RE = re.compile(
     r"(?i)\b("
-    r"apagad[ao]s?|apagou|apagando|apaga|queimad[ao]s?|queimou|"
+    r"apagad[ao]s?|apagou|apagaram|apagando|apaga|queimad[ao]s?|"
+    r"queimou|queimaram|"
     r"piscando|piscou|oscilando|intermitente|meia\s+(?:luz|fase)|"
-    r"aces[ao]|barulho|ru[ií]do|zumbido|chiando|estalo|roncando|"
+    r"aces[ao]|uma\s+sim\s+uma\s+n[aã]o|alternad[ao]s?|"
+    r"pifou|estourou|explodiu|problema|parou\s+de\s+funcionar|"
+    r"barulho|ru[ií]do|zumbido|chiando|estalo|roncando|"
     r"frac[ao]s?|mal\s+iluminad[ao]s?|pendurad[ao]|danificad[ao]|"
     r"defeito|defeituos[ao]s?|ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
     r"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|dando\s+curto|"
     r"solt[ao]s?|soltou|entortad[ao]s?|entortou|balan[cç]ando|"
     r"bamb[ao]s?|inst[aá]ve(?:l|is)|(?:prestes\s+a|quase)\s+cair|"
+    r"vandalizad[ao]s?|depredad[ao]s?|"
     r"troca|trocar|substitui(?:r|[cç][aã]o)|repor|reposi[cç][aã]o|"
     r"n[aã]o\s+(?:acende|liga|funciona|est[aá]\s+funcionando)|"
+    r"falta(?:ndo)?\s+(?:de\s+)?luz|"
+    r"n[aã]o\s+tem\s+(?:ilumina[cç][aã]o|luz)|"
     r"escur[ao]s?|sem\s+(?:luz|tampa)"
+    r")\b"
+)
+_LUMINARIA_SERVICE_INTENT_CONTEXT_RE = re.compile(
+    r"(?i)\b("
+    r"(?:abrir|fazer|registrar|solicitar|pedir)\s+"
+    r"(?:reparo|conserto|chamado|troca|substitui[cç][aã]o)|"
+    r"(?:reparo|conserto|chamado)\s+(?:de\s+)?"
+    r"(?:luz|lumin[aá]rias?|ilumina[cç][aã]o|postes?)|"
+    r"troca|trocar|substitui(?:r|[cç][aã]o)|repor|reposi[cç][aã]o|"
+    r"instalar|instala[cç][aã]o|reinstalar|ponto\s+de\s+luz|"
+    r"(?:mais|novos?)\s+postes?|postes?\s+(?:de\s+)?ilumina[cç][aã]o|"
+    r"sem\s+postes?\s+(?:de\s+)?ilumina[cç][aã]o|"
+    r"(?:precisa|preciso|necessita)\s+(?:de\s+)?(?:mais\s+)?"
+    r"(?:postes?|lumin[aá]rias?|ponto\s+de\s+luz)|"
+    r"(?:tiraram|retiraram|removeram|levaram|roubaram|furtaram|cortaram)\s+"
+    r"(?:o\s+|a\s+|os\s+|as\s+)?"
+    r"(?:postes?|luz(?:es)?|lumin[aá]rias?|fia[cç][aã]o|fios?|cabos?)|"
+    r"vandalizad[ao]s?|depredad[ao]s?"
     r")\b"
 )
 _LUMINARIA_PROXIMITY_CONTEXT_RE = re.compile(
@@ -179,6 +212,7 @@ _NON_LUMINARIA_DISTRIBUTION_RE = re.compile(
 _NON_LUMINARIA_EXPLICIT_DISTRIBUTION_ASSET_RE = re.compile(
     r"(?i)\b("
     r"postes?\s+(?:da|do|de)\s+light|"
+    r"postes?\s+de\s+energia\s+(?:para\s+(?:a\s+)?|da|do|de)\s+light|"
     r"rede\s+(?:da|do|de)\s+light|rede\s+el[eé]trica|"
     r"medidor(?:es)?|padr[aã]o\s+de\s+entrada|liga[cç][aã]o\s+nova"
     r")\b"
@@ -275,6 +309,23 @@ _LUMINARIA_NEGATED_NO_ISSUE_RE = re.compile(
     rf"(?:ilumina[cç][aã]o|luz|mais\s+postes?)"
     rf")\b"
 )
+_LUMINARIA_NON_ISSUE_STATUS_RE = re.compile(
+    r"(?i)\b("
+    r"(?:luz\s+p[uú]blica|luz(?:es)?|l[aâ]mpadas?|lumin[aá]rias?|"
+    r"ilumina[cç][aã]o(?:\s+p[uú]blica)?|postes?)"
+    r"(?:\s+(?:da|do|de|na|no|nas|nos|ao|em)\s+[\wÀ-ÿ0-9.-]+){0,6}"
+    r"\s+(?:"
+    r"(?:est[aá]|t[aá]|fica|ficam|funciona(?:m)?)\s+"
+    r"(?:funcionando\s+)?(?:normal(?:mente)?|bem|ok)|"
+    r"n[aã]o\s+(?:est[aá]|t[aá])\s+"
+    r"(?:apagad[ao]s?|queimad[ao]s?|piscando|oscilando|"
+    r"intermitente|com\s+defeito)|"
+    r"n[aã]o\s+(?:apagou|queimou|pisca|oscila)"
+    r")|"
+    r"(?:tem|h[aá])\s+luz\s+(?:no|na|nos|nas)\s+"
+    r"(?:postes?|ruas?|avenidas?|pra[cç]as?)"
+    r")\b"
+)
 _WHATSAPP_FLOW_SUBMISSION_RE = re.compile(
     r"(?i)^\s*\[SYSTEM\]\s*O cidad[aã]o preencheu o formul[aá]rio WhatsApp"
 )
@@ -316,21 +367,36 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 or (
                     _LUMINARIA_LIGHT_TRIGGER_RE.search(text)
                     and _LUMINARIA_PUBLIC_LOCATION_RE.search(text)
-                    and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+                    and (
+                        _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                        or _LUMINARIA_SERVICE_INTENT_CONTEXT_RE.search(text)
+                    )
                 )
                 or (
                     _LUMINARIA_LAMP_TRIGGER_RE.search(text)
                     and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
-                    and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+                    and (
+                        _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                        or _LUMINARIA_SERVICE_INTENT_CONTEXT_RE.search(text)
+                    )
                 )
                 or (
                     _LUMINARIA_POST_TRIGGER_RE.search(text)
-                    and _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                    and (
+                        _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                        or (
+                            _LUMINARIA_SERVICE_INTENT_CONTEXT_RE.search(text)
+                            and _LUMINARIA_PUBLIC_AREA_RE.search(text)
+                        )
+                    )
                 )
                 or (
                     _LUMINARIA_FIXTURE_TRIGGER_RE.search(text)
                     and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
-                    and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+                    and (
+                        _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                        or _LUMINARIA_SERVICE_INTENT_CONTEXT_RE.search(text)
+                    )
                 )
             )
             has_clear_public_lighting_issue_for_telecom = (
@@ -398,6 +464,8 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 return False
             if _LUMINARIA_NEGATED_NO_ISSUE_RE.search(text):
                 return False
+            if _LUMINARIA_NON_ISSUE_STATUS_RE.search(text):
+                return False
             if (
                 _LUMINARIA_CORE_TRIGGER_RE.search(text)
                 or _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE.search(text)
@@ -407,29 +475,46 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
             has_public_lighting_context = (
                 _LUMINARIA_LIGHT_TRIGGER_RE.search(text)
                 and _LUMINARIA_PUBLIC_LOCATION_RE.search(text)
+                and (
+                    _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                    or _LUMINARIA_SERVICE_INTENT_CONTEXT_RE.search(text)
+                )
             )
             has_lamp_public_context = (
                 _LUMINARIA_LAMP_TRIGGER_RE.search(text)
                 and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
+                and (
+                    _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                    or _LUMINARIA_SERVICE_INTENT_CONTEXT_RE.search(text)
+                )
             )
             has_lamp_proximity_context = (
                 _LUMINARIA_LAMP_TRIGGER_RE.search(text)
                 and _LUMINARIA_PROXIMITY_CONTEXT_RE.search(text)
-                and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+                and _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
             )
             has_light_proximity_context = (
                 _LUMINARIA_LIGHT_TRIGGER_RE.search(text)
                 and _LUMINARIA_PROXIMITY_CONTEXT_RE.search(text)
-                and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+                and _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
             )
             has_post_context = (
                 _LUMINARIA_POST_TRIGGER_RE.search(text)
-                and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+                and (
+                    _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                    or (
+                        _LUMINARIA_SERVICE_INTENT_CONTEXT_RE.search(text)
+                        and _LUMINARIA_PUBLIC_AREA_RE.search(text)
+                    )
+                )
             )
             has_fixture_public_context = (
                 _LUMINARIA_FIXTURE_TRIGGER_RE.search(text)
                 and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
-                and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+                and (
+                    _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                    or _LUMINARIA_SERVICE_INTENT_CONTEXT_RE.search(text)
+                )
             )
             if (
                 (

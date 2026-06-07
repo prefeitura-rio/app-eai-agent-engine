@@ -884,6 +884,12 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A luz do poste pifou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da rua está com problema")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da rua parou de funcionar")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz da rua fica apagando direto")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1239,6 +1245,30 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O logradouro não está escuro")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Qual a cor da luz do poste?")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste é amarela")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da rua incomoda meu quarto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero saber quem colocou a luz do poste")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz pública está funcionando normal")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste não está apagada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste não queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem luz no poste da rua")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A alameda do condomínio está escura")]
