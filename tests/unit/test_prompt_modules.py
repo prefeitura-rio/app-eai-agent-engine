@@ -374,6 +374,7 @@ def test_interactive_response_routes_luminaria_out_of_scope_before_flow():
     assert "falta de energia" in p
     assert "semáforo apagado" in p
     assert "0800 0210196" in p
+    assert "responda direto sem `google_search`" in p
     assert "não abra Flow" in p
 
 
@@ -422,7 +423,8 @@ def test_interactive_response_enriches_luminaria_flow_body():
     ) in p
     assert "não abra Flow" in p
     assert "Informativo" in p
-    assert "exceto se a mesma mensagem pedir abrir/registrar chamado para local concreto" in p
+    assert "esta exceção vence a regra geral de buscar fonte oficial" in p
+    assert "Só abra Flow se a mesma mensagem pedir abrir/registrar chamado para local concreto" in p
     assert "Prazo para defeitos comuns: até 3 dias corridos" in p
     assert "site ou app 1746" in p
     assert "Acesa de dia" in p
