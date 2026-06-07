@@ -125,8 +125,29 @@ _PENDING_GRAPH_REPORT_TASKS: set = set()
 
 _LUMINARIA_CORE_TRIGGER_RE = re.compile(
     r"(?i)\b("
-    r"lumin[aá]ria|ilumina[cç][aã]o|rioluz|l[aâ]mpada|poste|"
+    r"lumin[aá]ria|rioluz|ilumina[cç][aã]o\s+p[uú]blica|"
     r"luz\s+p[uú]blica|rua\s+(?:est[aá]\s+)?escura"
+    r")\b"
+)
+_LUMINARIA_LAMP_TRIGGER_RE = re.compile(
+    r"(?i)\bl[aâ]mpada\b"
+)
+_LUMINARIA_POST_TRIGGER_RE = re.compile(
+    r"(?i)\bposte\b"
+)
+_LUMINARIA_PUBLIC_PLACE_RE = re.compile(
+    r"(?i)\b("
+    r"poste|rua|cal[cç]ada|via\s+p[uú]blica|pra[cç]a|parque|quadra|"
+    r"luz\s+p[uú]blica|ilumina[cç][aã]o|p[uú]blic[ao]|rioluz"
+    r")\b"
+)
+_LUMINARIA_ASSET_CONTEXT_RE = re.compile(
+    r"(?i)\b("
+    r"rua|cal[cç]ada|via\s+p[uú]blica|pra[cç]a|parque|quadra|"
+    r"luz|ilumina[cç][aã]o|p[uú]blic[ao]|rioluz|apagad[ao]|"
+    r"apagou|queimad[ao]|queimou|piscando|piscou|aces[ao]|"
+    r"pendurad[ao]|danificad[ao]|"
+    r"ca[ií]d[ao]|caiu|escura|sem\s+luz"
     r")\b"
 )
 _LUMINARIA_RISK_TRIGGER_RE = re.compile(
@@ -137,6 +158,12 @@ _LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
     r"lumin[aá]ria|ilumina[cç][aã]o|rioluz|l[aâ]mpada|poste|"
     r"luz\s+p[uú]blica|rua|cal[cç]ada|via\s+p[uú]blica"
     r")\b"
+)
+_NON_LUMINARIA_SERVICE_RE = re.compile(
+    r"(?i)\b([aá]rvore|poda|galho|sem[aá]foro|internet|telefone|tv\s+a\s+cabo)\b"
+)
+_LUMINARIA_RISK_OVERRIDE_RE = re.compile(
+    r"(?i)\b(f[aá]isca|choque|rioluz)\b"
 )
 
 
@@ -164,9 +191,26 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
             text = _message_text_for_prompt_gate(message.content)
             if _LUMINARIA_CORE_TRIGGER_RE.search(text):
                 return True
+            has_lamp_public_context = (
+                _LUMINARIA_LAMP_TRIGGER_RE.search(text)
+                and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
+            )
+            has_post_context = (
+                _LUMINARIA_POST_TRIGGER_RE.search(text)
+                and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+            )
+            if (
+                (has_lamp_public_context or has_post_context)
+                and not _NON_LUMINARIA_SERVICE_RE.search(text)
+            ):
+                return True
             return bool(
                 _LUMINARIA_RISK_TRIGGER_RE.search(text)
                 and _LUMINARIA_PUBLIC_CONTEXT_RE.search(text)
+                and not (
+                    _NON_LUMINARIA_SERVICE_RE.search(text)
+                    and not _LUMINARIA_RISK_OVERRIDE_RE.search(text)
+                )
             )
     return False
 
