@@ -340,6 +340,12 @@ def _gate_cases() -> list[GateCase]:
         ("street_dark", "A rua esta escura faz dois dias"),
         ("street_lighting", "A iluminacao da minha rua apagou"),
         ("repair_request", "Quero abrir reparo de luz publica na Rua A, 10"),
+        ("post_light_maintenance", "Quero manutencao da luz do poste"),
+        ("street_lamp_maintenance", "Preciso de manutencao na lampada da rua"),
+        ("fix_post_light", "Tem que consertar a luz do poste"),
+        ("post_lamp_repair", "Quero conserto da lampada do poste"),
+        ("arrange_street_light", "Precisa arrumar a luz da rua"),
+        ("post_light_repair_preposition", "Quero reparo na luz do poste"),
         ("unknown_rioluz_but_street_fixture_off", "Nao sei se e Rioluz, mas a luminaria da rua apagou"),
         ("not_just_info_open_repair", "Nao quero so informar, quero abrir reparo de luminaria"),
         ("lamp_light_guess", "A lampada do poste queimou, acho que e da Light"),
@@ -519,6 +525,10 @@ def _gate_cases() -> list[GateCase]:
         ("gate_relay_burned", "O rele do portao queimou"),
         ("kitchen_socket_broken", "O soquete da cozinha quebrou"),
         ("living_room_reactor_defective", "O reator da sala esta defeituoso"),
+        ("living_room_light_maintenance", "Quero manutencao da luz da sala"),
+        ("bedroom_lamp_repair_verb", "Preciso consertar a lampada do quarto"),
+        ("store_light_repair_verb", "Tem que arrumar a luz da loja"),
+        ("tv_repair_request", "Quero conserto da TV"),
         ("tv_not_turning_on", "A TV nao liga"),
         ("room_lamp_not_lighting", "A lampada da sala nao acende"),
         ("kitchen_light_not_working", "A luz da cozinha nao funciona"),
@@ -702,6 +712,17 @@ def _evaluate_prompt_contract() -> list[CheckResult]:
             True,
             'defect_type="Danificada"' in INTERACTIVE_RESPONSE_PROMPT,
             "furto/cabo/fios deve mapear para defeito canonico do Flow",
+        ),
+        (
+            "maintenance_intent_flow_first",
+            True,
+            (
+                "manutenção" in INTERACTIVE_RESPONSE_PROMPT
+                and "arrumar" in INTERACTIVE_RESPONSE_PROMPT
+                and "consertar" in INTERACTIVE_RESPONSE_PROMPT
+                and "Flow-first" in INTERACTIVE_RESPONSE_PROMPT
+            ),
+            "intencao de manutencao/conserto de luminaria publica deve abrir Flow",
         ),
         (
             "common_defect_mapping",

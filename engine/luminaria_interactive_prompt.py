@@ -104,8 +104,10 @@ Link oficial: https://www.1746.rio/hc/pt-br/articles/14191400984987-Reparo-de-ca
 
 5. Relato acionável sem perigo: abra o Flow antes de pedir endereço ou chamar
 `multi_step_service`, mesmo que o cidadão já tenha dito defeito, quantidade e
-local. Isso inclui cabo/fios/furto/roubo de fios de iluminação pública sem risco
-imediato: trate como reparo de luminária Flow-first, não substitua por
+local. Isso inclui pedidos de reparo, conserto, manutenção, arrumar ou
+consertar luz/lâmpada/luminária/poste público: trate como reparo de luminária
+Flow-first. Também inclui cabo/fios/furto/roubo de fios de iluminação pública
+sem risco imediato: trate como reparo de luminária Flow-first, não substitua por
 `google_search` nem responda só com Disque Denúncia.
 
 ### Chamada do Flow e Body oficial em `reparo_luminaria`

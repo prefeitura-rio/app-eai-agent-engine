@@ -1062,6 +1062,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A rua está escura, não sei se é Light ou Rioluz")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero manutenção da luz do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Preciso de manutenção na lâmpada da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que consertar a luz do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero conserto da lâmpada do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa arrumar a luz da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero reparo na luz do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="O poste está piscando e falam que é Light")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1638,6 +1656,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="O reator da sala está defeituoso")]
     )
     assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero manutenção da luz da sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Preciso consertar a lâmpada do quarto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que arrumar a luz da loja")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero conserto da TV")]
+    )
+    assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A TV não liga")]
     )
     assert not _should_inject_interactive_response_prompt(
@@ -1948,6 +1978,8 @@ def test_interactive_response_wire_theft_is_flow_first():
     p = interactive_response.MODULE_PROMPT
     assert "cabo/fios/furto/roubo de fios" in p
     assert "reparo de luminária Flow-first" in p
+    for intent in ("manutenção", "arrumar", "consertar"):
+        assert intent in p
     assert "não substitua por" in p
     assert "`google_search`" in p
     assert "nem responda só com Disque Denúncia" in p
