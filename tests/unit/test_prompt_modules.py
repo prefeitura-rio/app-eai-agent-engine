@@ -325,6 +325,57 @@ def test_interactive_response_prefills_qty_pattern():
         assert canonical in p, f"ID canônico de quantidade '{canonical}' ausente"
 
 
+def test_interactive_response_maps_wire_theft_to_valid_defect_type():
+    """Furto/cabo/fios deve usar ID canônico do Flow, não valor inventado."""
+    p = interactive_response.MODULE_PROMPT
+    assert 'defect_type="Danificada"' in p
+    assert "furto/roubo" in p
+    assert "Nunca use `defect_type` fora dessa lista" in p
+
+
+def test_interactive_response_wire_theft_is_flow_first():
+    """Roubo/furto de fios de poste não deve desviar só para denúncia."""
+    p = interactive_response.MODULE_PROMPT
+    assert "cabo/fios/furto/roubo de fios" in p
+    assert "reparo de luminária Flow-first" in p
+    assert "não substitua por `google_search`" in p
+    assert "nem responda só com Disque Denúncia" in p
+
+
+def test_interactive_response_wire_hazard_preempts_flow():
+    """Fio perigoso deve orientar segurança antes de qualquer formulário."""
+    p = interactive_response.MODULE_PROMPT
+    assert "Perigo elétrico preempta o Flow" in p
+    for hazard in ("fio caído", "exposto", "energizado", "faísca", "choque", "poste caído"):
+        assert hazard in p
+    assert "Defesa Civil (199)" in p
+    assert "Light (0800 0210196)" in p
+    assert "não envie o Flow como primeira ação" in p
+
+
+def test_workflow_continuation_anchors_luminaria_deadlines_compactly():
+    """Prazos de luminaria ficam ancorados fora do gate interativo."""
+    p = workflow_continuation.MODULE_PROMPT
+    assert "ate 3 dias corridos" in p
+    assert "ate 4 dias corridos" in p
+    assert "acesa de dia" in p
+    assert "fraca" in p
+    assert "grupo de" in p
+    assert "furto/roubo" in p
+    assert "fios de iluminacao publica" in p
+    assert "Nao aplique estes fatos a outros" in p
+    assert "sem chamar `google_search` apenas para confirmar prazo" in p
+
+
+def test_workflow_continuation_routes_luminaria_out_of_scope_text():
+    """Falta de energia/semáforo não deve abrir reparo de luminária."""
+    p = workflow_continuation.MODULE_PROMPT
+    assert "falta de energia" in p
+    assert "semaforo" in p
+    assert "0800 0210196" in p
+    assert "nao abra chamado de luminaria" in p
+
+
 def test_vision_inbound_prompt_has_safety_and_out_of_scope_routing():
     """A análise visual pode revelar perigo (poste caído/fios) ou caso fora de
     escopo (falta de energia/semáforo). O prompt deve rotear pra Defesa Civil
