@@ -1064,6 +1064,9 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A lâmpada do poste queimou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da calçada está torto")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="O poste caiu com fios expostos")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1398,6 +1401,15 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O poste do estacionamento privado caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste do meu portão caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste do nosso portão está torto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da minha cerca está bambo")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luminária da portaria do prédio apagou")]

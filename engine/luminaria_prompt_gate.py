@@ -103,6 +103,7 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
     rf"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|dando\s+curto|"
     rf"solt[ao]s?|soltou|entortad[ao]s?|entortou|"
+    rf"tort[ao]s?|"
     rf"balan[cç]ando|bamb[ao]s?|inst[aá]ve(?:l|is)|"
     rf"(?:prestes\s+a|quase)\s+cair|"
     rf"vandalizad[ao]s?|depredad[ao]s?|"
@@ -126,7 +127,8 @@ _LUMINARIA_DEFECT_CONTEXT_RE = re.compile(
     r"defeito|defeituos[ao]s?|ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
     r"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|dando\s+curto|"
     r"solt[ao]s?|soltou|entortad[ao]s?|entortou|balan[cç]ando|"
-    r"bamb[ao]s?|inst[aá]ve(?:l|is)|(?:prestes\s+a|quase)\s+cair|"
+    r"tort[ao]s?|bamb[ao]s?|inst[aá]ve(?:l|is)|"
+    r"(?:prestes\s+a|quase)\s+cair|"
     r"vandalizad[ao]s?|depredad[ao]s?|"
     r"troca|trocar|substitui(?:r|[cç][aã]o)|repor|reposi[cç][aã]o|"
     r"n[aã]o\s+(?:acende|liga|funciona|est[aá]\s+funcionando)|"
@@ -252,11 +254,12 @@ _NON_LUMINARIA_PRIVATE_ASSET_RE = re.compile(
     r")\b"
 )
 _NON_LUMINARIA_POST_ASSET_RE = re.compile(
-    r"(?i)\bpostes?\s+(?:da|do|de|na|no|nas|nos)\s+("
+    r"(?i)\bpostes?\s+(?:da|do|de|na|no|nas|nos)\s+"
+    r"(?:(?:minha|meu|nossa|nosso|suas?|seu)\s+)?("
     r"(?:madeira\s+(?:da|do|de)\s+)?"
     r"(?:cercas?|var(?:al|ais)|antenas?|placas?|alambrados?|"
     r"redes?\s+de\s+v[oô]lei|s[ií]tios?|fazendas?|"
-    r"terrenos?|lotes?|quintais?|port[õo]es?|jardins?"
+    r"terrenos?|lotes?|quintais?|port(?:[aã]o|[õo]es)|jardins?"
     r"))\b"
 )
 _NON_LUMINARIA_ATTACHED_OBJECT_RE = re.compile(
