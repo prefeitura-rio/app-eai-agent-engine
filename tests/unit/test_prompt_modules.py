@@ -358,9 +358,11 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "até 6 horas" in p
     assert "Serviço: Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "templates oficiais" in p
-    assert "Bombeiros (193) ou Polícia Militar (190)" in p
+    assert "Bombeiros (193), Polícia Militar (190), Defesa Civil (199) e Light (0800 0210196)" in p
     assert "Cite literalmente os quatro canais" in p
     assert "não substitua por só Defesa Civil/Light" in p
+    assert "Não condicione Bombeiros a incêndio" in p
+    assert "Bombeiros e Polícia Militar sempre aparecem" in p
     assert "Remoção do risco em até 6 horas" in p
     assert "Nunca encerre perigo só nos telefones" in p
     assert "a resposta é incompleta se não trouxer serviço, prazo de 6h e link" in p
@@ -393,6 +395,7 @@ def test_interactive_response_distinguishes_light_grid_from_public_lighting():
     assert "não abra Flow" in p
     assert "Light/concessionária (0800 0210196)" in p
     assert "salvo se a mesma mensagem também trouxer problema claro de iluminação pública" in p
+    assert "fora de\nescopo só não abre Flow quando não houver problema claro de iluminação pública" in p
 
 
 def test_interactive_response_routes_luminaria_implantation_before_repair_flow():
@@ -404,7 +407,7 @@ def test_interactive_response_routes_luminaria_implantation_before_repair_flow()
     assert "luz mais forte" in p
     assert "Implantação de iluminação pública" in p
     assert "não abra Flow de reparo" in p
-    assert "Responda diretamente com esse título oficial" in p
+    assert "Serviço: Implantação de iluminação pública" in p
     assert "não use `google_search` salvo se o cidadão pedir link/URL direto" in p
     assert "endereço + referência + descrição" in p
     assert "Rioluz avalia/executa" in p
@@ -427,6 +430,9 @@ def test_interactive_response_enriches_luminaria_flow_body():
     assert "Informativo de luminária" in p
     assert "só para estes informativos de luminária" in p
     assert "esta exceção vence a regra geral de buscar fonte oficial" in p
+    assert "informativo abre Flow quando a mesma mensagem pedir chamado para local concreto" in p
+    assert "NÃO chame `google_search` antes nem depois" in p
+    assert "responda direto com os dados abaixo" in p
     assert "Só abra Flow se a mesma mensagem pedir abrir/registrar chamado para local concreto" in p
     assert "Toda resposta informativa de luminária deve conter linha `Serviço: ...`" in p
     assert "canal/prazo/link sem título oficial é incompleto" in p
