@@ -13,6 +13,7 @@ from engine.luminaria_interactive_prompt import (
 
 _LUMINARIA_PUBLIC_PLACE_PATTERN = (
     r"ruas?|avenidas?|travessas?|estradas?|alamedas?|"
+    r"(?:r|av|tv|estr|p[cç]a)\.\s+[\wÀ-ÿ0-9.-]+|"
     r"logradouros?|becos?|vielas?|cal[cç]adas?|"
     r"pra[cç]as?|parques?|quadras?|quarteir(?:[aã]o|[õo]es)|"
     r"vias?\s+p[uú]blicas?|"

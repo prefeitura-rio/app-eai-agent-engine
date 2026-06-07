@@ -560,6 +560,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A Avenida Brasil ficou no escuro")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A R. das Flores está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="R. Dois está sem luz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Av. Brasil está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Pca. São Salvador está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Pça. XV está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Estr. do Galeão está no breu")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A Praça São Salvador está muito escura")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -642,6 +660,9 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A lâmpada em frente ao número 50 queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da Tv. Alice queimou")]
     )
     assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz em frente ao mercado apagou")]
@@ -1173,6 +1194,9 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A Rua das Flores não está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Av. Brasil não está escura")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Não está escuro na rua")]
