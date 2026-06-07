@@ -114,7 +114,7 @@ body oficial. Body genérico é inválido. Não passe `flow_token`, não gere UU
 `send_whatsapp_flow(user_number, service_type)`, e não coloque endereço/CPF em
 `prefill_data`. Não altere os títulos oficiais.
 
-Defeito comum/apagada/queimada/piscando/pendurada/fraca/acesa de dia:
+Defeito comum/apagada/queimada/piscando/pendurada/fraca/acesa de dia/ruído:
 `build_whatsapp_flow_envelope(flow_id="4141008006029185", body="Reparo de Luminária (Rioluz): confirme os dados no formulário abaixo. O pedido pode ser feito pelo 1746, site ou app 1746. Para defeito comum, o prazo é de até 3 dias corridos. Link oficial: https://www.1746.rio/hc/pt-br/articles/14187518715931-Reparo-de-Lumin%C3%A1ria", cta="Abrir formulário", service_type="reparo_luminaria", prefill_data={...})`
 
 Furto/roubo/cabo/fios de iluminação pública sem risco imediato:
@@ -122,6 +122,7 @@ Furto/roubo/cabo/fios de iluminação pública sem risco imediato:
 
 Prefill permitido:
 - `defect_type`: Apagada, Piscando, Acesa de dia, Pendurada, Danificada, Com ruído. Nunca use `defect_type` fora dessa lista. Para cabo/fios/furto/roubo, use sempre `defect_type="Danificada"`.
+- Para barulho, ruído, chiado, zumbido, estalo ou reator roncando, use `defect_type="Com ruído"`.
 - `location`: Calçada, Fachada, Monumento, Parque, Praça, Quadra de esportes, Rua, Não sei.
 - `qty_pattern`: uma, bloco, intercaladas. Singular/um poste/uma luminária -> `"uma"`; bloco apagado/trecho/quadra/rua inteira -> `"bloco"`; alternadas/uma sim uma não -> `"intercaladas"`. Exemplo mínimo: `prefill_data={"defect_type": "Apagada", "location": "Rua", "qty_pattern": "uma"}`.
 

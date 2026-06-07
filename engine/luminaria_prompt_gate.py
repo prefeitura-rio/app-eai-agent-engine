@@ -71,6 +71,7 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"apagou|apagando|apaga|acende\s+e\s+apaga|"
     rf"queimad[ao]|queimou|piscando|piscou|oscilando|intermitente|"
     rf"meia\s+(?:luz|fase)|aces[ao]|"
+    rf"barulho|ru[ií]do|zumbido|chiando|chiou|estalo|estalando|roncando|"
     rf"frac[ao]s?|mal\s+iluminad[ao]s?|"
     rf"pendurad[ao]|danificad[ao]|defeito|defeituos[ao]s?|"
     rf"ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
@@ -126,7 +127,9 @@ _NON_LUMINARIA_PRIVATE_PLACE_RE = re.compile(
     r"(?i)\b("
     r"condom[ií]nio|garagem|estacionamento\s+privado|portaria|"
     r"[aá]rea\s+comum|jardim\s+(?:de\s+)?casa|quintal|"
-    r"corredor\s+do\s+pr[eé]dio|p[aá]tio\s+da\s+escola"
+    r"corredor\s+do\s+pr[eé]dio|p[aá]tio\s+da\s+escola|"
+    r"salas?(?:\s+de\s+aula)?|quartos?|cozinhas?|banheiros?|"
+    r"varandas?|[aá]rea\s+de\s+servi[cç]o"
     r")\b"
 )
 _TELECOM_WITH_LUMINARIA_OVERRIDE_RE = re.compile(

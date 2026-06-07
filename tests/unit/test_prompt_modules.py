@@ -608,6 +608,27 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A lâmpada da esquina fica intermitente")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da rua está fazendo barulho")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária do poste está com ruído")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste está fazendo zumbido")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da praça está chiando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste faz estalo")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O reator da luminária está roncando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A fotocélula do poste está fazendo barulho")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Tem fio caído com faísca perto do poste da Rioluz")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -729,6 +750,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A tela do celular fica piscando de madrugada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da sala está fazendo barulho")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do quarto está com ruído")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A geladeira está fazendo zumbido")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV está chiando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da varanda faz estalo")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O reator da sala está roncando")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Meu quarto está escuro")]
@@ -1041,6 +1080,14 @@ def test_interactive_response_maps_wire_theft_to_valid_defect_type():
     assert 'defect_type="Danificada"' in p
     assert "furto/roubo" in p
     assert "Nunca use `defect_type` fora dessa lista" in p
+
+
+def test_interactive_response_maps_noise_to_valid_defect_type():
+    """Ruído/barulho deve usar ID canônico do Flow."""
+    p = interactive_response.MODULE_PROMPT
+    assert 'defect_type="Com ruído"' in p
+    for symptom in ("barulho", "ruído", "chiado", "zumbido", "estalo"):
+        assert symptom in p
 
 
 def test_interactive_response_wire_theft_is_flow_first():
