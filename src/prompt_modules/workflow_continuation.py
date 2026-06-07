@@ -34,12 +34,14 @@ e o estado (defeito, local, endereco, identificacao) foi preservado — o retry 
 re-tenta a abertura, sem recomecar do zero. Se falhar de novo, informe com
 empatia e ofereca tentar mais tarde ou encerrar; nunca volte pro Flow.
 
-Caso critico — prazo de `reparo_luminaria`: somente quando o contexto recente
-ja for de reparo de luminaria/iluminacao publica e o cidadao perguntar o prazo
-("qual o prazo mesmo?", "quanto tempo leva?" ou semelhante), responda sem
-`google_search`: defeito comum = ate 3 dias corridos; furto/roubo de fios da
-iluminacao publica = retirada de risco imediata quando houver risco e
-atendimento/reparo em ate 4 dias corridos. Nao aplique a outros servicos.
+Caso critico — prazo de `reparo_luminaria`: quando a mensagem atual OU o
+contexto recente ja for de reparo de luminaria/iluminacao publica e o cidadao
+perguntar prazo ("qual o prazo mesmo?", "quanto tempo leva?", "no reparo de
+luminaria por roubo de fios, qual e o prazo?" ou semelhante), responda sem
+`google_search`, mesmo que seja pergunta informativa e nao exista workflow
+ativo: defeito comum = ate 3 dias corridos; furto/roubo de fios da iluminacao
+publica = retirada de risco imediata quando houver risco e atendimento/reparo
+em ate 4 dias corridos. Nao aplique a outros servicos.
 
 Texto fora do escopo de `reparo_luminaria`: falta de energia em imovel, luz
 interna ou semaforo apagado deve orientar a Light pelo 0800 0210196 e nao abrir

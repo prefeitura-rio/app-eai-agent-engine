@@ -21,7 +21,7 @@ from langchain_core.tools import BaseTool
 from langchain_google_vertexai import ChatVertexAI
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from psycopg_pool import AsyncConnectionPool, ConnectionPool
+from psycopg_pool import AsyncConnectionPool
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
@@ -40,6 +40,10 @@ from vertexai.agent_engines import (
 # use custom graph without _validate_chat_history
 from engine.custom_react_agent import create_react_agent
 from engine.audio_mode import inject_audio_directive
+from engine.interactive_tools import (
+    put_interactive_tool_messages_last,
+    put_recovery_ai_after_interactive_tool_error,
+)
 from engine.session_boundary import apply_session_reset, inject_close_directive
 from engine.log import logger
 
@@ -1599,6 +1603,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             return result
         filtered_result = result.copy()
         filtered_result["messages"] = messages[last_human_index:]
+        if not put_recovery_ai_after_interactive_tool_error(
+            filtered_result["messages"]
+        ):
+            put_interactive_tool_messages_last(filtered_result["messages"])
         return filtered_result
 
     @interceptor(

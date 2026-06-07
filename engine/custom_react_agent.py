@@ -1,5 +1,4 @@
 import inspect
-import datetime
 from typing import (
     Any,
     Awaitable,
@@ -45,7 +44,6 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.managed import RemainingSteps
-from langgraph.prebuilt.tool_node import ToolNode as _BaseToolNode
 from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer, Send
@@ -1006,16 +1004,30 @@ def create_react_agent(
     )
 
     def route_tool_responses(state: StateSchema) -> str:
-        for m in reversed(_get_state_value(state, "messages")):
+        messages = _get_state_value(state, "messages")
+        trailing_tool_messages = []
+        for m in reversed(messages):
             if not isinstance(m, ToolMessage):
                 break
-            if m.name in should_return_direct:
+            trailing_tool_messages.append(m)
+            if (
+                m.name in should_return_direct
+                and getattr(m, "status", None) != "error"
+            ):
                 return END
 
         # handle a case of parallel tool calls where
         # the tool w/ `return_direct` was executed in a different `Send`
         if isinstance(m, AIMessage) and m.tool_calls:
-            if any(call["name"] in should_return_direct for call in m.tool_calls):
+            has_direct_tool_error = any(
+                message.name in should_return_direct
+                and getattr(message, "status", None) == "error"
+                for message in trailing_tool_messages
+            )
+            if (
+                not has_direct_tool_error
+                and any(call["name"] in should_return_direct for call in m.tool_calls)
+            ):
                 return END
 
         return entrypoint
