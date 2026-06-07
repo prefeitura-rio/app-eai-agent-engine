@@ -132,6 +132,19 @@ _NON_LUMINARIA_PRIVATE_PLACE_RE = re.compile(
     r"varandas?|[aá]rea\s+de\s+servi[cç]o"
     r")\b"
 )
+_NON_LUMINARIA_PRIVATE_ASSET_RE = re.compile(
+    r"(?i)\b("
+    r"lumin[aá]rias?|l[aâ]mpadas?|luz(?:es)?|ilumina[cç][aã]o|"
+    r"refletor(?:es)?|fotoc[eé]lulas?|rel[eé]s?|reator(?:es)?|"
+    r"boca(?:l|is)|soquetes?"
+    r")\s+(?:da|do|de|na|no|nas|nos)\s+("
+    r"lojas?|mercados?|bares?|restaurantes?|shoppings?|"
+    r"escrit[oó]rios?|cl[ií]nicas?|pr[eé]dios?|"
+    r"salas?(?:\s+de\s+aula)?|quartos?|cozinhas?|banheiros?|"
+    r"varandas?|garagens?|portarias?|quintais?|"
+    r"jardim\s+(?:de\s+)?casa"
+    r")\b"
+)
 _TELECOM_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
     r"(?i)\b("
     r"lumin[aá]rias?|l[aâ]mpadas?|"
@@ -209,7 +222,10 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
             ):
                 return False
             if (
-                _NON_LUMINARIA_PRIVATE_PLACE_RE.search(text)
+                (
+                    _NON_LUMINARIA_PRIVATE_PLACE_RE.search(text)
+                    or _NON_LUMINARIA_PRIVATE_ASSET_RE.search(text)
+                )
                 and not _PRIVATE_PLACE_WITH_LUMINARIA_OVERRIDE_RE.search(text)
             ):
                 return False
