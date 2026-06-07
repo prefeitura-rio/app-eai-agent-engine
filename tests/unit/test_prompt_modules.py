@@ -410,6 +410,15 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A avenida está escura")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O logradouro está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A alameda está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rotatória está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="O parque está escuro")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -924,6 +933,15 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A Rua das Flores não está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O logradouro não está escuro")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A alameda do condomínio está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rotatória da garagem está escura")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A estação de metrô está sem iluminação")]
