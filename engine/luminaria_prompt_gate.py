@@ -167,10 +167,25 @@ _NON_LUMINARIA_SERVICE_RE = re.compile(
     r"(?i)\b([aá]rvore|poda|galho|sem[aá]foro|internet|telefone|tv\s+a\s+cabo)\b"
 )
 _LUMINARIA_RISK_OVERRIDE_RE = re.compile(r"(?i)\b(f[aá]isca|choque|rioluz)\b")
+_LUMINARIA_SCOPE_NEGATION_RE = re.compile(
+    r"(?i)\b("
+    r"n[aã]o\s+(?:[eé]|eh)\s+"
+    r"(?:luz|ilumina[cç][aã]o|lumin[aá]rias?)\s+p[uú]blic[ao]|"
+    r"n[aã]o\s+quero\s+(?:abrir\s+)?"
+    r"(?:reparo|conserto|chamado)\s+(?:de\s+)?"
+    r"(?:lumin[aá]rias?|luz\s+p[uú]blica|ilumina[cç][aã]o\s+p[uú]blica)"
+    r")\b"
+)
 _LUMINARIA_NEGATED_NO_ISSUE_RE = re.compile(
-    r"(?i)\bn[aã]o\s+(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|fica|ficam)\s+"
-    r"(?:sem\s+(?:ilumina[cç][aã]o|luz)|escur[ao]s?|"
-    r"no\s+escuro|[àa]s\s+escuras|mal\s+iluminad[ao]s?)\b"
+    rf"(?i)\b("
+    rf"n[aã]o\s+(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|fica|ficam)\s+"
+    rf"(?:sem\s+(?:ilumina[cç][aã]o|luz)|escur[ao]s?|"
+    rf"no\s+escuro|[àa]s\s+escuras|mal\s+iluminad[ao]s?)|"
+    rf"(?:{_LUMINARIA_PUBLIC_PLACE_PATTERN})"
+    rf"(?:\s+[\wÀ-ÿ0-9.-]+){{0,6}}\s+"
+    rf"n[aã]o\s+precisa\s+de\s+"
+    rf"(?:ilumina[cç][aã]o|luz|mais\s+postes?)"
+    rf")\b"
 )
 _WHATSAPP_FLOW_SUBMISSION_RE = re.compile(
     r"(?i)^\s*\[SYSTEM\]\s*O cidad[aã]o preencheu o formul[aá]rio WhatsApp"
@@ -228,6 +243,8 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 )
                 and not _PRIVATE_PLACE_WITH_LUMINARIA_OVERRIDE_RE.search(text)
             ):
+                return False
+            if _LUMINARIA_SCOPE_NEGATION_RE.search(text):
                 return False
             if (
                 _LUMINARIA_CORE_TRIGGER_RE.search(text)

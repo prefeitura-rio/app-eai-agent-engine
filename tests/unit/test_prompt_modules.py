@@ -662,6 +662,12 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="O cabo da Rioluz arrebentou no poste")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não sei se é Rioluz, mas a luminária da rua apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não quero só informar, quero abrir reparo de luminária")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Roubaram os fios da iluminação pública")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -999,6 +1005,21 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O quadro de energia do prédio está energizado")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não é luz pública, é a lâmpada da minha casa")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não é luminária pública, é a luz da loja")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não quero reparo de luminária, quero poda de árvore")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua não precisa de iluminação")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça não precisa de mais postes")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Roubaram meu celular na rua")]
