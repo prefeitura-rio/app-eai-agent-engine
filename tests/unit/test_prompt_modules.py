@@ -325,6 +325,19 @@ def test_interactive_response_prefills_qty_pattern():
         assert canonical in p, f"ID canônico de quantidade '{canonical}' ausente"
 
 
+def test_interactive_response_scope_is_luminaria_first_not_global_menu():
+    """Interativo não deve virar padrão global para todos os serviços."""
+    p = interactive_response.MODULE_PROMPT
+    assert "Resposta interativa focada em `reparo_luminaria`" in p
+    assert "Use resposta interativa proativamente apenas quando ela é necessária" in p
+    assert "Fora desse fluxo, não troque respostas textuais" in p
+    assert "Matriz de escolha restrita" in p
+    assert "NÃO use botões/listas para triagem genérica de serviços" in p
+    assert "O service registrado coberto por este módulo é `reparo_luminaria`" in p
+    assert "Quando o cidadão precisa escolher entre opções discretas, **prefira mensagens interativas**" not in p
+    assert "Menu de serviços" not in p
+
+
 def test_interactive_response_maps_wire_theft_to_valid_defect_type():
     """Furto/cabo/fios deve usar ID canônico do Flow, não valor inventado."""
     p = interactive_response.MODULE_PROMPT
