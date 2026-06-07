@@ -443,6 +443,27 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A orla está sem iluminação")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Rua das Flores está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Avenida Brasil ficou no escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Praça São Salvador está muito escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A passarela do BRT está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O ponto de ônibus está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O ponto de ônibus está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A estação de BRT está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Tem fio caído com faísca perto do poste da Rioluz")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -498,6 +519,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A garagem está sem iluminação")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Rua das Flores não está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A estação de metrô está sem iluminação")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O ponto de internet está sem luz")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O ônibus está sem luz")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz acabou na minha casa")]
@@ -719,7 +752,7 @@ def test_interactive_response_routes_luminaria_implantation_before_repair_flow()
     assert "novo ponto de luz" in p
     assert "mais postes" in p
     assert "rua/praça/parque/quadra/calçada/avenida/travessa/beco/viela/túnel" in p
-    assert "viaduto/passarela/ciclovia/escadaria/orla" in p
+    assert "viaduto/passarela/ciclovia/escadaria/orla/ponto de ônibus/estação de BRT" in p
     assert "luz mais forte" in p
     assert "Implantação de iluminação pública" in p
     assert "Não abra Flow de reparo" in p

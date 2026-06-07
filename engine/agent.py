@@ -134,6 +134,19 @@ _LUMINARIA_CORE_TRIGGER_RE = re.compile(
     r"\s+(?:est[aá]\s+|t[aá]\s+|ficou\s+)?escur[ao]"
     r")\b"
 )
+_LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE = re.compile(
+    r"(?i)\b(?:"
+    r"rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
+    r"pra[cç]a|parque|quadra|via\s+p[uú]blica|t[uú]nel|viaduto|"
+    r"passarela|ciclovia|escadaria|orla|ponto\s+de\s+[ôo]nibus|"
+    r"esta[cç][aã]o\s+(?:do|de)\s+brt"
+    r")"
+    r"(?:\s+(?!n[aã]o\b|est[aá]\b|t[aá]\b|ficou\b|sem\b|"
+    r"escur[ao]\b|no\b|[àa]s\b)[\wÀ-ÿ0-9.-]+){0,6}"
+    r"\s+(?:(?:est[aá]|t[aá]|ficou)\s+(?:muito\s+)?)?"
+    r"(?:escur[ao]|no\s+escuro|[àa]s\s+escuras|"
+    r"sem\s+(?:ilumina[cç][aã]o|luz))\b"
+)
 _LUMINARIA_LAMP_TRIGGER_RE = re.compile(
     r"(?i)\bl[aâ]mpadas?\b"
 )
@@ -147,7 +160,8 @@ _LUMINARIA_PUBLIC_LOCATION_RE = re.compile(
     r"(?i)\b("
     r"postes?|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
     r"via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|viaduto|"
-    r"passarela|ciclovia|escadaria|orla|"
+    r"passarela|ciclovia|escadaria|orla|ponto\s+de\s+[ôo]nibus|"
+    r"esta[cç][aã]o\s+(?:do|de)\s+brt|"
     r"rio\s*-?\s*luz|rioluz"
     r")\b"
 )
@@ -155,7 +169,8 @@ _LUMINARIA_PUBLIC_PLACE_RE = re.compile(
     r"(?i)\b("
     r"postes?|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
     r"via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|viaduto|"
-    r"passarela|ciclovia|escadaria|orla|"
+    r"passarela|ciclovia|escadaria|orla|ponto\s+de\s+[ôo]nibus|"
+    r"esta[cç][aã]o\s+(?:do|de)\s+brt|"
     r"luz\s+p[uú]blica|ilumina[cç][aã]o|p[uú]blic[ao]|"
     r"rio\s*-?\s*luz|rioluz"
     r")\b"
@@ -164,7 +179,8 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     r"(?i)\b("
     r"rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
     r"via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|viaduto|"
-    r"passarela|ciclovia|escadaria|orla|"
+    r"passarela|ciclovia|escadaria|orla|ponto\s+de\s+[ôo]nibus|"
+    r"esta[cç][aã]o\s+(?:do|de)\s+brt|"
     r"luz(?:es)?|ilumina[cç][aã]o|p[uú]blic[ao]|rio\s*-?\s*luz|rioluz|"
     r"apagad[ao]s?|"
     r"apagou|queimad[ao]|queimou|piscando|piscou|aces[ao]|"
@@ -181,7 +197,8 @@ _LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
     r"l[aâ]mpadas?|postes?|"
     r"luz\s+p[uú]blica|rua|avenida|travessa|estrada|beco|viela|"
     r"cal[cç]ada|via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|"
-    r"viaduto|passarela|ciclovia|escadaria|orla"
+    r"viaduto|passarela|ciclovia|escadaria|orla|"
+    r"ponto\s+de\s+[ôo]nibus|esta[cç][aã]o\s+(?:do|de)\s+brt"
     r")\b"
 )
 _NON_LUMINARIA_TELECOM_RE = re.compile(
@@ -238,7 +255,10 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 and not _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
             ):
                 return False
-            if _LUMINARIA_CORE_TRIGGER_RE.search(text):
+            if (
+                _LUMINARIA_CORE_TRIGGER_RE.search(text)
+                or _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE.search(text)
+            ):
                 return True
             has_public_lighting_context = (
                 _LUMINARIA_LIGHT_TRIGGER_RE.search(text)
