@@ -209,9 +209,27 @@ _NON_LUMINARIA_TELECOM_RE = re.compile(
     r"(?:claro|net|vivo|tim|oi)\s+(?:fibra|internet|telefone|tv|cabo)"
     r")\b"
 )
+_NON_LUMINARIA_DISTRIBUTION_RE = re.compile(
+    r"(?i)\b("
+    r"light|concession[aá]ria|rede\s+el[eé]trica|energia|"
+    r"medidor|padr[aã]o\s+de\s+entrada|liga[cç][aã]o\s+nova"
+    r")\b"
+)
+_NON_LUMINARIA_POWER_OUTAGE_RE = re.compile(
+    r"(?i)\b("
+    r"(?:falta(?:ndo)?|acabou|queda)\s+(?:de\s+)?(?:luz|energia)|"
+    r"sem\s+energia|falta\s+de\s+energia"
+    r")\b"
+)
 _TELECOM_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
     r"(?i)\b("
     r"lumin[aá]rias?|l[aâ]mpadas?|"
+    r"luz\s+p[uú]blica|ilumina[cç][aã]o\s+p[uú]blica"
+    r")\b"
+)
+_POWER_OUTAGE_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
+    r"(?i)\b("
+    r"lumin[aá]rias?|l[aâ]mpadas?|postes?|rio\s*-?\s*luz|rioluz|"
     r"luz\s+p[uú]blica|ilumina[cç][aã]o\s+p[uú]blica"
     r")\b"
 )
@@ -220,6 +238,11 @@ _NON_LUMINARIA_SERVICE_RE = re.compile(
 )
 _LUMINARIA_RISK_OVERRIDE_RE = re.compile(
     r"(?i)\b(f[aá]isca|choque|rioluz)\b"
+)
+_LUMINARIA_NEGATED_NO_ISSUE_RE = re.compile(
+    r"(?i)\bn[aã]o\s+(?:est[aá]|t[aá]|ficou|fica)\s+"
+    r"(?:sem\s+(?:ilumina[cç][aã]o|luz)|escur[ao]|"
+    r"no\s+escuro|[àa]s\s+escuras)\b"
 )
 _WHATSAPP_FLOW_SUBMISSION_RE = re.compile(
     r"(?i)^\s*\[SYSTEM\]\s*O cidad[aã]o preencheu o formul[aá]rio WhatsApp"
@@ -250,9 +273,24 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
             text = _message_text_for_prompt_gate(message.content)
             if _WHATSAPP_FLOW_SUBMISSION_RE.search(text):
                 return False
+            has_immediate_public_risk = (
+                _LUMINARIA_RISK_OVERRIDE_RE.search(text)
+                and _LUMINARIA_PUBLIC_CONTEXT_RE.search(text)
+            )
             if (
                 _NON_LUMINARIA_TELECOM_RE.search(text)
                 and not _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+            ):
+                return False
+            if (
+                _NON_LUMINARIA_DISTRIBUTION_RE.search(text)
+                and not _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+                and not has_immediate_public_risk
+            ):
+                return False
+            if (
+                _NON_LUMINARIA_POWER_OUTAGE_RE.search(text)
+                and not _POWER_OUTAGE_WITH_LUMINARIA_OVERRIDE_RE.search(text)
             ):
                 return False
             if (
@@ -279,6 +317,7 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                     or has_post_context
                 )
                 and not _NON_LUMINARIA_SERVICE_RE.search(text)
+                and not _LUMINARIA_NEGATED_NO_ISSUE_RE.search(text)
             ):
                 return True
             return bool(
