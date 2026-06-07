@@ -533,6 +533,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="O refletor da praça quebrou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste não acende")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste não acende")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste não liga")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz pública não está funcionando")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Tem fio caído com faísca perto do poste da Rioluz")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -693,6 +705,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A haste do portão entortou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV não liga")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da sala não acende")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da cozinha não funciona")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do corredor do prédio não acende")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz acabou na minha casa")]

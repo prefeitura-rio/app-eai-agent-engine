@@ -71,6 +71,7 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"pendurad[ao]|danificad[ao]|"
     rf"ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
     rf"solt[ao]s?|soltou|entortad[ao]s?|entortou|"
+    rf"n[aã]o\s+(?:acende|liga|funciona|est[aá]\s+funcionando)|"
     rf"escur[ao]s?|sem\s+(?:luz|tampa)"
     rf")\b"
 )
