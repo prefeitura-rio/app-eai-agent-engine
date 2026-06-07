@@ -662,6 +662,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A lâmpada em frente ao número 50 queimou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada em frente ao num 33 queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente ao nº 50 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada em frente ao n° 120 queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente ao n. 80 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente ao 45 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada perto do nº 200 está piscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A lâmpada da Tv. Alice queimou")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1308,6 +1326,15 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A lâmpada em frente ao espelho queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV em frente ao número 50 apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da sala em frente ao número 50 queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Meu número de casa é 50")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz perto da cama apagou")]
