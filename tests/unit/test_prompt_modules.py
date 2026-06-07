@@ -572,6 +572,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="O refletor da praça quebrou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O braço do poste está bambo")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O suporte do poste está prestes a cair")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A haste da luminária da rua está instável")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da esquina está quase caindo")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A fotocélula da rua queimou")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1014,6 +1026,15 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A haste do portão entortou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O suporte da TV está bambo")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A haste do portão está instável")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A antena está quase caindo")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A fotocélula da garagem queimou")]
