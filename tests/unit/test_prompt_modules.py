@@ -533,6 +533,21 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="O refletor da praça quebrou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A fotocélula da rua queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O relé da praça queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O relé do poste está com defeito")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O reator da avenida está defeituoso")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O soquete do poste quebrou")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="O poste não acende")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -804,6 +819,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A haste do portão entortou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A fotocélula da garagem queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O relé do portão queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O soquete da cozinha quebrou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O reator da sala está defeituoso")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A TV não liga")]

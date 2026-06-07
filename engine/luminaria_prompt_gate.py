@@ -49,7 +49,8 @@ _LUMINARIA_LIGHT_TRIGGER_RE = re.compile(
 )
 _LUMINARIA_FIXTURE_TRIGGER_RE = re.compile(
     r"(?i)\b("
-    r"bra[cç]os?|hastes?|suportes?|globos?|tampas?|refletor(?:es)?"
+    r"bra[cç]os?|hastes?|suportes?|globos?|tampas?|refletor(?:es)?|"
+    r"fotoc[eé]lulas?|rel[eé]s?|reator(?:es)?|boca(?:l|is)|soquetes?"
     r")\b"
 )
 _LUMINARIA_PUBLIC_LOCATION_RE = re.compile(
@@ -71,7 +72,7 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"queimad[ao]|queimou|piscando|piscou|oscilando|intermitente|"
     rf"meia\s+(?:luz|fase)|aces[ao]|"
     rf"frac[ao]s?|mal\s+iluminad[ao]s?|"
-    rf"pendurad[ao]|danificad[ao]|"
+    rf"pendurad[ao]|danificad[ao]|defeito|defeituos[ao]s?|"
     rf"ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
     rf"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|dando\s+curto|"
     rf"solt[ao]s?|soltou|entortad[ao]s?|entortou|"
