@@ -102,6 +102,7 @@ Não pare só nos telefones de emergência: a resposta só está completa se tam
 
 **Furto/roubo/cabo/fios sem risco imediato (com Flow):**
 `build_whatsapp_flow_envelope(flow_id="4141008006029185", body="Reparo de cabo de iluminação pública (Rioluz): confirme os dados no formulário abaixo. O pedido pode ser feito pelo 1746, site ou app 1746, inclusive de forma anônima. Informe endereço completo e ponto de referência. Há retirada de risco imediata quando houver risco e reparo em até 4 dias corridos. Link oficial: https://www.1746.rio/hc/pt-br/articles/14191400984987-Reparo-de-cabo-de-ilumina%C3%A7%C3%A3o-p%C3%BAblica", cta="Abrir formulário", service_type="reparo_luminaria", prefill_data={"defect_type": "Danificada"})`
+Escreva o título oficial exatamente como `Reparo de cabo de iluminação pública` (R maiúsculo), não como "reparo de cabo..." em minúsculo.
 Adicione `qty_pattern` no `prefill_data` somente se a mensagem trouxer pista de quantidade: "um poste" → `"uma"`, rua/quadra/trecho inteiro → `"bloco"`, alternadas/intercaladas → `"intercaladas"`.
 
 **Pergunta informativa de canal/prazo (sem Flow):**

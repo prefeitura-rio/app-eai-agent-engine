@@ -424,6 +424,7 @@ def test_interactive_response_enriches_luminaria_flow_body():
     assert "Bloco ou grupo de luminárias apagadas" in p
     assert "Reparo de cabo de iluminação pública" in p
     assert "cite literalmente **Reparo de cabo de iluminação pública**" in p
+    assert "R maiúsculo" in p
     assert "body=\"Reparo de cabo de iluminação pública (Rioluz)" in p
     assert 'prefill_data={"defect_type": "Danificada"}' in p
     assert 'Adicione `qty_pattern` no `prefill_data` somente se' in p
