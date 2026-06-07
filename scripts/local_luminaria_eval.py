@@ -633,6 +633,22 @@ def _evaluate_prompt_contract() -> list[CheckResult]:
             "locais publicos aceitos pelo gate devem mapear para IDs canonicos",
         ),
         (
+            "qty_pattern_mapping",
+            True,
+            (
+                "`qty_pattern`: uma, bloco, intercaladas" in normalized_prompt
+                and '-> `"uma"`' in normalized_prompt
+                and '-> `"bloco"`' in normalized_prompt
+                and '-> `"intercaladas"`' in normalized_prompt
+                and "Duas ou mais" in normalized_prompt
+                and "várias" in normalized_prompt
+                and "metade" in normalized_prompt
+                and "quarteirão" in normalized_prompt
+                and "uma sim uma não" in normalized_prompt
+            ),
+            "quantidade deve mapear para qty_pattern canonico do Flow",
+        ),
+        (
             "out_of_scope_route",
             True,
             "Fora de escopo" in INTERACTIVE_RESPONSE_PROMPT,

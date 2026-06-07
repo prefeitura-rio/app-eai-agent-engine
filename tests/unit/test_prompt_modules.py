@@ -328,6 +328,18 @@ def test_interactive_response_prefills_qty_pattern():
     # mapeamento de linguagem natural pros IDs canônicos
     for canonical in ("uma", "bloco", "intercaladas"):
         assert canonical in p, f"ID canônico de quantidade '{canonical}' ausente"
+    p_lower = p.lower()
+    for expression in (
+        "só uma",
+        "um poste",
+        "duas ou mais",
+        "várias",
+        "metade",
+        "quarteirão",
+        "rua inteira",
+        "uma sim uma não",
+    ):
+        assert expression in p_lower
 
 
 def test_interactive_response_maps_locations_to_valid_flow_values():

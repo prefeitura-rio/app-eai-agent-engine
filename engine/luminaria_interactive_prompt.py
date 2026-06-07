@@ -144,7 +144,12 @@ Prefill permitido:
   `"Parque"`, praça para `"Praça"`, quadra para `"Quadra de esportes"`, calçada
   para `"Calçada"`, fachada pública para `"Fachada"`; se a localização não
   couber com segurança, use `"Não sei"`. Nunca invente outro valor.
-- `qty_pattern`: uma, bloco, intercaladas. Singular/um poste/uma luminária -> `"uma"`; bloco apagado/trecho/quadra/rua inteira -> `"bloco"`; alternadas/uma sim uma não -> `"intercaladas"`. Exemplo mínimo: `prefill_data={"defect_type": "Apagada", "location": "Rua", "qty_pattern": "uma"}`.
+- `qty_pattern`: uma, bloco, intercaladas. Singular, só uma, um poste, uma
+  luminária, uma lâmpada ou uma esquina -> `"uma"`. Duas ou mais, várias,
+  muitas, metade, bloco apagado, trecho, quadra, quarteirão, rua inteira ou
+  grupo contínuo -> `"bloco"`. Alternadas, intercaladas, uma sim uma não,
+  acende e apaga em padrão alternado -> `"intercaladas"`. Exemplo mínimo:
+  `prefill_data={"defect_type": "Apagada", "location": "Rua", "qty_pattern": "uma"}`.
 
 Depois de `build_whatsapp_flow_envelope`, não escreva texto adicional. O
 envelope que a tool retorna é a mensagem entregue ao cidadão. Após o cidadão
