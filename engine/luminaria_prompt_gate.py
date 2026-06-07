@@ -104,10 +104,23 @@ _NON_LUMINARIA_POWER_OUTAGE_RE = re.compile(
     r"sem\s+energia|falta\s+de\s+energia"
     r")\b"
 )
+_NON_LUMINARIA_PRIVATE_PLACE_RE = re.compile(
+    r"(?i)\b("
+    r"condom[ií]nio|garagem|estacionamento\s+privado|portaria|"
+    r"[aá]rea\s+comum|jardim\s+(?:de\s+)?casa|quintal|"
+    r"corredor\s+do\s+pr[eé]dio|p[aá]tio\s+da\s+escola"
+    r")\b"
+)
 _TELECOM_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
     r"(?i)\b("
     r"lumin[aá]rias?|l[aâ]mpadas?|"
     r"luz\s+p[uú]blica|ilumina[cç][aã]o\s+p[uú]blica"
+    r")\b"
+)
+_PRIVATE_PLACE_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
+    r"(?i)\b("
+    r"rio\s*-?\s*luz|rioluz|luz\s+p[uú]blica|"
+    r"ilumina[cç][aã]o\s+p[uú]blica|rua|cal[cç]ada"
     r")\b"
 )
 _POWER_OUTAGE_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
@@ -172,6 +185,11 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
             if (
                 _NON_LUMINARIA_POWER_OUTAGE_RE.search(text)
                 and not _POWER_OUTAGE_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+            ):
+                return False
+            if (
+                _NON_LUMINARIA_PRIVATE_PLACE_RE.search(text)
+                and not _PRIVATE_PLACE_WITH_LUMINARIA_OVERRIDE_RE.search(text)
             ):
                 return False
             if (
