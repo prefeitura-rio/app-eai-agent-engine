@@ -674,6 +674,12 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A luz em frente ao n. 80 apagou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente ao nro 50 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada em frente ao nr 120 queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz em frente ao 45 apagou")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -843,6 +849,30 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz da rua está fraca")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste está baixa")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A iluminação da rua está baixa")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste está fraquejando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da rua fica fraquejando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste está falhando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste falha toda hora")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da rua falha toda hora")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste está sem acender")]
     )
     assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A lâmpada do poste está fraca")]
@@ -1115,7 +1145,16 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A luz da sala está fraca")]
     )
     assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da sala está baixa")]
+    )
+    assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A lâmpada do quarto está fraca")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do quarto está falhando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do quarto falha toda hora")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A cozinha está mal iluminada")]
@@ -1389,6 +1428,9 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A esquina não está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da rua é baixo")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz do poste do condomínio queimou")]
