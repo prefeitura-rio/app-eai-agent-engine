@@ -552,6 +552,7 @@ def _evaluate_gate() -> list[CheckResult]:
 
 def _evaluate_prompt_contract() -> list[CheckResult]:
     augmented_prompt, version = compose("BASE", "v0")
+    normalized_prompt = " ".join(INTERACTIVE_RESPONSE_PROMPT.split())
     checks = [
         (
             "dynamic_enabled",
@@ -599,6 +600,23 @@ def _evaluate_prompt_contract() -> list[CheckResult]:
                 and "quase caindo" in INTERACTIVE_RESPONSE_PROMPT
             ),
             "componentes fisicos instaveis devem mapear defeito canonico do Flow",
+        ),
+        (
+            "location_mapping",
+            True,
+            (
+                "`location`: Calçada, Fachada, Monumento, Parque, Praça,"
+                in normalized_prompt
+                and 'para `"Rua"`' in normalized_prompt
+                and 'parque para `"Parque"`' in normalized_prompt
+                and 'para `"Praça"`' in normalized_prompt
+                and 'para `"Quadra de esportes"`' in normalized_prompt
+                and 'para `"Calçada"`' in normalized_prompt
+                and 'para `"Fachada"`' in normalized_prompt
+                and 'use `"Não sei"`' in normalized_prompt
+                and "Nunca invente outro valor" in normalized_prompt
+            ),
+            "locais publicos aceitos pelo gate devem mapear para IDs canonicos",
         ),
         (
             "out_of_scope_route",

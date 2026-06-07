@@ -330,6 +330,39 @@ def test_interactive_response_prefills_qty_pattern():
         assert canonical in p, f"ID canônico de quantidade '{canonical}' ausente"
 
 
+def test_interactive_response_maps_locations_to_valid_flow_values():
+    """Locais reconhecidos pelo gate devem virar valores válidos do Flow.
+
+    O WhatsApp Flow aceita um conjunto fechado; sem guidance explícita o modelo
+    tende a inventar `location="Avenida"`/`"Ponto de ônibus"` e gerar payload
+    inválido.
+    """
+    p = interactive_response.MODULE_PROMPT
+    assert "`location`: Calçada, Fachada, Monumento, Parque, Praça" in p
+    for source in (
+        "alameda",
+        "logradouro",
+        "túnel",
+        "viaduto",
+        "ponto de",
+        "estação de BRT",
+        "estacionamento público",
+        "em frente/perto",
+    ):
+        assert source in p
+    for canonical in (
+        '"Rua"',
+        '"Parque"',
+        '"Praça"',
+        '"Quadra de esportes"',
+        '"Calçada"',
+        '"Fachada"',
+        '"Não sei"',
+    ):
+        assert canonical in p
+    assert "Nunca invente outro valor" in p
+
+
 def test_interactive_response_scope_is_luminaria_first_not_global_menu():
     """Interativo não deve virar padrão global para todos os serviços."""
     p = interactive_response.MODULE_PROMPT

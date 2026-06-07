@@ -128,6 +128,13 @@ Prefill permitido:
   use `defect_type="Danificada"`. Para luminária/lâmpada pendurada, use
   `defect_type="Pendurada"`.
 - `location`: Calçada, Fachada, Monumento, Parque, Praça, Quadra de esportes, Rua, Não sei.
+  Mapeie rua, avenida, travessa, estrada, alameda, logradouro, beco, viela,
+  túnel, viaduto, passarela, ciclovia, escadaria, orla, rotatória, ponto de
+  ônibus, estação de BRT, estacionamento público e referência "em frente/perto
+  de" para `"Rua"` quando não houver opção mais específica. Mapeie parque para
+  `"Parque"`, praça para `"Praça"`, quadra para `"Quadra de esportes"`, calçada
+  para `"Calçada"`, fachada pública para `"Fachada"`; se a localização não
+  couber com segurança, use `"Não sei"`. Nunca invente outro valor.
 - `qty_pattern`: uma, bloco, intercaladas. Singular/um poste/uma luminária -> `"uma"`; bloco apagado/trecho/quadra/rua inteira -> `"bloco"`; alternadas/uma sim uma não -> `"intercaladas"`. Exemplo mínimo: `prefill_data={"defect_type": "Apagada", "location": "Rua", "qty_pattern": "uma"}`.
 
 Depois de `build_whatsapp_flow_envelope`, não escreva texto adicional. O
