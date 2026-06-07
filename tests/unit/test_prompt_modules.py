@@ -433,6 +433,31 @@ def test_interactive_response_dynamic_prompt_keeps_system_order():
     assert injected[1].content == interactive_response.MODULE_PROMPT
 
 
+def test_interactive_response_dynamic_prompt_preserves_trailing_directives():
+    """Diretivas transitórias no fim continuam com maior precedência."""
+    from engine.agent import _inject_interactive_response_prompt
+    from engine.session_boundary import CLOSE_DIRECTIVE
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    close = SystemMessage(content=CLOSE_DIRECTIVE)
+    messages = [
+        SystemMessage(content="memória"),
+        HumanMessage(content="A luminária apagou, era só isso"),
+        close,
+    ]
+
+    injected = _inject_interactive_response_prompt(messages)
+
+    assert [type(message).__name__ for message in injected] == [
+        "SystemMessage",
+        "SystemMessage",
+        "HumanMessage",
+        "SystemMessage",
+    ]
+    assert injected[1].content == interactive_response.MODULE_PROMPT
+    assert injected[-1] is close
+
+
 def test_interactive_response_dynamic_gate_uses_latest_human_turn_only():
     """Histórico antigo de luminária não contamina o próximo serviço."""
     from engine.agent import _should_inject_interactive_response_prompt

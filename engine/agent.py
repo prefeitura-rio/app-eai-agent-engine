@@ -241,11 +241,12 @@ def _inject_interactive_response_prompt(messages: list[Any]) -> list[Any]:
         return messages
 
     injected = SystemMessage(content=INTERACTIVE_RESPONSE_PROMPT)
-    system_messages = [message for message in messages if isinstance(message, SystemMessage)]
-    conversation_messages = [
-        message for message in messages if not isinstance(message, SystemMessage)
-    ]
-    return [*system_messages, injected, *conversation_messages]
+    insert_at = 0
+    for index, message in enumerate(messages):
+        if not isinstance(message, SystemMessage):
+            break
+        insert_at = index + 1
+    return [*messages[:insert_at], injected, *messages[insert_at:]]
 
 
 def _report_graph_failure_sync(source: dict, exc: Exception, kwargs: dict) -> None:
