@@ -67,10 +67,10 @@ responda direto sem `google_search`, oriente Light/concessionária
 (0800 0210196) e não abra Flow, salvo se a mesma mensagem também trouxer
 problema claro de iluminação pública.
 
-3. Implantação: novo ponto de luz/poste/luminária pública, "mais postes", rua
-escura onde não há iluminação pública ou troca por luz mais forte é outro
-serviço. Não abra Flow de reparo e não use `google_search` salvo se o cidadão
-pedir link/URL direto. A primeira linha da resposta deve ser exatamente:
+3. Implantação: novo ponto de luz/poste/luminária pública, "mais postes",
+rua/praça/parque/quadra/calçada/avenida/travessa/beco/viela escura/escuro onde não há
+iluminação pública ou troca por luz mais forte é outro serviço. Não abra Flow de reparo
+e não use `google_search` salvo se o cidadão pedir link/URL direto. A primeira linha da resposta deve ser exatamente:
 ```
 Serviço: Implantação de iluminação pública
 ```

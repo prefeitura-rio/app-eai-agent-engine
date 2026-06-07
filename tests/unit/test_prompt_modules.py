@@ -376,6 +376,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A luz da praça apagou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A avenida está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O parque está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O beco está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O beco está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A quadra ficou escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Tem fio caído com faísca perto do poste da Rioluz")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -406,10 +424,19 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A iluminação da sala está ruim")]
     )
     assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Meu quarto está escuro")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A sala está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz acabou na minha casa")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O semáforo apagou no cruzamento")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O semáforo da praça apagou")]
     )
 
 
@@ -597,6 +624,7 @@ def test_interactive_response_routes_luminaria_implantation_before_repair_flow()
     assert "Implantação" in p
     assert "novo ponto de luz" in p
     assert "mais postes" in p
+    assert "rua/praça/parque/quadra/calçada/avenida/travessa/beco/viela escura/escuro" in p
     assert "luz mais forte" in p
     assert "Implantação de iluminação pública" in p
     assert "Não abra Flow de reparo" in p

@@ -59,12 +59,28 @@ def _flow_submission_text() -> str:
     )
 
 
+def _accented_flow_submission_text() -> str:
+    return (
+        "[SYSTEM] O cidadão preencheu o formulário WhatsApp. Dados recebidos: "
+        '{"defect_type":"Apagada","qty_pattern":"uma","location":"Rua"}. '
+        "AÇÃO OBRIGATÓRIA: Chame a ferramenta multi_step_service imediatamente "
+        "com service_name='reparo_luminaria' e payload contendo os dados recebidos "
+        "(adicione _source='whatsapp_flow')."
+    )
+
+
 def _gate_cases() -> list[GateCase]:
     positives = [
         ("explicit_luminaria", "A luminaria da minha rua esta apagada"),
         ("rioluz_wire_hazard", "Tem fio caido com faisca perto do poste da Rioluz"),
         ("public_lighting", "A iluminacao publica falhou na minha rua"),
         ("public_light_square", "A luz da praca apagou"),
+        ("dark_square", "A praca esta escura"),
+        ("dark_avenue", "A avenida esta escura"),
+        ("dark_alley", "O beco ta escuro"),
+        ("dark_park", "O parque esta escuro"),
+        ("dark_court", "A quadra ficou escura"),
+        ("sidewalk_no_lighting", "A calcada esta sem iluminacao"),
         ("lamp_on_post", "A lampada do poste queimou"),
         ("fallen_post", "O poste caiu com fios expostos"),
         ("shock_wire", "Tem cabo caido na rua dando choque"),
@@ -79,8 +95,11 @@ def _gate_cases() -> list[GateCase]:
         ("internet_cable_street", "Meu cabo de internet caiu na rua"),
         ("bedroom_lamp", "A lampada do quarto queimou"),
         ("living_room_light", "A iluminacao da sala esta ruim"),
+        ("dark_bedroom", "Meu quarto esta escuro"),
+        ("dark_living_room", "A sala ta escura"),
         ("home_power_outage", "A luz acabou na minha casa"),
         ("traffic_light", "O semaforo apagou no cruzamento"),
+        ("traffic_light_square", "O semaforo da praca apagou"),
         ("phone_wire", "O fio do telefone caiu na calcada"),
         ("tv_cable", "A tv a cabo parou e o cabo esta solto"),
     ]
@@ -142,7 +161,7 @@ def _gate_cases() -> list[GateCase]:
                 reason="conteudo multimodal com texto relevante deve ativar gate",
             ),
             GateCase(
-                id="flow_submission",
+                id="flow_submission_unaccented",
                 messages=[
                     HumanMessage(content="A luminaria da rua esta apagada"),
                     AIMessage(content="[Flow de luminaria]"),
@@ -150,6 +169,16 @@ def _gate_cases() -> list[GateCase]:
                 ],
                 expected=False,
                 reason="submissao de WhatsApp Flow ja e tratada por outro modulo",
+            ),
+            GateCase(
+                id="flow_submission_accented",
+                messages=[
+                    HumanMessage(content="A luminaria da rua esta apagada"),
+                    AIMessage(content="[Flow de luminaria]"),
+                    HumanMessage(content=_accented_flow_submission_text()),
+                ],
+                expected=False,
+                reason="submissao real do Mule com acentos nao deve reabrir Flow",
             ),
         ]
     )

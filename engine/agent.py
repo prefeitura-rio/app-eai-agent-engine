@@ -126,7 +126,10 @@ _PENDING_GRAPH_REPORT_TASKS: set = set()
 _LUMINARIA_CORE_TRIGGER_RE = re.compile(
     r"(?i)\b("
     r"lumin[aá]ria|rioluz|ilumina[cç][aã]o\s+p[uú]blica|"
-    r"luz\s+p[uú]blica|rua\s+(?:est[aá]\s+)?escura"
+    r"luz\s+p[uú]blica|"
+    r"(?:rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
+    r"pra[cç]a|parque|quadra|via\s+p[uú]blica)"
+    r"\s+(?:est[aá]\s+|t[aá]\s+|ficou\s+)?escur[ao]"
     r")\b"
 )
 _LUMINARIA_LAMP_TRIGGER_RE = re.compile(
@@ -140,19 +143,22 @@ _LUMINARIA_LIGHT_TRIGGER_RE = re.compile(
 )
 _LUMINARIA_PUBLIC_LOCATION_RE = re.compile(
     r"(?i)\b("
-    r"poste|rua|cal[cç]ada|via\s+p[uú]blica|pra[cç]a|parque|quadra|"
+    r"poste|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
+    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
     r"rioluz"
     r")\b"
 )
 _LUMINARIA_PUBLIC_PLACE_RE = re.compile(
     r"(?i)\b("
-    r"poste|rua|cal[cç]ada|via\s+p[uú]blica|pra[cç]a|parque|quadra|"
+    r"poste|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
+    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
     r"luz\s+p[uú]blica|ilumina[cç][aã]o|p[uú]blic[ao]|rioluz"
     r")\b"
 )
 _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     r"(?i)\b("
-    r"rua|cal[cç]ada|via\s+p[uú]blica|pra[cç]a|parque|quadra|"
+    r"rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
+    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
     r"luz|ilumina[cç][aã]o|p[uú]blic[ao]|rioluz|apagad[ao]|"
     r"apagou|queimad[ao]|queimou|piscando|piscou|aces[ao]|"
     r"pendurad[ao]|danificad[ao]|"
@@ -165,7 +171,8 @@ _LUMINARIA_RISK_TRIGGER_RE = re.compile(
 _LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
     r"(?i)\b("
     r"lumin[aá]ria|ilumina[cç][aã]o|rioluz|l[aâ]mpada|poste|"
-    r"luz\s+p[uú]blica|rua|cal[cç]ada|via\s+p[uú]blica"
+    r"luz\s+p[uú]blica|rua|avenida|travessa|estrada|beco|viela|"
+    r"cal[cç]ada|via\s+p[uú]blica"
     r")\b"
 )
 _NON_LUMINARIA_SERVICE_RE = re.compile(
