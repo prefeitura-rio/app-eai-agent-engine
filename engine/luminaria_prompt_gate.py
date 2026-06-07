@@ -104,6 +104,21 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"escur[ao]s?|sem\s+(?:luz|tampa)"
     rf")\b"
 )
+_LUMINARIA_DEFECT_CONTEXT_RE = re.compile(
+    r"(?i)\b("
+    r"apagad[ao]s?|apagou|apagando|apaga|queimad[ao]s?|queimou|"
+    r"piscando|piscou|oscilando|intermitente|meia\s+(?:luz|fase)|"
+    r"aces[ao]|barulho|ru[ií]do|zumbido|chiando|estalo|roncando|"
+    r"frac[ao]s?|mal\s+iluminad[ao]s?|pendurad[ao]|danificad[ao]|"
+    r"defeito|defeituos[ao]s?|ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
+    r"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|dando\s+curto|"
+    r"solt[ao]s?|soltou|entortad[ao]s?|entortou|balan[cç]ando|"
+    r"bamb[ao]s?|inst[aá]ve(?:l|is)|(?:prestes\s+a|quase)\s+cair|"
+    r"troca|trocar|substitui(?:r|[cç][aã]o)|repor|reposi[cç][aã]o|"
+    r"n[aã]o\s+(?:acende|liga|funciona|est[aá]\s+funcionando)|"
+    r"escur[ao]s?|sem\s+(?:luz|tampa)"
+    r")\b"
+)
 _LUMINARIA_PROXIMITY_CONTEXT_RE = re.compile(
     r"(?i)\b("
     r"em\s+frente\s+(?:a|ao|[àa]|da|do|de)\s+(?:minha\s+)?(?:casa|"
@@ -144,6 +159,12 @@ _NON_LUMINARIA_TELECOM_RE = re.compile(
     r"banda\s+larga|provedor|operadora|"
     r"(?:cabo|fio)s?\s+(?:da|do|de)\s+(?:claro|net|vivo|tim|oi)|"
     r"(?:claro|net|vivo|tim|oi)\s+(?:fibra|internet|telefone|tv|cabo)"
+    r")\b"
+)
+_NON_LUMINARIA_RIOLUZ_TELECOM_RE = re.compile(
+    r"(?i)\b("
+    r"(?:internet|fibra(?:\s+[óo]ptica)?)\s+(?:da|do|de)\s+rio\s*-?\s*luz|"
+    r"rio\s*-?\s*luz\s+(?:internet|fibra(?:\s+[óo]ptica)?)"
     r")\b"
 )
 _NON_LUMINARIA_DISTRIBUTION_RE = re.compile(
@@ -277,9 +298,61 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 _LUMINARIA_RISK_OVERRIDE_RE.search(text)
                 and _LUMINARIA_PUBLIC_CONTEXT_RE.search(text)
             )
+            has_clear_public_lighting_issue = (
+                _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+                or _LUMINARIA_CORE_TRIGGER_RE.search(text)
+                or _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE.search(text)
+                or _LUMINARIA_INVERTED_DARK_PUBLIC_PLACE_RE.search(text)
+                or (
+                    _LUMINARIA_LIGHT_TRIGGER_RE.search(text)
+                    and _LUMINARIA_PUBLIC_LOCATION_RE.search(text)
+                    and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+                )
+                or (
+                    _LUMINARIA_LAMP_TRIGGER_RE.search(text)
+                    and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
+                    and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+                )
+                or (
+                    _LUMINARIA_POST_TRIGGER_RE.search(text)
+                    and _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                )
+                or (
+                    _LUMINARIA_FIXTURE_TRIGGER_RE.search(text)
+                    and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
+                    and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+                )
+            )
+            has_clear_public_lighting_issue_for_telecom = (
+                _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+                or _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE.search(text)
+                or _LUMINARIA_INVERTED_DARK_PUBLIC_PLACE_RE.search(text)
+                or (
+                    _LUMINARIA_LIGHT_TRIGGER_RE.search(text)
+                    and _LUMINARIA_PUBLIC_LOCATION_RE.search(text)
+                    and _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                )
+                or (
+                    _LUMINARIA_LAMP_TRIGGER_RE.search(text)
+                    and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
+                    and _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                )
+                or (
+                    _LUMINARIA_FIXTURE_TRIGGER_RE.search(text)
+                    and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
+                    and _LUMINARIA_DEFECT_CONTEXT_RE.search(text)
+                )
+            )
+            if (
+                _NON_LUMINARIA_RIOLUZ_TELECOM_RE.search(text)
+                and not _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+                and not _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE.search(text)
+                and not _LUMINARIA_INVERTED_DARK_PUBLIC_PLACE_RE.search(text)
+            ):
+                return False
             if (
                 _NON_LUMINARIA_TELECOM_RE.search(text)
-                and not _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+                and not has_clear_public_lighting_issue_for_telecom
             ):
                 return False
             if (
@@ -353,7 +426,10 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                     or has_post_context
                     or has_fixture_public_context
                 )
-                and not _NON_LUMINARIA_SERVICE_RE.search(text)
+                and (
+                    not _NON_LUMINARIA_SERVICE_RE.search(text)
+                    or has_clear_public_lighting_issue
+                )
             ):
                 return True
             return bool(
