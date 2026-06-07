@@ -399,11 +399,14 @@ def test_interactive_response_enriches_luminaria_flow_body():
     """O body do Flow deve carregar serviço/canal/prazo/link antes da tool."""
     p = interactive_response.MODULE_PROMPT
     assert "Body obrigatório do Flow de `reparo_luminaria`" in p
+    assert "Body genérico proibido em `reparo_luminaria`" in p
+    assert "body=\"Reparo de Luminária (Rioluz)" in p
     assert "Reparo de Luminária" in p
     assert (
         "https://www.1746.rio/hc/pt-br/articles/14187518715931-"
         "Reparo-de-Lumin%C3%A1ria"
     ) in p
+    assert "site ou app 1746" in p
     assert "Acesa de dia" in p
     assert "Bloco ou grupo de luminárias apagadas" in p
     assert "Reparo de cabo de iluminação pública" in p
