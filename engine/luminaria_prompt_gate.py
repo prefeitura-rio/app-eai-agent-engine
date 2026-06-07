@@ -90,11 +90,13 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
 )
 _LUMINARIA_PROXIMITY_CONTEXT_RE = re.compile(
     r"(?i)\b("
-    r"em\s+frente\s+(?:a|ao|[àa])\s+(?:minha\s+)?(?:casa|"
+    r"em\s+frente\s+(?:a|ao|[àa]|da|do|de)\s+(?:minha\s+)?(?:casa|"
     r"n[uú]mero|num(?:ero)?|mercado|bar|loja|com[eé]rcio|"
-    r"escola|hospital|posto|pr[eé]dio|condom[ií]nio)|"
+    r"restaurante|igreja|farm[aá]cia|padaria|creche|upa|"
+    r"escola|hospital|posto|cl[ií]nica|pr[eé]dio|condom[ií]nio)|"
     r"perto\s+(?:da|do|de)\s+(?:minha\s+)?(?:casa|mercado|bar|loja|"
-    r"com[eé]rcio|escola|hospital|posto|pr[eé]dio|condom[ií]nio)"
+    r"com[eé]rcio|restaurante|igreja|farm[aá]cia|padaria|creche|upa|"
+    r"escola|hospital|posto|cl[ií]nica|pr[eé]dio|condom[ií]nio)"
     r")\b"
 )
 _LUMINARIA_RISK_TRIGGER_RE = re.compile(
@@ -145,8 +147,9 @@ _NON_LUMINARIA_PRIVATE_ASSET_RE = re.compile(
     r"refletor(?:es)?|fotoc[eé]lulas?|rel[eé]s?|reator(?:es)?|"
     r"boca(?:l|is)|soquetes?"
     r")\s+(?:da|do|de|na|no|nas|nos)\s+("
-    r"lojas?|mercados?|bares?|restaurantes?|shoppings?|"
-    r"escrit[oó]rios?|cl[ií]nicas?|pr[eé]dios?|"
+    r"lojas?|mercados?|bares?|restaurantes?|farm[aá]cias?|padarias?|"
+    r"igrejas?|creches?|upas?|shoppings?|escrit[oó]rios?|"
+    r"cl[ií]nicas?|pr[eé]dios?|"
     r"salas?(?:\s+de\s+aula)?|quartos?|cozinhas?|banheiros?|"
     r"varandas?|garagens?|portarias?|quintais?|"
     r"jardim\s+(?:de\s+)?casa"
