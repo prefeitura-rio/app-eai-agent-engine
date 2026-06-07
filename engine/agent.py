@@ -123,29 +123,35 @@ async def _report_graph_failure(source: dict, exc: Exception, kwargs: dict) -> N
 _PENDING_GRAPH_REPORT_TASKS: set = set()
 
 
+_LUMINARIA_PUBLIC_PLACE_PATTERN = (
+    r"ruas?|avenidas?|travessas?|estradas?|becos?|vielas?|cal[cç]adas?|"
+    r"pra[cç]as?|parques?|quadras?|vias?\s+p[uú]blicas?|"
+    r"t[uú]ne(?:l|is)|viadutos?|passarelas?|ciclovias?|escadarias?|orlas?|"
+    r"pontos?\s+de\s+[ôo]nibus|"
+    r"esta[cç][aã]o\s+(?:do|de)\s+brt|"
+    r"esta[cç][õo]es\s+(?:do|de)\s+brt"
+)
+
+
 _LUMINARIA_CORE_TRIGGER_RE = re.compile(
-    r"(?i)\b("
-    r"lumin[aá]rias?|rio\s*-?\s*luz|rioluz|"
-    r"ilumina[cç][aã]o\s+p[uú]blica|"
-    r"luz\s+p[uú]blica|"
-    r"(?:rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
-    r"pra[cç]a|parque|quadra|via\s+p[uú]blica|t[uú]nel|"
-    r"viaduto|passarela|ciclovia|escadaria|orla)"
-    r"\s+(?:est[aá]\s+|t[aá]\s+|ficou\s+)?escur[ao]"
-    r")\b"
+    rf"(?i)\b("
+    rf"lumin[aá]rias?|rio\s*-?\s*luz|rioluz|"
+    rf"ilumina[cç][aã]o\s+p[uú]blica|"
+    rf"luz\s+p[uú]blica|"
+    rf"(?:{_LUMINARIA_PUBLIC_PLACE_PATTERN})"
+    rf"\s+(?:(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|ficam|fica)\s+)?"
+    rf"escur[ao]s?"
+    rf")\b"
 )
 _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE = re.compile(
-    r"(?i)\b(?:"
-    r"rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
-    r"pra[cç]a|parque|quadra|via\s+p[uú]blica|t[uú]nel|viaduto|"
-    r"passarela|ciclovia|escadaria|orla|ponto\s+de\s+[ôo]nibus|"
-    r"esta[cç][aã]o\s+(?:do|de)\s+brt"
-    r")"
-    r"(?:\s+(?!n[aã]o\b|est[aá]\b|t[aá]\b|ficou\b|sem\b|"
-    r"escur[ao]\b|no\b|[àa]s\b)[\wÀ-ÿ0-9.-]+){0,6}"
-    r"\s+(?:(?:est[aá]|t[aá]|ficou)\s+(?:muito\s+)?)?"
-    r"(?:escur[ao]|no\s+escuro|[àa]s\s+escuras|"
-    r"sem\s+(?:ilumina[cç][aã]o|luz))\b"
+    rf"(?i)\b(?:{_LUMINARIA_PUBLIC_PLACE_PATTERN})"
+    rf"(?:\s+(?!n[aã]o\b|est[aá]\b|est[aã]o\b|t[aá]\b|"
+    rf"ficou\b|ficaram\b|ficam\b|fica\b|sem\b|escur[ao]s?\b|"
+    rf"no\b|[àa]s\b)[\wÀ-ÿ0-9.-]+){{0,6}}"
+    rf"\s+(?:(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|ficam|fica)\s+"
+    rf"(?:muito\s+)?)?"
+    rf"(?:escur[ao]s?|no\s+escuro|[àa]s\s+escuras|"
+    rf"sem\s+(?:ilumina[cç][aã]o|luz))\b"
 )
 _LUMINARIA_LAMP_TRIGGER_RE = re.compile(
     r"(?i)\bl[aâ]mpadas?\b"
@@ -157,49 +163,34 @@ _LUMINARIA_LIGHT_TRIGGER_RE = re.compile(
     r"(?i)\b(luz(?:es)?|ilumina[cç][aã]o)\b"
 )
 _LUMINARIA_PUBLIC_LOCATION_RE = re.compile(
-    r"(?i)\b("
-    r"postes?|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
-    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|viaduto|"
-    r"passarela|ciclovia|escadaria|orla|ponto\s+de\s+[ôo]nibus|"
-    r"esta[cç][aã]o\s+(?:do|de)\s+brt|"
-    r"rio\s*-?\s*luz|rioluz"
-    r")\b"
+    rf"(?i)\b(postes?|{_LUMINARIA_PUBLIC_PLACE_PATTERN}|rio\s*-?\s*luz|rioluz)\b"
 )
 _LUMINARIA_PUBLIC_PLACE_RE = re.compile(
-    r"(?i)\b("
-    r"postes?|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
-    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|viaduto|"
-    r"passarela|ciclovia|escadaria|orla|ponto\s+de\s+[ôo]nibus|"
-    r"esta[cç][aã]o\s+(?:do|de)\s+brt|"
-    r"luz\s+p[uú]blica|ilumina[cç][aã]o|p[uú]blic[ao]|"
-    r"rio\s*-?\s*luz|rioluz"
-    r")\b"
+    rf"(?i)\b("
+    rf"postes?|{_LUMINARIA_PUBLIC_PLACE_PATTERN}|"
+    rf"luz\s+p[uú]blica|ilumina[cç][aã]o|p[uú]blic[ao]|"
+    rf"rio\s*-?\s*luz|rioluz"
+    rf")\b"
 )
 _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
-    r"(?i)\b("
-    r"rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
-    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|viaduto|"
-    r"passarela|ciclovia|escadaria|orla|ponto\s+de\s+[ôo]nibus|"
-    r"esta[cç][aã]o\s+(?:do|de)\s+brt|"
-    r"luz(?:es)?|ilumina[cç][aã]o|p[uú]blic[ao]|rio\s*-?\s*luz|rioluz|"
-    r"apagad[ao]s?|"
-    r"apagou|queimad[ao]|queimou|piscando|piscou|aces[ao]|"
-    r"pendurad[ao]|danificad[ao]|"
-    r"ca[ií]d[ao]|caiu|escura|sem\s+luz"
-    r")\b"
+    rf"(?i)\b("
+    rf"{_LUMINARIA_PUBLIC_PLACE_PATTERN}|"
+    rf"luz(?:es)?|ilumina[cç][aã]o|p[uú]blic[ao]|rio\s*-?\s*luz|rioluz|"
+    rf"apagad[ao]s?|"
+    rf"apagou|queimad[ao]|queimou|piscando|piscou|aces[ao]|"
+    rf"pendurad[ao]|danificad[ao]|"
+    rf"ca[ií]d[ao]|caiu|escur[ao]s?|sem\s+luz"
+    rf")\b"
 )
 _LUMINARIA_RISK_TRIGGER_RE = re.compile(
     r"(?i)\b(fio(?:s)?|cabo(?:s)?|f[aá]isca|choque)\b"
 )
 _LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
-    r"(?i)\b("
-    r"lumin[aá]rias?|ilumina[cç][aã]o|rio\s*-?\s*luz|rioluz|"
-    r"l[aâ]mpadas?|postes?|"
-    r"luz\s+p[uú]blica|rua|avenida|travessa|estrada|beco|viela|"
-    r"cal[cç]ada|via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|"
-    r"viaduto|passarela|ciclovia|escadaria|orla|"
-    r"ponto\s+de\s+[ôo]nibus|esta[cç][aã]o\s+(?:do|de)\s+brt"
-    r")\b"
+    rf"(?i)\b("
+    rf"lumin[aá]rias?|ilumina[cç][aã]o|rio\s*-?\s*luz|rioluz|"
+    rf"l[aâ]mpadas?|postes?|luz\s+p[uú]blica|"
+    rf"{_LUMINARIA_PUBLIC_PLACE_PATTERN}"
+    rf")\b"
 )
 _NON_LUMINARIA_TELECOM_RE = re.compile(
     r"(?i)\b("
@@ -240,8 +231,8 @@ _LUMINARIA_RISK_OVERRIDE_RE = re.compile(
     r"(?i)\b(f[aá]isca|choque|rioluz)\b"
 )
 _LUMINARIA_NEGATED_NO_ISSUE_RE = re.compile(
-    r"(?i)\bn[aã]o\s+(?:est[aá]|t[aá]|ficou|fica)\s+"
-    r"(?:sem\s+(?:ilumina[cç][aã]o|luz)|escur[ao]|"
+    r"(?i)\bn[aã]o\s+(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|fica|ficam)\s+"
+    r"(?:sem\s+(?:ilumina[cç][aã]o|luz)|escur[ao]s?|"
     r"no\s+escuro|[àa]s\s+escuras)\b"
 )
 _WHATSAPP_FLOW_SUBMISSION_RE = re.compile(
