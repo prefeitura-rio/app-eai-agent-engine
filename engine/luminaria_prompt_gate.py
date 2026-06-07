@@ -15,6 +15,7 @@ _LUMINARIA_PUBLIC_PLACE_PATTERN = (
     r"ruas?|avenidas?|travessas?|estradas?|becos?|vielas?|cal[cç]adas?|"
     r"pra[cç]as?|parques?|quadras?|vias?\s+p[uú]blicas?|"
     r"t[uú]ne(?:l|is)|viadutos?|passarelas?|ciclovias?|escadarias?|orlas?|"
+    r"esquinas?|"
     r"pontos?\s+de\s+[ôo]nibus|"
     r"esta[cç][aã]o\s+(?:do|de)\s+brt|"
     r"esta[cç][õo]es\s+(?:do|de)\s+brt"
@@ -65,6 +66,15 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"pendurad[ao]|danificad[ao]|"
     rf"ca[ií]d[ao]|caiu|escur[ao]s?|sem\s+luz"
     rf")\b"
+)
+_LUMINARIA_PROXIMITY_CONTEXT_RE = re.compile(
+    r"(?i)\b("
+    r"em\s+frente\s+(?:a|ao|[àa])\s+(?:minha\s+)?(?:casa|"
+    r"n[uú]mero|num(?:ero)?|mercado|bar|loja|com[eé]rcio|"
+    r"escola|hospital|posto|pr[eé]dio|condom[ií]nio)|"
+    r"perto\s+(?:da|do|de)\s+(?:minha\s+)?(?:casa|mercado|bar|loja|"
+    r"com[eé]rcio|escola|hospital|posto|pr[eé]dio|condom[ií]nio)"
+    r")\b"
 )
 _LUMINARIA_RISK_TRIGGER_RE = re.compile(r"(?i)\b(fio(?:s)?|cabo(?:s)?|f[aá]isca|choque)\b")
 _LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
@@ -177,6 +187,16 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 _LUMINARIA_LAMP_TRIGGER_RE.search(text)
                 and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
             )
+            has_lamp_proximity_context = (
+                _LUMINARIA_LAMP_TRIGGER_RE.search(text)
+                and _LUMINARIA_PROXIMITY_CONTEXT_RE.search(text)
+                and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+            )
+            has_light_proximity_context = (
+                _LUMINARIA_LIGHT_TRIGGER_RE.search(text)
+                and _LUMINARIA_PROXIMITY_CONTEXT_RE.search(text)
+                and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+            )
             has_post_context = (
                 _LUMINARIA_POST_TRIGGER_RE.search(text)
                 and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
@@ -185,6 +205,8 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 (
                     has_public_lighting_context
                     or has_lamp_public_context
+                    or has_lamp_proximity_context
+                    or has_light_proximity_context
                     or has_post_context
                 )
                 and not _NON_LUMINARIA_SERVICE_RE.search(text)
