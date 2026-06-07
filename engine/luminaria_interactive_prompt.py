@@ -141,11 +141,12 @@ Prefill permitido:
 - `location`: Calçada, Fachada, Monumento, Parque, Praça, Quadra de esportes, Rua, Não sei.
   Mapeie rua, avenida, travessa, estrada, alameda, logradouro, beco, viela,
   túnel, viaduto, passarela, ciclovia, escadaria, orla, rotatória, ponto de
-  ônibus, estação de BRT, estacionamento público e referência "em frente/perto
-  de" para `"Rua"` quando não houver opção mais específica. Mapeie parque para
-  `"Parque"`, praça para `"Praça"`, quadra para `"Quadra de esportes"`, calçada
-  para `"Calçada"`, fachada pública para `"Fachada"`; se a localização não
-  couber com segurança, use `"Não sei"`. Nunca invente outro valor.
+  ônibus, estação de BRT, estacionamento público e referências "em frente",
+  "perto", "próximo", "na altura" ou "defronte" para `"Rua"` quando não houver
+  opção mais específica. Mapeie parque para `"Parque"`, praça para `"Praça"`,
+  quadra para `"Quadra de esportes"`, calçada para `"Calçada"`, fachada pública
+  para `"Fachada"`; se a localização não couber com segurança, use `"Não sei"`.
+  Nunca invente outro valor.
 - `qty_pattern`: uma, bloco, intercaladas. Singular, só uma, um poste, uma
   luminária, uma lâmpada ou uma esquina -> `"uma"`. Duas ou mais, várias,
   muitas, metade, bloco apagado, trecho, quadra, quarteirão, rua inteira ou

@@ -359,7 +359,11 @@ def test_interactive_response_maps_locations_to_valid_flow_values():
         "ponto de",
         "estação de BRT",
         "estacionamento público",
-        "em frente/perto",
+        '"em frente"',
+        '"perto"',
+        '"próximo"',
+        '"na altura"',
+        '"defronte"',
     ):
         assert source in p
     for canonical in (

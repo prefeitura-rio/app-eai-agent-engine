@@ -760,6 +760,11 @@ def _evaluate_prompt_contract() -> list[CheckResult]:
                 and 'para `"Quadra de esportes"`' in normalized_prompt
                 and 'para `"Calçada"`' in normalized_prompt
                 and 'para `"Fachada"`' in normalized_prompt
+                and '"em frente"' in normalized_prompt
+                and '"perto"' in normalized_prompt
+                and '"próximo"' in normalized_prompt
+                and '"na altura"' in normalized_prompt
+                and '"defronte"' in normalized_prompt
                 and 'use `"Não sei"`' in normalized_prompt
                 and "Nunca invente outro valor" in normalized_prompt
             ),
