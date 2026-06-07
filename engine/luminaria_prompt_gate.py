@@ -57,7 +57,9 @@ _LUMINARIA_INVERTED_DARK_PUBLIC_PLACE_RE = re.compile(
     rf"mal\s+iluminad[ao]s?))|"
     rf"sem\s+(?:luz|ilumina[cç][aã]o|claridade|"
     rf"visibilidade\s+(?:de\s+noite|[àa]\s+noite))"
-    rf")\s+(?:na|no|nas|nos|em)\s+(?:{_LUMINARIA_PUBLIC_PLACE_PATTERN})\b"
+    rf")\s+(?:aqui\s+)?(?:na|no|nas|nos|em)\s+"
+    rf"(?:(?:minha|meu|nossa|nosso|suas?|seu)\s+)?"
+    rf"(?:{_LUMINARIA_PUBLIC_PLACE_PATTERN})\b"
 )
 _LUMINARIA_LAMP_TRIGGER_RE = re.compile(r"(?i)\bl[aâ]mpadas?\b")
 _LUMINARIA_POST_TRIGGER_RE = re.compile(r"(?i)\bpostes?\b")

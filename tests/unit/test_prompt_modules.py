@@ -458,6 +458,15 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="Está escuro na rua")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está escuro na minha rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tá escuro na nossa rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está escuro aqui na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Tá muito escuro na avenida")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1091,6 +1100,9 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="Está escuro no quarto")]
     )
     assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está escuro no meu quarto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Sem luz na garagem")]
     )
     assert not _should_inject_interactive_response_prompt(
@@ -1110,6 +1122,9 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Não está escuro na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não está escuro na minha rua")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Não está sem luz na praça")]
