@@ -761,6 +761,15 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="Tem cabo caído na rua dando choque")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio pendurado no poste da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem cabo baixo na rua perto do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Fio desencapado na iluminação pública")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="O poste está com energia dando choque")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -774,6 +783,12 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="O cabo da Rioluz arrebentou no poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Fio da Rioluz está solto na calçada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O fio da luminária da rua está faiscando")]
     )
     assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Não sei se é Rioluz, mas a luminária da rua apagou")]
@@ -1203,6 +1218,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O semáforo da praça apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de pipa preso no poste da rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de varal preso no poste da rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem arame farpado preso no poste da rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de faixa preso no poste")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O poste de telefonia caiu na rua")]

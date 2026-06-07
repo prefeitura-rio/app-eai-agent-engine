@@ -163,6 +163,13 @@ _NON_LUMINARIA_POST_ASSET_RE = re.compile(
     r"terrenos?|lotes?|quintais?|port[õo]es?|jardins?"
     r"))\b"
 )
+_NON_LUMINARIA_ATTACHED_OBJECT_RE = re.compile(
+    r"(?i)\b("
+    r"(?:fio(?:s)?|linha(?:s)?|corda(?:s)?)\s+(?:da|do|de)\s+"
+    r"(?:pipas?|varal|varais|faixas?|bandeiras?|decora[cç][aã]o)|"
+    r"arames?\s+farpados?"
+    r")\b"
+)
 _TELECOM_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
     r"(?i)\b("
     r"lumin[aá]rias?|l[aâ]mpadas?|"
@@ -252,6 +259,11 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
             if (
                 _NON_LUMINARIA_POWER_OUTAGE_RE.search(text)
                 and not _POWER_OUTAGE_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+            ):
+                return False
+            if (
+                _NON_LUMINARIA_ATTACHED_OBJECT_RE.search(text)
+                and not _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
             ):
                 return False
             if (
