@@ -129,7 +129,8 @@ _LUMINARIA_CORE_TRIGGER_RE = re.compile(
     r"ilumina[cç][aã]o\s+p[uú]blica|"
     r"luz\s+p[uú]blica|"
     r"(?:rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
-    r"pra[cç]a|parque|quadra|via\s+p[uú]blica)"
+    r"pra[cç]a|parque|quadra|via\s+p[uú]blica|t[uú]nel|"
+    r"viaduto|passarela|ciclovia|escadaria|orla)"
     r"\s+(?:est[aá]\s+|t[aá]\s+|ficou\s+)?escur[ao]"
     r")\b"
 )
@@ -145,14 +146,16 @@ _LUMINARIA_LIGHT_TRIGGER_RE = re.compile(
 _LUMINARIA_PUBLIC_LOCATION_RE = re.compile(
     r"(?i)\b("
     r"postes?|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
-    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
+    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|viaduto|"
+    r"passarela|ciclovia|escadaria|orla|"
     r"rio\s*-?\s*luz|rioluz"
     r")\b"
 )
 _LUMINARIA_PUBLIC_PLACE_RE = re.compile(
     r"(?i)\b("
     r"postes?|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
-    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
+    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|viaduto|"
+    r"passarela|ciclovia|escadaria|orla|"
     r"luz\s+p[uú]blica|ilumina[cç][aã]o|p[uú]blic[ao]|"
     r"rio\s*-?\s*luz|rioluz"
     r")\b"
@@ -160,7 +163,8 @@ _LUMINARIA_PUBLIC_PLACE_RE = re.compile(
 _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     r"(?i)\b("
     r"rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
-    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
+    r"via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|viaduto|"
+    r"passarela|ciclovia|escadaria|orla|"
     r"luz(?:es)?|ilumina[cç][aã]o|p[uú]blic[ao]|rio\s*-?\s*luz|rioluz|"
     r"apagad[ao]s?|"
     r"apagou|queimad[ao]|queimou|piscando|piscou|aces[ao]|"
@@ -176,7 +180,8 @@ _LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
     r"lumin[aá]rias?|ilumina[cç][aã]o|rio\s*-?\s*luz|rioluz|"
     r"l[aâ]mpadas?|postes?|"
     r"luz\s+p[uú]blica|rua|avenida|travessa|estrada|beco|viela|"
-    r"cal[cç]ada|via\s+p[uú]blica"
+    r"cal[cç]ada|via\s+p[uú]blica|pra[cç]a|parque|quadra|t[uú]nel|"
+    r"viaduto|passarela|ciclovia|escadaria|orla"
     r")\b"
 )
 _NON_LUMINARIA_TELECOM_RE = re.compile(
