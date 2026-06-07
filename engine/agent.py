@@ -123,11 +123,19 @@ async def _report_graph_failure(source: dict, exc: Exception, kwargs: dict) -> N
 _PENDING_GRAPH_REPORT_TASKS: set = set()
 
 
-_LUMINARIA_PROMPT_TRIGGER_RE = re.compile(
+_LUMINARIA_CORE_TRIGGER_RE = re.compile(
     r"(?i)\b("
     r"lumin[aá]ria|ilumina[cç][aã]o|rioluz|l[aâ]mpada|poste|"
-    r"luz\s+p[uú]blica|rua\s+escura|fio(?:s)?|cabo(?:s)?|"
-    r"f[aá]isca|choque|sem[aá]foro"
+    r"luz\s+p[uú]blica|rua\s+(?:est[aá]\s+)?escura"
+    r")\b"
+)
+_LUMINARIA_RISK_TRIGGER_RE = re.compile(
+    r"(?i)\b(fio(?:s)?|cabo(?:s)?|f[aá]isca|choque)\b"
+)
+_LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
+    r"(?i)\b("
+    r"lumin[aá]ria|ilumina[cç][aã]o|rioluz|l[aâ]mpada|poste|"
+    r"luz\s+p[uú]blica|rua|cal[cç]ada|via\s+p[uú]blica"
     r")\b"
 )
 
@@ -153,10 +161,12 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
         return False
     for message in reversed(messages):
         if isinstance(message, HumanMessage):
+            text = _message_text_for_prompt_gate(message.content)
+            if _LUMINARIA_CORE_TRIGGER_RE.search(text):
+                return True
             return bool(
-                _LUMINARIA_PROMPT_TRIGGER_RE.search(
-                    _message_text_for_prompt_gate(message.content)
-                )
+                _LUMINARIA_RISK_TRIGGER_RE.search(text)
+                and _LUMINARIA_PUBLIC_CONTEXT_RE.search(text)
             )
     return False
 

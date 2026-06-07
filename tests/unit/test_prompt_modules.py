@@ -367,10 +367,22 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A luminária da minha rua está apagada")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua está escura porque a iluminação pública falhou")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Tem fio caído com faísca perto do poste da Rioluz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem cabo caído na rua dando choque")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Como faço para solicitar poda de árvore?")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Meu cabo de internet arrebentou dentro de casa")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O semáforo apagou no cruzamento")]
     )
 
 
