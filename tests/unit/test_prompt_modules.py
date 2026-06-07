@@ -496,6 +496,28 @@ def test_interactive_response_dynamic_gate_reads_multipart_text_blocks():
     )
 
 
+def test_interactive_response_dynamic_gate_skips_whatsapp_flow_submission():
+    """Submissão do Flow é tratada pelo módulo global whatsapp_flow_inbound."""
+    from engine.agent import _should_inject_interactive_response_prompt
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    flow_submission = (
+        "[SYSTEM] O cidadão preencheu o formulário WhatsApp. Dados recebidos: "
+        '{"defect_type":"Apagada","qty_pattern":"uma","location":"Rua"}. '
+        "AÇÃO OBRIGATÓRIA: Chame a ferramenta multi_step_service imediatamente "
+        "com service_name='reparo_luminaria' e payload contendo os dados recebidos "
+        "(adicione _source='whatsapp_flow')."
+    )
+
+    assert not _should_inject_interactive_response_prompt(
+        [
+            HumanMessage(content="A luminária da rua está apagada"),
+            AIMessage(content="[Flow de luminária]"),
+            HumanMessage(content=flow_submission),
+        ]
+    )
+
+
 def test_interactive_response_maps_wire_theft_to_valid_defect_type():
     """Furto/cabo/fios deve usar ID canônico do Flow, não valor inventado."""
     p = interactive_response.MODULE_PROMPT

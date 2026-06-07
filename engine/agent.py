@@ -174,6 +174,9 @@ _NON_LUMINARIA_SERVICE_RE = re.compile(
 _LUMINARIA_RISK_OVERRIDE_RE = re.compile(
     r"(?i)\b(f[aá]isca|choque|rioluz)\b"
 )
+_WHATSAPP_FLOW_SUBMISSION_RE = re.compile(
+    r"(?i)^\s*\[SYSTEM\]\s*O cidad[aã]o preencheu o formul[aá]rio WhatsApp"
+)
 
 
 def _message_text_for_prompt_gate(content: Any) -> str:
@@ -198,6 +201,8 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
     for message in reversed(messages):
         if isinstance(message, HumanMessage):
             text = _message_text_for_prompt_gate(message.content)
+            if _WHATSAPP_FLOW_SUBMISSION_RE.search(text):
+                return False
             if _LUMINARIA_CORE_TRIGGER_RE.search(text):
                 return True
             has_public_lighting_context = (
