@@ -448,6 +448,9 @@ def test_interactive_response_enriches_luminaria_flow_body():
     assert "Informativo de luminária" in p
     assert "não usa `google_search` nem Flow" in p
     assert "mensagem pedir abertura de chamado para local concreto" in p
+    assert "Toda resposta informativa de" in p
+    assert "linha literal `Serviço: ...`" in p
+    assert "canal/prazo/link sem" in p
     assert "Serviço: Reparo de cabo de iluminação pública" in p
     assert "3460-1746.\nServiço: Reparo de Luminária, da Rioluz." in p
     assert "Rioluz.\nPrazo para defeitos comuns: até 3 dias corridos." in p
