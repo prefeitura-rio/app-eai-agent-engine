@@ -629,6 +629,30 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="O cabo da Rioluz arrebentou no poste")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero pedir mais postes na minha rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua precisa de mais postes")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça precisa de luminária nova")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero instalar luminária pública na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua está sem postes de iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa reinstalar ponto de luz na calçada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tiraram o poste de luz da rua e não recolocaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A viela precisa de ponto de luz")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A lâmpada do poste queimou")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -879,6 +903,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O quadro de energia do prédio está energizado")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero pedir mais postes de energia para a Light")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Preciso de poste para internet no meu terreno")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero instalar luminária no quintal")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A garagem precisa de luminária nova")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa reinstalar a lâmpada da sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tiraram o poste do meu portão")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Minha internet da Rio Luz caiu")]

@@ -203,6 +203,14 @@ def _gate_cases() -> list[GateCase]:
         ("street_dark", "A rua esta escura faz dois dias"),
         ("street_lighting", "A iluminacao da minha rua apagou"),
         ("repair_request", "Quero abrir reparo de luz publica na Rua A, 10"),
+        ("more_posts_street", "Quero pedir mais postes na minha rua"),
+        ("street_needs_more_posts", "A rua precisa de mais postes"),
+        ("square_new_fixture", "A praca precisa de luminaria nova"),
+        ("install_public_fixture", "Quero instalar luminaria publica na rua"),
+        ("street_without_lighting_posts", "A rua esta sem postes de iluminacao"),
+        ("reinstall_light_point_sidewalk", "Precisa reinstalar ponto de luz na calcada"),
+        ("removed_street_light_post", "Tiraram o poste de luz da rua e nao recolocaram"),
+        ("alley_needs_light_point", "A viela precisa de ponto de luz"),
     ]
     negatives = [
         ("tree_pruning", "Como faco para solicitar poda de arvore?"),
@@ -285,6 +293,12 @@ def _gate_cases() -> list[GateCase]:
         ("provider_wire_exposed", "O fio da Claro esta exposto na calcada"),
         ("home_outlet_short", "A tomada da sala esta dando curto"),
         ("building_energy_panel_energized", "O quadro de energia do predio esta energizado"),
+        ("more_energy_posts_light", "Quero pedir mais postes de energia para a Light"),
+        ("internet_post_terrain", "Preciso de poste para internet no meu terreno"),
+        ("install_yard_fixture", "Quero instalar luminaria no quintal"),
+        ("garage_new_fixture", "A garagem precisa de luminaria nova"),
+        ("reinstall_living_room_lamp", "Precisa reinstalar a lampada da sala"),
+        ("removed_private_gate_post", "Tiraram o poste do meu portao"),
         ("internet_rio_luz", "Minha internet da Rio Luz caiu"),
         ("fiber_rio_luz", "A fibra da Rio-Luz caiu"),
     ]
