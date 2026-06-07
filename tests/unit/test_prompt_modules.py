@@ -923,6 +923,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="Não quero só informar, quero abrir reparo de luminária")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste queimou, acho que é da Light")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da rua apagou e não sei se é Light ou Rioluz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz pública apagou, talvez seja Light")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da rua apagou e o vizinho disse que é Light")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua está escura, não sei se é Light ou Rioluz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste está piscando e falam que é Light")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Roubaram os fios da iluminação pública")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1203,6 +1221,15 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O poste da Light caiu na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rede da Light caiu na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O medidor da Light está com problema")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Preciso de ligação nova da Light")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Tem fio de energia da Light caído na rua")]

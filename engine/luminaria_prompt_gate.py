@@ -173,6 +173,13 @@ _NON_LUMINARIA_DISTRIBUTION_RE = re.compile(
     r"medidor|padr[aã]o\s+de\s+entrada|liga[cç][aã]o\s+nova"
     r")\b"
 )
+_NON_LUMINARIA_EXPLICIT_DISTRIBUTION_ASSET_RE = re.compile(
+    r"(?i)\b("
+    r"postes?\s+(?:da|do|de)\s+light|"
+    r"rede\s+(?:da|do|de)\s+light|rede\s+el[eé]trica|"
+    r"medidor(?:es)?|padr[aã]o\s+de\s+entrada|liga[cç][aã]o\s+nova"
+    r")\b"
+)
 _NON_LUMINARIA_POWER_OUTAGE_RE = re.compile(
     r"(?i)\b("
     r"(?:falta(?:ndo)?|acabou|queda)\s+(?:de\s+)?(?:luz|energia)|"
@@ -359,6 +366,10 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 _NON_LUMINARIA_DISTRIBUTION_RE.search(text)
                 and not _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
                 and not has_immediate_public_risk
+                and not (
+                    has_clear_public_lighting_issue
+                    and not _NON_LUMINARIA_EXPLICIT_DISTRIBUTION_ASSET_RE.search(text)
+                )
             ):
                 return False
             if (
