@@ -992,6 +992,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="Tem fio caído com faísca perto do poste da Rioluz")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da rua está faiscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste deu curto")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da praça deu curto")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste soltando faísca")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Tem cabo caído na rua dando choque")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1382,6 +1394,9 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="Tem fio de energia da Light caído na rua")]
     )
     assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste de energia da Light deu curto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A rede elétrica da rua caiu")]
     )
     assert not _should_inject_interactive_response_prompt(
@@ -1692,6 +1707,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A tomada da sala está dando curto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A tomada da sala deu curto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O quadro de energia do prédio está com curto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Meu chuveiro está faiscando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A extensão da loja deu curto")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O quadro de energia do prédio está energizado")]

@@ -102,7 +102,8 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"frac[ao]s?|mal\s+iluminad[ao]s?|"
     rf"pendurad[ao]|danificad[ao]|defeito|defeituos[ao]s?|"
     rf"ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
-    rf"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|dando\s+curto|"
+    rf"expost[ao]s?|energizad[ao]s?|faiscando|soltando\s+fa[ií]sca|"
+    rf"curto(?:-|\s)?circuito|dando\s+curto|deu\s+curto|com\s+curto|"
     rf"solt[ao]s?|soltou|entortad[ao]s?|entortou|"
     rf"tort[ao]s?|"
     rf"balan[cç]ando|bamb[ao]s?|inst[aá]ve(?:l|is)|"
@@ -127,7 +128,8 @@ _LUMINARIA_DEFECT_CONTEXT_RE = re.compile(
     r"barulho|ru[ií]do|zumbido|chiando|estalo|roncando|"
     r"frac[ao]s?|mal\s+iluminad[ao]s?|pendurad[ao]|danificad[ao]|"
     r"defeito|defeituos[ao]s?|ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
-    r"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|dando\s+curto|"
+    r"expost[ao]s?|energizad[ao]s?|faiscando|soltando\s+fa[ií]sca|"
+    r"curto(?:-|\s)?circuito|dando\s+curto|deu\s+curto|com\s+curto|"
     r"solt[ao]s?|soltou|entortad[ao]s?|entortou|balan[cç]ando|"
     r"tort[ao]s?|bamb[ao]s?|inst[aá]ve(?:l|is)|"
     r"(?:prestes\s+a|quase)\s+cair|"
@@ -199,8 +201,9 @@ _LUMINARIA_PROXIMITY_CONTEXT_RE = re.compile(
 )
 _LUMINARIA_RISK_TRIGGER_RE = re.compile(
     r"(?i)\b("
-    r"fio(?:s)?|fia[cç][aã]o|cabo(?:s)?|f[aá]isca|choque|"
-    r"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|dando\s+curto"
+    r"fio(?:s)?|fia[cç][aã]o|cabo(?:s)?|fa[ií]sca|faiscando|choque|"
+    r"expost[ao]s?|energizad[ao]s?|curto(?:-|\s)?circuito|"
+    r"dando\s+curto|deu\s+curto|com\s+curto"
     r")\b"
 )
 _LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
@@ -307,7 +310,7 @@ _POWER_OUTAGE_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
 _NON_LUMINARIA_SERVICE_RE = re.compile(
     r"(?i)\b([aá]rvore|poda|galho|sem[aá]foro|internet|telefone|tv\s+a\s+cabo)\b"
 )
-_LUMINARIA_RISK_OVERRIDE_RE = re.compile(r"(?i)\b(f[aá]isca|choque|rioluz)\b")
+_LUMINARIA_RISK_OVERRIDE_RE = re.compile(r"(?i)\b(fa[ií]sca|choque|rioluz)\b")
 _LUMINARIA_SCOPE_NEGATION_RE = re.compile(
     r"(?i)\b("
     r"n[aã]o\s+(?:[eé]|eh)\s+"
