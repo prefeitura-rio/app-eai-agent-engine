@@ -1905,7 +1905,13 @@ def test_interactive_response_maps_common_defects_to_valid_defect_type():
         'defect_type="Apagada"': ("apagada", "sem claridade", "sem visibilidade"),
         'defect_type="Piscando"': ("piscando", "oscilando", "uma sim uma não"),
         'defect_type="Acesa de dia"': ("acesa de dia", "durante o dia"),
-        'defect_type="Danificada"': ("fraca", "mal iluminada", "fraquejando"),
+        'defect_type="Danificada"': (
+            "fraca",
+            "mal iluminada",
+            "fraquejando",
+            "falhando",
+            "falha",
+        ),
     }
     for canonical, symptoms in expected.items():
         assert canonical in p
@@ -1947,7 +1953,17 @@ def test_interactive_response_wire_hazard_preempts_flow():
     """Fio perigoso deve orientar segurança antes de qualquer formulário."""
     p = interactive_response.MODULE_PROMPT
     assert "Perigo elétrico" in p
-    for hazard in ("fio caído", "exposto", "energizado", "faísca", "choque", "poste caído"):
+    for hazard in (
+        "fio caído",
+        "exposto",
+        "energizado",
+        "faísca",
+        "faiscando",
+        "soltando faísca",
+        "curto",
+        "choque",
+        "poste caído",
+    ):
         assert hazard in p
     assert "Bombeiros (193)" in p
     assert "Polícia Militar (190)" in p

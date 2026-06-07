@@ -714,8 +714,22 @@ def _evaluate_prompt_contract() -> list[CheckResult]:
                 and "uma sim uma não" in INTERACTIVE_RESPONSE_PROMPT
                 and "mal iluminada" in INTERACTIVE_RESPONSE_PROMPT
                 and "fraquejando" in INTERACTIVE_RESPONSE_PROMPT
+                and "falhando" in INTERACTIVE_RESPONSE_PROMPT
+                and "falha" in INTERACTIVE_RESPONSE_PROMPT
             ),
             "defeitos comuns devem mapear para defect_type canonico do Flow",
+        ),
+        (
+            "risk_hazard_mapping",
+            True,
+            (
+                "Perigo elétrico" in INTERACTIVE_RESPONSE_PROMPT
+                and "faísca" in INTERACTIVE_RESPONSE_PROMPT
+                and "faiscando" in INTERACTIVE_RESPONSE_PROMPT
+                and "soltando faísca" in INTERACTIVE_RESPONSE_PROMPT
+                and "curto" in INTERACTIVE_RESPONSE_PROMPT
+            ),
+            "risco eletrico deve preemptar Flow para faisca e curto",
         ),
         (
             "noise_defect_mapping",
