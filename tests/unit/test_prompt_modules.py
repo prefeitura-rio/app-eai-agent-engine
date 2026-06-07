@@ -360,6 +360,8 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "Serviço: Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "Templates obrigatórios de luminária" in p
     assert "Bombeiros (193) ou Polícia Militar (190)" in p
+    assert "Não pare só nos telefones de emergência" in p
+    assert "Remoção do risco em até 6 horas" in p
     assert "redireciona para a Light" in p
 
 
@@ -415,6 +417,8 @@ def test_interactive_response_enriches_luminaria_flow_body():
     assert "mesmo que a pergunta cite exemplo de luminária apagada/queimada" in p
     assert "sobre o Flow-first" in p
     assert "nome do serviço oficial e o link aplicável" in p
+    assert "Pergunta informativa de canal/prazo" in p
+    assert "Prazo para defeitos comuns: até 3 dias corridos" in p
     assert "site ou app 1746" in p
     assert "Acesa de dia" in p
     assert "Bloco ou grupo de luminárias apagadas" in p
