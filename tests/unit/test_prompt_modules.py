@@ -400,6 +400,12 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="Tem cabo caído na rua dando choque")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O cabo da iluminação pública caiu na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O cabo da Rioluz arrebentou no poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A lâmpada do poste queimou")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -437,6 +443,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O semáforo da praça apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste de telefonia caiu na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O fio da Claro caiu na calçada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de fibra caído na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O cabo da Vivo no poste arrebentou")]
     )
 
 
@@ -594,6 +612,9 @@ def test_interactive_response_routes_luminaria_out_of_scope_before_flow():
     assert "Fora de escopo de luminária" in p
     assert "falta de energia" in p
     assert "semáforo apagado" in p
+    assert "cabo/fio de internet, telefonia, TV a cabo" in p
+    assert "fibra ou operadora" in p
+    assert "operadora responsável" in p
     assert "0800 0210196" in p
     assert "Nestes casos específicos" in p
     assert "responda direto sem `google_search`" in p

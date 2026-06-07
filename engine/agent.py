@@ -175,6 +175,14 @@ _LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
     r"cal[cç]ada|via\s+p[uú]blica"
     r")\b"
 )
+_NON_LUMINARIA_TELECOM_RE = re.compile(
+    r"(?i)\b("
+    r"internet|telefon(?:e|ia)|tv\s+a\s+cabo|fibra(?:\s+[óo]ptica)?|"
+    r"banda\s+larga|provedor|operadora|"
+    r"(?:cabo|fio)s?\s+(?:da|do|de)\s+(?:claro|net|vivo|tim|oi)|"
+    r"(?:claro|net|vivo|tim|oi)\s+(?:fibra|internet|telefone|tv|cabo)"
+    r")\b"
+)
 _NON_LUMINARIA_SERVICE_RE = re.compile(
     r"(?i)\b([aá]rvore|poda|galho|sem[aá]foro|internet|telefone|tv\s+a\s+cabo)\b"
 )
@@ -212,6 +220,8 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 return False
             if _LUMINARIA_CORE_TRIGGER_RE.search(text):
                 return True
+            if _NON_LUMINARIA_TELECOM_RE.search(text):
+                return False
             has_public_lighting_context = (
                 _LUMINARIA_LIGHT_TRIGGER_RE.search(text)
                 and _LUMINARIA_PUBLIC_LOCATION_RE.search(text)

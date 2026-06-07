@@ -84,6 +84,8 @@ def _gate_cases() -> list[GateCase]:
         ("lamp_on_post", "A lampada do poste queimou"),
         ("fallen_post", "O poste caiu com fios expostos"),
         ("shock_wire", "Tem cabo caido na rua dando choque"),
+        ("public_lighting_cable", "O cabo da iluminacao publica caiu na rua"),
+        ("rioluz_cable", "O cabo da Rioluz arrebentou no poste"),
         ("street_dark", "A rua esta escura faz dois dias"),
         ("street_lighting", "A iluminacao da minha rua apagou"),
         ("repair_request", "Quero abrir reparo de luz publica na Rua A, 10"),
@@ -102,6 +104,10 @@ def _gate_cases() -> list[GateCase]:
         ("traffic_light_square", "O semaforo da praca apagou"),
         ("phone_wire", "O fio do telefone caiu na calcada"),
         ("tv_cable", "A tv a cabo parou e o cabo esta solto"),
+        ("telecom_post", "O poste de telefonia caiu na rua"),
+        ("provider_wire", "O fio da Claro caiu na calcada"),
+        ("fiber_wire", "Tem fio de fibra caido na rua"),
+        ("provider_cable_post", "O cabo da Vivo no poste arrebentou"),
     ]
 
     cases = [

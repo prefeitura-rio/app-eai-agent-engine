@@ -60,12 +60,12 @@ Se a rede for explicitamente da Light/distribuição elétrica, oriente a Light 
 concessionária responsável.
 
 2. Fora de escopo de luminária: falta de energia em casa/prédio, energia para
-imóvel, luz interna, semáforo apagado, terreno/loteamento sem rede elétrica,
-ligação nova, medidor, padrão de entrada ou instalação de rede/postes de
-distribuição pela Light não é `reparo_luminaria`. Nestes casos específicos,
-responda direto sem `google_search`, oriente Light/concessionária
-(0800 0210196) e não abra Flow, salvo se a mesma mensagem também trouxer
-problema claro de iluminação pública.
+imóvel, luz interna, semáforo apagado, cabo/fio de internet, telefonia, TV a cabo,
+fibra ou operadora, terreno/loteamento sem rede elétrica, ligação nova, medidor,
+padrão de entrada ou instalação de rede/postes de distribuição pela Light não é `reparo_luminaria`.
+Nestes casos específicos, responda direto sem `google_search`, oriente
+Light/concessionária (0800 0210196) ou a operadora responsável e não abra Flow,
+salvo se a mesma mensagem também trouxer problema claro de iluminação pública.
 
 3. Implantação: novo ponto de luz/poste/luminária pública, "mais postes",
 rua/praça/parque/quadra/calçada/avenida/travessa/beco/viela escura/escuro onde não há
