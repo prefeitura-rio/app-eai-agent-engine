@@ -524,6 +524,15 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A luz da calçada do prédio apagou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O braço do poste está quebrado")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O braço do poste quebrou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O refletor da praça quebrou")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Tem fio caído com faísca perto do poste da Rioluz")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -666,6 +675,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O poste do quintal caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O braço da cadeira quebrou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O suporte da TV quebrou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O globo da sala quebrou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A tampa da caixa d água caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O refletor do quintal queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A haste do portão entortou")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz acabou na minha casa")]

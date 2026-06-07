@@ -47,6 +47,11 @@ _LUMINARIA_POST_TRIGGER_RE = re.compile(r"(?i)\bpostes?\b")
 _LUMINARIA_LIGHT_TRIGGER_RE = re.compile(
     r"(?i)\b(luz(?:es)?|ilumina[cç][aã]o)\b"
 )
+_LUMINARIA_FIXTURE_TRIGGER_RE = re.compile(
+    r"(?i)\b("
+    r"bra[cç]os?|hastes?|suportes?|globos?|tampas?|refletor(?:es)?"
+    r")\b"
+)
 _LUMINARIA_PUBLIC_LOCATION_RE = re.compile(
     rf"(?i)\b(postes?|{_LUMINARIA_PUBLIC_PLACE_PATTERN}|rio\s*-?\s*luz|rioluz)\b"
 )
@@ -64,7 +69,9 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"apagad[ao]s?|"
     rf"apagou|queimad[ao]|queimou|piscando|piscou|aces[ao]|"
     rf"pendurad[ao]|danificad[ao]|"
-    rf"ca[ií]d[ao]|caiu|escur[ao]s?|sem\s+luz"
+    rf"ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
+    rf"solt[ao]s?|soltou|entortad[ao]s?|entortou|"
+    rf"escur[ao]s?|sem\s+(?:luz|tampa)"
     rf")\b"
 )
 _LUMINARIA_PROXIMITY_CONTEXT_RE = re.compile(
@@ -219,6 +226,11 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                 _LUMINARIA_POST_TRIGGER_RE.search(text)
                 and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
             )
+            has_fixture_public_context = (
+                _LUMINARIA_FIXTURE_TRIGGER_RE.search(text)
+                and _LUMINARIA_PUBLIC_PLACE_RE.search(text)
+                and _LUMINARIA_ASSET_CONTEXT_RE.search(text)
+            )
             if (
                 (
                     has_public_lighting_context
@@ -226,6 +238,7 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
                     or has_lamp_proximity_context
                     or has_light_proximity_context
                     or has_post_context
+                    or has_fixture_public_context
                 )
                 and not _NON_LUMINARIA_SERVICE_RE.search(text)
                 and not _LUMINARIA_NEGATED_NO_ISSUE_RE.search(text)
