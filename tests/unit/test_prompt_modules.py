@@ -386,6 +386,18 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="As lâmpadas do poste queimaram")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da rua apagaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da praça apagaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes dos postes apagaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da avenida estão piscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Como falar com Rio Luz?")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -444,6 +456,15 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A iluminação da sala está ruim")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da casa apagaram")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da sala estão piscando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes do quarto queimaram")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="Meu quarto está escuro")]

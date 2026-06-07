@@ -140,18 +140,18 @@ _LUMINARIA_POST_TRIGGER_RE = re.compile(
     r"(?i)\bpostes?\b"
 )
 _LUMINARIA_LIGHT_TRIGGER_RE = re.compile(
-    r"(?i)\b(luz|ilumina[cç][aã]o)\b"
+    r"(?i)\b(luz(?:es)?|ilumina[cç][aã]o)\b"
 )
 _LUMINARIA_PUBLIC_LOCATION_RE = re.compile(
     r"(?i)\b("
-    r"poste|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
+    r"postes?|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
     r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
     r"rio\s*-?\s*luz|rioluz"
     r")\b"
 )
 _LUMINARIA_PUBLIC_PLACE_RE = re.compile(
     r"(?i)\b("
-    r"poste|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
+    r"postes?|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
     r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
     r"luz\s+p[uú]blica|ilumina[cç][aã]o|p[uú]blic[ao]|"
     r"rio\s*-?\s*luz|rioluz"
@@ -161,7 +161,7 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     r"(?i)\b("
     r"rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
     r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
-    r"luz|ilumina[cç][aã]o|p[uú]blic[ao]|rio\s*-?\s*luz|rioluz|"
+    r"luz(?:es)?|ilumina[cç][aã]o|p[uú]blic[ao]|rio\s*-?\s*luz|rioluz|"
     r"apagad[ao]s?|"
     r"apagou|queimad[ao]|queimou|piscando|piscou|aces[ao]|"
     r"pendurad[ao]|danificad[ao]|"
