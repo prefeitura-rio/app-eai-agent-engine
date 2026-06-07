@@ -36,11 +36,11 @@ _LUMINARIA_NAMED_DARK_PUBLIC_PLACE_RE = re.compile(
     rf"(?i)\b(?:{_LUMINARIA_PUBLIC_PLACE_PATTERN})"
     rf"(?:\s+(?!n[aã]o\b|est[aá]\b|est[aã]o\b|t[aá]\b|"
     rf"ficou\b|ficaram\b|ficam\b|fica\b|sem\b|escur[ao]s?\b|"
-    rf"no\b|[àa]s\b)[\wÀ-ÿ0-9.-]+){{0,6}}"
+    rf"no\b|[àa]s\b|mal\b)[\wÀ-ÿ0-9.-]+){{0,6}}"
     rf"\s+(?:(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|ficam|fica)\s+"
     rf"(?:muito\s+)?)?"
     rf"(?:escur[ao]s?|no\s+escuro|[àa]s\s+escuras|"
-    rf"sem\s+(?:ilumina[cç][aã]o|luz))\b"
+    rf"sem\s+(?:ilumina[cç][aã]o|luz)|mal\s+iluminad[ao]s?)\b"
 )
 _LUMINARIA_LAMP_TRIGGER_RE = re.compile(r"(?i)\bl[aâ]mpadas?\b")
 _LUMINARIA_POST_TRIGGER_RE = re.compile(r"(?i)\bpostes?\b")
@@ -68,6 +68,7 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"luz(?:es)?|ilumina[cç][aã]o|p[uú]blic[ao]|rio\s*-?\s*luz|rioluz|"
     rf"apagad[ao]s?|"
     rf"apagou|queimad[ao]|queimou|piscando|piscou|aces[ao]|"
+    rf"frac[ao]s?|mal\s+iluminad[ao]s?|"
     rf"pendurad[ao]|danificad[ao]|"
     rf"ca[ií]d[ao]|caiu|quebrad[ao]s?|quebrou|"
     rf"solt[ao]s?|soltou|entortad[ao]s?|entortou|"
@@ -144,7 +145,7 @@ _LUMINARIA_RISK_OVERRIDE_RE = re.compile(r"(?i)\b(f[aá]isca|choque|rioluz)\b")
 _LUMINARIA_NEGATED_NO_ISSUE_RE = re.compile(
     r"(?i)\bn[aã]o\s+(?:est[aá]|est[aã]o|t[aá]|ficou|ficaram|fica|ficam)\s+"
     r"(?:sem\s+(?:ilumina[cç][aã]o|luz)|escur[ao]s?|"
-    r"no\s+escuro|[àa]s\s+escuras)\b"
+    r"no\s+escuro|[àa]s\s+escuras|mal\s+iluminad[ao]s?)\b"
 )
 _WHATSAPP_FLOW_SUBMISSION_RE = re.compile(
     r"(?i)^\s*\[SYSTEM\]\s*O cidad[aã]o preencheu o formul[aá]rio WhatsApp"
