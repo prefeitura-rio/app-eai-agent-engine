@@ -406,7 +406,9 @@ def test_interactive_response_enriches_luminaria_flow_body():
     p = interactive_response.MODULE_PROMPT
     assert "Body obrigatório do Flow de `reparo_luminaria`" in p
     assert "Body genérico proibido em `reparo_luminaria`" in p
+    assert "Defeito comum de luminária" in p
     assert "body=\"Reparo de Luminária (Rioluz)" in p
+    assert "não como \"relato de luminária\" ou \"serviço da Rioluz\"" in p
     assert "Reparo de Luminária" in p
     assert (
         "https://www.1746.rio/hc/pt-br/articles/14187518715931-"

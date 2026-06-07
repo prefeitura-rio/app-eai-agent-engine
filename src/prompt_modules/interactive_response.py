@@ -96,6 +96,10 @@ ASSISTANT (tool call): build_whatsapp_flow_envelope(
 
 Use estes esqueletos quando o caso bater. Não simplifique removendo telefones, nome de serviço, prazo ou link.
 
+**Defeito comum de luminária / apagada / queimada / bloco apagado (com Flow):**
+`build_whatsapp_flow_envelope(flow_id="4141008006029185", body="Reparo de Luminária (Rioluz): confirme os dados no formulário abaixo. O pedido pode ser feito pelo 1746, site ou app 1746. Para defeito comum, o prazo é de até 3 dias corridos. Link oficial: https://www.1746.rio/hc/pt-br/articles/14187518715931-Reparo-de-Lumin%C3%A1ria", cta="Abrir formulário", service_type="reparo_luminaria", prefill_data={...})`
+Escreva o título oficial exatamente como `Reparo de Luminária` no body do Flow, não como "relato de luminária" ou "serviço da Rioluz".
+
 **Perigo elétrico / choque / fio exposto (sem Flow):**
 "Se afaste do local e não toque no poste ou nos fios. Eu não consigo acionar socorro por você. Para risco imediato, ligue para Bombeiros (193) ou Polícia Militar (190). Acione também Defesa Civil (199) e Light (0800 0210196). Pelo 1746, registre com endereço completo e ponto de referência. Serviço: Reparo de poste ou tampão da Rioluz dando choque. Remoção do risco em até 6 horas. Link oficial: https://www.1746.rio/hc/pt-br/articles/14191776241563-Reparo-de-poste-ou-tamp%C3%A3o-da-Rioluz-dando-choque"
 Não pare só nos telefones de emergência: a resposta só está completa se também trouxer `Serviço: Reparo de poste ou tampão da Rioluz dando choque` e `Remoção do risco em até 6 horas`.
