@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import json
 import random
+import re
 import traceback as _traceback
 from datetime import datetime, timezone
 from functools import wraps
@@ -47,6 +48,8 @@ from engine.interactive_tools import (
 )
 from engine.session_boundary import apply_session_reset, inject_close_directive
 from engine.log import logger
+from src.prompt_modules import INTERACTIVE_RESPONSE_DYNAMIC_ENABLED
+from src.prompt_modules.interactive_response import MODULE_PROMPT as INTERACTIVE_RESPONSE_PROMPT
 
 # Error monitoring utilities (safe fallback if not available)
 from engine.utils import (
@@ -116,6 +119,60 @@ async def _report_graph_failure(source: dict, exc: Exception, kwargs: dict) -> N
 # guarda uma weakref do task criado por create_task — se o caller retorna antes
 # do report completar, o task pode ser coletado e o erro nunca chega ao monitor.
 _PENDING_GRAPH_REPORT_TASKS: set = set()
+
+
+_LUMINARIA_PROMPT_TRIGGER_RE = re.compile(
+    r"(?i)\b("
+    r"lumin[aá]ria|ilumina[cç][aã]o|rioluz|l[aâ]mpada|poste|"
+    r"luz\s+p[uú]blica|rua\s+escura|fio(?:s)?|cabo(?:s)?|"
+    r"f[aá]isca|choque|sem[aá]foro"
+    r")\b"
+)
+
+
+def _message_text_for_prompt_gate(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(parts)
+    return ""
+
+
+def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
+    if not INTERACTIVE_RESPONSE_DYNAMIC_ENABLED:
+        return False
+    for message in reversed(messages):
+        if isinstance(message, HumanMessage):
+            return bool(
+                _LUMINARIA_PROMPT_TRIGGER_RE.search(
+                    _message_text_for_prompt_gate(message.content)
+                )
+            )
+    return False
+
+
+def _inject_interactive_response_prompt(messages: list[Any]) -> list[Any]:
+    if any(
+        isinstance(message, SystemMessage)
+        and message.content == INTERACTIVE_RESPONSE_PROMPT
+        for message in messages
+    ):
+        return messages
+
+    injected = SystemMessage(content=INTERACTIVE_RESPONSE_PROMPT)
+    system_messages = [message for message in messages if isinstance(message, SystemMessage)]
+    conversation_messages = [
+        message for message in messages if not isinstance(message, SystemMessage)
+    ]
+    return [*system_messages, injected, *conversation_messages]
 
 
 def _report_graph_failure_sync(source: dict, exc: Exception, kwargs: dict) -> None:
@@ -1125,6 +1182,21 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # reabre o Flow em vez de fechar). Por último pra ser a diretiva mais
         # recente/forte; só entra em llm_input_messages (não-persistente).
         final_state = inject_close_directive(state, final_state)
+
+        # Step 4.7: WhatsApp Flow de luminária — prompt pesado e específico,
+        # injetado só em turnos com sinais de luminária/iluminação. Manter fora
+        # do system prompt global evita contaminação de outros serviços/evals.
+        message_key = (
+            "llm_input_messages"
+            if "llm_input_messages" in final_state
+            else "messages"
+        )
+        gated_messages = final_state.get(message_key, [])
+        if _should_inject_interactive_response_prompt(gated_messages):
+            final_state = {
+                **final_state,
+                message_key: _inject_interactive_response_prompt(gated_messages),
+            }
 
         # Step 5: Store the messages that will be sent to LLM for token counting later
         # The prompt_runnable will prepend system prompt to these messages

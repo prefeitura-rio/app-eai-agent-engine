@@ -155,12 +155,15 @@ if _audio_response_enabled:
     ENABLED_MODULES.append(audio_response)
 if _media_response_enabled:
     ENABLED_MODULES.append(media_response)
-if _interactive_response_enabled:
-    ENABLED_MODULES.append(interactive_response)
 if _govbr_auth_enabled:
     ENABLED_MODULES.append(govbr_auth_gating)
 if _session_reset_enabled:
     ENABLED_MODULES.append(session_reset)
+
+# `interactive_response` é carregado dinamicamente pelo pre_model_hook apenas
+# em turnos que mencionam luminária/iluminação. Manter fora do prompt global
+# evita contaminação de `servicos`, `memory` e demais domínios.
+INTERACTIVE_RESPONSE_DYNAMIC_ENABLED = _interactive_response_enabled
 
 # Observability — os gates opcionais resolvem em import-time e ficam invisíveis
 # fora do sufixo de version. Logar a decisão (+ presença do flag govbr, SEM o
@@ -213,4 +216,9 @@ def compose(base_prompt: str, base_version: str) -> Tuple[str, str]:
     return augmented_prompt, augmented_version
 
 
-__all__ = ["compose", "ENABLED_MODULES"]
+__all__ = [
+    "compose",
+    "ENABLED_MODULES",
+    "INTERACTIVE_RESPONSE_DYNAMIC_ENABLED",
+    "interactive_response",
+]

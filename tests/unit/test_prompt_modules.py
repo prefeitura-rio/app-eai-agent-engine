@@ -8,7 +8,11 @@ o end-to-end (prompt fetched → composto → entregue ao agent), usar smoke
 tests pós-deploy em staging.
 """
 
-from src.prompt_modules import compose, ENABLED_MODULES
+from src.prompt_modules import (
+    compose,
+    ENABLED_MODULES,
+    INTERACTIVE_RESPONSE_DYNAMIC_ENABLED,
+)
 from src.prompt_modules import (
     audio_inbound,
     govbr_auth_gating,
@@ -341,6 +345,55 @@ def test_interactive_response_scope_is_luminaria_first_not_global_menu():
     assert "Menu de serviços" not in p
 
 
+def test_interactive_response_is_dynamic_not_global_prompt():
+    """Guidance pesada de luminária não entra no system prompt global."""
+    augmented, version = compose("BASE", "v1.0")
+    assert interactive_response not in ENABLED_MODULES
+    assert interactive_response.MODULE_PROMPT not in augmented
+    assert "interactive_response" not in version
+
+
+def test_interactive_response_dynamic_gate_matches_luminaria_turns():
+    """O pre_model_hook injeta o módulo só em turnos de luminária."""
+    if not INTERACTIVE_RESPONSE_DYNAMIC_ENABLED:
+        import pytest
+
+        pytest.skip("ENABLE_INTERACTIVE_RESPONSE=false")
+
+    from engine.agent import _should_inject_interactive_response_prompt
+    from langchain_core.messages import HumanMessage
+
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da minha rua está apagada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio caído com faísca perto do poste da Rioluz")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Como faço para solicitar poda de árvore?")]
+    )
+
+
+def test_interactive_response_dynamic_prompt_keeps_system_order():
+    """Prompt dinâmico entra como SystemMessage antes da conversa."""
+    from engine.agent import _inject_interactive_response_prompt
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    messages = [
+        SystemMessage(content="memória"),
+        HumanMessage(content="A luminária apagou"),
+    ]
+
+    injected = _inject_interactive_response_prompt(messages)
+
+    assert [type(message).__name__ for message in injected] == [
+        "SystemMessage",
+        "SystemMessage",
+        "HumanMessage",
+    ]
+    assert injected[1].content == interactive_response.MODULE_PROMPT
+
+
 def test_interactive_response_maps_wire_theft_to_valid_defect_type():
     """Furto/cabo/fios deve usar ID canônico do Flow, não valor inventado."""
     p = interactive_response.MODULE_PROMPT
@@ -477,29 +530,24 @@ def test_interactive_response_enriches_luminaria_flow_body():
     assert "até 4 dias corridos" in p
 
 
-def test_workflow_continuation_anchors_luminaria_deadlines_compactly():
-    """Prazos de luminaria ficam ancorados fora do gate interativo."""
+def test_luminaria_deadlines_stay_out_of_global_workflow_continuation():
+    """Prazos de luminária ficam no módulo dinâmico, não no global."""
     interactive = interactive_response.MODULE_PROMPT
     assert "Informativo" in interactive
     assert "não usa `google_search` nem Flow" in interactive
 
     p = workflow_continuation.MODULE_PROMPT
-    assert "ate 3 dias corridos" in p
-    assert "ate 4 dias corridos" in p
-    assert "furto/roubo" in p
-    assert "retirada de risco imediata" in p
-    assert "Nao aplique a outros servicos" in p
-    assert "responda sem\n`google_search`" in p
+    assert "ate 3 dias corridos" not in p
+    assert "ate 4 dias corridos" not in p
+    assert "Nao aplique a outros servicos" not in p
 
 
-def test_workflow_continuation_routes_luminaria_out_of_scope_text():
-    """Triagem textual fora de escopo deve existir mesmo sem interativos."""
+def test_luminaria_out_of_scope_stays_out_of_global_workflow_continuation():
+    """Triagem textual fora de escopo existe só no módulo dinâmico."""
     assert "Fora de escopo" in interactive_response.MODULE_PROMPT
     p = workflow_continuation.MODULE_PROMPT
-    assert "falta de energia" in p
-    assert "semaforo apagado" in p
-    assert "0800 0210196" in p
-    assert "nao abrir\nchamado de luminaria" in p
+    assert "semaforo apagado" not in p
+    assert "nao abrir\nchamado de luminaria" not in p
 
 
 def test_vision_inbound_prompt_has_safety_and_out_of_scope_routing():
