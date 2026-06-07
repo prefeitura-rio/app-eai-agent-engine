@@ -348,9 +348,15 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "Perigo elétrico preempta o Flow" in p
     for hazard in ("fio caído", "exposto", "energizado", "faísca", "choque", "poste caído"):
         assert hazard in p
+    assert "Bombeiros (193)" in p
+    assert "Polícia Militar (190)" in p
     assert "Defesa Civil (199)" in p
     assert "Light (0800 0210196)" in p
+    assert "não consegue acionar/chamar socorro" in p
     assert "não envie o Flow como primeira ação" in p
+    assert "Reparo de poste ou tampão da Rioluz dando choque" in p
+    assert "até 6 horas" in p
+    assert "redireciona para a Light" in p
 
 
 def test_interactive_response_routes_luminaria_out_of_scope_before_flow():
@@ -361,6 +367,56 @@ def test_interactive_response_routes_luminaria_out_of_scope_before_flow():
     assert "semáforo apagado" in p
     assert "0800 0210196" in p
     assert "não abra Flow" in p
+
+
+def test_interactive_response_distinguishes_light_grid_from_public_lighting():
+    """Rede elétrica da Light não deve virar implantação municipal."""
+    p = interactive_response.MODULE_PROMPT
+    assert "Rede elétrica da Light não é implantação municipal" in p
+    assert "terreno/loteamento sem rede elétrica" in p
+    assert "postes de distribuição pela Light" in p
+    assert "não use a regra de implantação municipal" in p
+    assert "siga a busca/rota oficial para Light/concessionária" in p
+
+
+def test_interactive_response_routes_luminaria_implantation_before_repair_flow():
+    """Novo ponto/poste/luz mais forte é implantação, não Flow de reparo."""
+    p = interactive_response.MODULE_PROMPT
+    assert "Implantação antes do Flow de reparo" in p
+    assert "novo ponto de luz" in p
+    assert "mais postes" in p
+    assert "luz mais forte" in p
+    assert "Implantação de iluminação pública" in p
+    assert "Não abra Flow de reparo" in p
+    assert "use `google_search` para obter o link oficial vigente" in p
+    assert "endereço completo" in p
+    assert "ponto de referência" in p
+    assert "Rioluz avalia/executa" in p
+    assert "Reinstalação de ponto de luz" in p
+
+
+def test_interactive_response_enriches_luminaria_flow_body():
+    """O body do Flow deve carregar serviço/canal/prazo/link antes da tool."""
+    p = interactive_response.MODULE_PROMPT
+    assert "Body obrigatório do Flow de `reparo_luminaria`" in p
+    assert "Reparo de Luminária" in p
+    assert (
+        "https://www.1746.rio/hc/pt-br/articles/14187518715931-"
+        "Reparo-de-Lumin%C3%A1ria"
+    ) in p
+    assert "Acesa de dia" in p
+    assert "Bloco ou grupo de luminárias apagadas" in p
+    assert "Reparo de cabo de iluminação pública" in p
+    assert (
+        "https://www.1746.rio/hc/pt-br/articles/14191400984987-"
+        "Reparo-de-cabo-de-ilumina%C3%A7%C3%A3o-p%C3%BAblica"
+    ) in p
+    assert "solicitação anônima" in p
+    assert "endereço completo/ponto de referência" in p
+    assert "retirada de risco imediata" in p
+    assert "Rioluz" in p
+    assert "até 3 dias corridos" in p
+    assert "até 4 dias corridos" in p
 
 
 def test_workflow_continuation_anchors_luminaria_deadlines_compactly():
