@@ -80,6 +80,8 @@ _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     rf"solt[ao]s?|soltou|entortad[ao]s?|entortou|"
     rf"balan[cç]ando|bamb[ao]s?|inst[aá]ve(?:l|is)|"
     rf"(?:prestes\s+a|quase)\s+cair|"
+    rf"troca|trocar|substitui(?:r|[cç][aã]o)|"
+    rf"repor|reposi[cç][aã]o|"
     rf"n[aã]o\s+(?:acende|liga|funciona|est[aá]\s+funcionando)|"
     rf"escur[ao]s?|sem\s+(?:luz|tampa)"
     rf")\b"

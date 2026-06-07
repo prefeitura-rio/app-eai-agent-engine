@@ -611,6 +611,30 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A luz pública não está funcionando")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa trocar a lâmpada da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que substituir a luminária da praça")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero pedir troca da luz do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa repor a lâmpada do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que trocar o reator do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa substituir a fotocélula da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero trocar o relé da praça")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Trocar a luminária da rua por luz mais forte")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz da rua está fraca")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -1095,6 +1119,24 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz do corredor do prédio não acende")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa trocar a lâmpada da sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que substituir a luminária da loja")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero trocar a luz do quarto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa repor a lâmpada do escritório")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que trocar o reator da sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa substituir a fotocélula da garagem")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A luz acabou na minha casa")]
