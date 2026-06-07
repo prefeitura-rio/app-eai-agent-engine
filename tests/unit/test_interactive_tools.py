@@ -360,6 +360,47 @@ def test_interactive_filter_adds_assistant_preview_before_flow_tool():
     assert filtered_result["messages"][-1].name == "build_whatsapp_flow_envelope"
 
 
+def test_interactive_filter_falls_back_to_tool_content_when_args_have_no_text():
+    result = {
+        "messages": [
+            HumanMessage(content="luminaria apagada"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "build_whatsapp_flow_envelope",
+                        "args": {
+                            "flow_id": "4141008006029185",
+                            "prefill_data": {"defect_type": "Apagada"},
+                        },
+                        "id": "flow-call",
+                        "type": "tool_call",
+                    },
+                ],
+            ),
+            ToolMessage(
+                content={
+                    "status": "ok",
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "flow",
+                        "body": {"text": "Confirme os dados no formulário."},
+                    },
+                },
+                name="build_whatsapp_flow_envelope",
+                tool_call_id="flow-call",
+            ),
+        ]
+    }
+
+    filtered_result = Agent._filter_current_interaction(object(), result)
+
+    assert isinstance(filtered_result["messages"][-2], AIMessage)
+    assert filtered_result["messages"][-2].content == "Confirme os dados no formulário."
+    assert isinstance(filtered_result["messages"][-1], ToolMessage)
+    assert filtered_result["messages"][-1].name == "build_whatsapp_flow_envelope"
+
+
 def test_interactive_filter_extracts_preview_from_list_body_args():
     result = {
         "messages": [
@@ -369,7 +410,25 @@ def test_interactive_filter_extracts_preview_from_list_body_args():
                 tool_calls=[
                     {
                         "name": "send_whatsapp_list",
-                        "args": {"body": "Escolha uma opção na lista."},
+                        "args": {
+                            "body": "Escolha uma opção na lista.",
+                            "sections": [
+                                {
+                                    "title": "Iluminação",
+                                    "rows": [
+                                        {
+                                            "id": "luminaria",
+                                            "title": "Luminária",
+                                            "description": "Poste apagado",
+                                        },
+                                        {
+                                            "id": "poste",
+                                            "title": "Poste caído",
+                                        },
+                                    ],
+                                }
+                            ],
+                        },
                         "id": "list-call",
                         "type": "tool_call",
                     },
@@ -386,9 +445,57 @@ def test_interactive_filter_extracts_preview_from_list_body_args():
     filtered_result = Agent._filter_current_interaction(object(), result)
 
     assert isinstance(filtered_result["messages"][-2], AIMessage)
-    assert filtered_result["messages"][-2].content == "Escolha uma opção na lista."
+    assert filtered_result["messages"][-2].content == (
+        "Escolha uma opção na lista.\n\n"
+        "Opções disponíveis:\n"
+        "Iluminação:\n"
+        "- Luminária: Poste apagado\n"
+        "- Poste caído"
+    )
     assert isinstance(filtered_result["messages"][-1], ToolMessage)
     assert filtered_result["messages"][-1].name == "send_whatsapp_list"
+
+
+def test_interactive_filter_extracts_preview_from_button_titles():
+    result = {
+        "messages": [
+            HumanMessage(content="continuar?"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "send_whatsapp_buttons",
+                        "args": {
+                            "body": "Quer continuar o atendimento?",
+                            "buttons": [
+                                {"id": "sim", "title": "Sim"},
+                                {"id": "nao", "title": "Não"},
+                            ],
+                        },
+                        "id": "buttons-call",
+                        "type": "tool_call",
+                    },
+                ],
+            ),
+            ToolMessage(
+                content={"type": "text", "text": "Quer continuar o atendimento?"},
+                name="send_whatsapp_buttons",
+                tool_call_id="buttons-call",
+            ),
+        ]
+    }
+
+    filtered_result = Agent._filter_current_interaction(object(), result)
+
+    assert isinstance(filtered_result["messages"][-2], AIMessage)
+    assert filtered_result["messages"][-2].content == (
+        "Quer continuar o atendimento?\n\n"
+        "Opções disponíveis:\n"
+        "- Sim\n"
+        "- Não"
+    )
+    assert isinstance(filtered_result["messages"][-1], ToolMessage)
+    assert filtered_result["messages"][-1].name == "send_whatsapp_buttons"
 
 
 def test_interactive_filter_does_not_add_preview_when_recovery_ai_wins():

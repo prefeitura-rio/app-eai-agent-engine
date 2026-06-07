@@ -1,3 +1,4 @@
+import ast
 import json
 from typing import Any, Iterable
 
@@ -146,12 +147,76 @@ def _preview_text_for_interactive_tool(
     tool_message: ToolMessage,
 ) -> str:
     args = _tool_call_args_for_message(messages, tool_message)
-    for key in ("body", "text", "message", "title"):
+    if args:
+        preview = _preview_text_from_tool_args(tool_message.name or "", args)
+        if preview:
+            return preview
+
+    return _preview_text_from_tool_content(tool_message.content)
+
+
+def _preview_text_from_tool_args(tool_name: str, args: dict) -> str:
+    body = _first_text_arg(args, ("body", "text", "message", "title"))
+    if tool_name == "send_whatsapp_buttons":
+        return _join_preview_parts(body, _button_option_lines(args.get("buttons")))
+    if tool_name == "send_whatsapp_list":
+        return _join_preview_parts(body, _list_option_lines(args.get("sections")))
+    return body
+
+
+def _first_text_arg(args: dict, keys: tuple[str, ...]) -> str:
+    for key in keys:
         value = args.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
+    return ""
 
-    return _preview_text_from_tool_content(tool_message.content)
+
+def _join_preview_parts(body: str, option_lines: list[str]) -> str:
+    if not option_lines:
+        return body
+    options_text = "Opções disponíveis:\n" + "\n".join(option_lines)
+    return f"{body}\n\n{options_text}" if body else options_text
+
+
+def _button_option_lines(buttons: Any) -> list[str]:
+    if not isinstance(buttons, list):
+        return []
+    lines = []
+    for button in buttons:
+        if not isinstance(button, dict):
+            continue
+        title = button.get("title")
+        if isinstance(title, str) and title.strip():
+            lines.append(f"- {title.strip()}")
+    return lines
+
+
+def _list_option_lines(sections: Any) -> list[str]:
+    if not isinstance(sections, list):
+        return []
+    lines = []
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        section_title = section.get("title")
+        if isinstance(section_title, str) and section_title.strip():
+            lines.append(f"{section_title.strip()}:")
+        rows = section.get("rows")
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            title = row.get("title")
+            if not isinstance(title, str) or not title.strip():
+                continue
+            description = row.get("description")
+            line = f"- {title.strip()}"
+            if isinstance(description, str) and description.strip():
+                line += f": {description.strip()}"
+            lines.append(line)
+    return lines
 
 
 def _tool_call_args_for_message(messages: list, tool_message: ToolMessage) -> dict:
@@ -203,4 +268,7 @@ def _decode_possible_json(value: Any) -> Any:
     try:
         return json.loads(stripped)
     except (json.JSONDecodeError, TypeError):
-        return value
+        try:
+            return ast.literal_eval(stripped)
+        except (SyntaxError, ValueError, TypeError):
+            return value
