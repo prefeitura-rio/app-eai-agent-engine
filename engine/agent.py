@@ -125,7 +125,8 @@ _PENDING_GRAPH_REPORT_TASKS: set = set()
 
 _LUMINARIA_CORE_TRIGGER_RE = re.compile(
     r"(?i)\b("
-    r"lumin[aá]ria|rioluz|ilumina[cç][aã]o\s+p[uú]blica|"
+    r"lumin[aá]rias?|rio\s*-?\s*luz|rioluz|"
+    r"ilumina[cç][aã]o\s+p[uú]blica|"
     r"luz\s+p[uú]blica|"
     r"(?:rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
     r"pra[cç]a|parque|quadra|via\s+p[uú]blica)"
@@ -133,10 +134,10 @@ _LUMINARIA_CORE_TRIGGER_RE = re.compile(
     r")\b"
 )
 _LUMINARIA_LAMP_TRIGGER_RE = re.compile(
-    r"(?i)\bl[aâ]mpada\b"
+    r"(?i)\bl[aâ]mpadas?\b"
 )
 _LUMINARIA_POST_TRIGGER_RE = re.compile(
-    r"(?i)\bposte\b"
+    r"(?i)\bpostes?\b"
 )
 _LUMINARIA_LIGHT_TRIGGER_RE = re.compile(
     r"(?i)\b(luz|ilumina[cç][aã]o)\b"
@@ -145,21 +146,23 @@ _LUMINARIA_PUBLIC_LOCATION_RE = re.compile(
     r"(?i)\b("
     r"poste|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
     r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
-    r"rioluz"
+    r"rio\s*-?\s*luz|rioluz"
     r")\b"
 )
 _LUMINARIA_PUBLIC_PLACE_RE = re.compile(
     r"(?i)\b("
     r"poste|rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
     r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
-    r"luz\s+p[uú]blica|ilumina[cç][aã]o|p[uú]blic[ao]|rioluz"
+    r"luz\s+p[uú]blica|ilumina[cç][aã]o|p[uú]blic[ao]|"
+    r"rio\s*-?\s*luz|rioluz"
     r")\b"
 )
 _LUMINARIA_ASSET_CONTEXT_RE = re.compile(
     r"(?i)\b("
     r"rua|avenida|travessa|estrada|beco|viela|cal[cç]ada|"
     r"via\s+p[uú]blica|pra[cç]a|parque|quadra|"
-    r"luz|ilumina[cç][aã]o|p[uú]blic[ao]|rioluz|apagad[ao]|"
+    r"luz|ilumina[cç][aã]o|p[uú]blic[ao]|rio\s*-?\s*luz|rioluz|"
+    r"apagad[ao]s?|"
     r"apagou|queimad[ao]|queimou|piscando|piscou|aces[ao]|"
     r"pendurad[ao]|danificad[ao]|"
     r"ca[ií]d[ao]|caiu|escura|sem\s+luz"
@@ -170,7 +173,8 @@ _LUMINARIA_RISK_TRIGGER_RE = re.compile(
 )
 _LUMINARIA_PUBLIC_CONTEXT_RE = re.compile(
     r"(?i)\b("
-    r"lumin[aá]ria|ilumina[cç][aã]o|rioluz|l[aâ]mpada|poste|"
+    r"lumin[aá]rias?|ilumina[cç][aã]o|rio\s*-?\s*luz|rioluz|"
+    r"l[aâ]mpadas?|postes?|"
     r"luz\s+p[uú]blica|rua|avenida|travessa|estrada|beco|viela|"
     r"cal[cç]ada|via\s+p[uú]blica"
     r")\b"
@@ -181,6 +185,12 @@ _NON_LUMINARIA_TELECOM_RE = re.compile(
     r"banda\s+larga|provedor|operadora|"
     r"(?:cabo|fio)s?\s+(?:da|do|de)\s+(?:claro|net|vivo|tim|oi)|"
     r"(?:claro|net|vivo|tim|oi)\s+(?:fibra|internet|telefone|tv|cabo)"
+    r")\b"
+)
+_TELECOM_WITH_LUMINARIA_OVERRIDE_RE = re.compile(
+    r"(?i)\b("
+    r"lumin[aá]rias?|l[aâ]mpadas?|"
+    r"luz\s+p[uú]blica|ilumina[cç][aã]o\s+p[uú]blica"
     r")\b"
 )
 _NON_LUMINARIA_SERVICE_RE = re.compile(
@@ -218,10 +228,13 @@ def _should_inject_interactive_response_prompt(messages: list[Any]) -> bool:
             text = _message_text_for_prompt_gate(message.content)
             if _WHATSAPP_FLOW_SUBMISSION_RE.search(text):
                 return False
+            if (
+                _NON_LUMINARIA_TELECOM_RE.search(text)
+                and not _TELECOM_WITH_LUMINARIA_OVERRIDE_RE.search(text)
+            ):
+                return False
             if _LUMINARIA_CORE_TRIGGER_RE.search(text):
                 return True
-            if _NON_LUMINARIA_TELECOM_RE.search(text):
-                return False
             has_public_lighting_context = (
                 _LUMINARIA_LIGHT_TRIGGER_RE.search(text)
                 and _LUMINARIA_PUBLIC_LOCATION_RE.search(text)

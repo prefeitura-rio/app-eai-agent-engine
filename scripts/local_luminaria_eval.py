@@ -75,6 +75,12 @@ def _gate_cases() -> list[GateCase]:
         ("rioluz_wire_hazard", "Tem fio caido com faisca perto do poste da Rioluz"),
         ("public_lighting", "A iluminacao publica falhou na minha rua"),
         ("public_light_square", "A luz da praca apagou"),
+        ("plural_luminarias", "Tem duas luminarias apagadas"),
+        ("plural_accented_luminarias", "Tem duas luminárias apagadas"),
+        ("plural_street_lamps", "As lampadas da rua queimaram"),
+        ("plural_accented_post_lamps", "As lâmpadas do poste queimaram"),
+        ("rio_luz_spaced", "Como falar com Rio Luz?"),
+        ("rio_luz_hyphenated", "Quero atendimento da Rio-Luz"),
         ("dark_square", "A praca esta escura"),
         ("dark_avenue", "A avenida esta escura"),
         ("dark_alley", "O beco ta escuro"),
@@ -107,7 +113,10 @@ def _gate_cases() -> list[GateCase]:
         ("telecom_post", "O poste de telefonia caiu na rua"),
         ("provider_wire", "O fio da Claro caiu na calcada"),
         ("fiber_wire", "Tem fio de fibra caido na rua"),
+        ("fiber_wire_on_post", "Tem fio de fibra caido no poste"),
         ("provider_cable_post", "O cabo da Vivo no poste arrebentou"),
+        ("internet_rio_luz", "Minha internet da Rio Luz caiu"),
+        ("fiber_rio_luz", "A fibra da Rio-Luz caiu"),
     ]
 
     cases = [

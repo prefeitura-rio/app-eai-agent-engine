@@ -377,6 +377,21 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="A luz da praça apagou")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem duas luminárias apagadas")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As lâmpadas da rua queimaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As lâmpadas do poste queimaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Como falar com Rio Luz?")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero atendimento da Rio-Luz")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A praça está escura")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -455,7 +470,16 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="Tem fio de fibra caído na rua")]
     )
     assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de fibra caído no poste")]
+    )
+    assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="O cabo da Vivo no poste arrebentou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Minha internet da Rio Luz caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A fibra da Rio-Luz caiu")]
     )
 
 
