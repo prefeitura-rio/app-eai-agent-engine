@@ -482,6 +482,12 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="As avenidas ficaram no escuro")]
     )
     assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O quarteirão inteiro está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Os quarteirões estão sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="As passarelas estão às escuras")]
     )
     assert _should_inject_interactive_response_prompt(
@@ -489,6 +495,27 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     )
     assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="Os becos estão escuros")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da rua estão uma sim uma não")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luminárias da avenida estão alternadas")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Metade das lâmpadas da praça apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Um trecho da rua está sem luz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A quadra inteira está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Várias lâmpadas da rua queimaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Só uma lâmpada do poste apagou")]
     )
     assert _should_inject_interactive_response_prompt(
         [HumanMessage(content="A lâmpada da esquina está apagada")]
@@ -866,10 +893,28 @@ def test_interactive_response_dynamic_gate_matches_luminaria_turns():
         [HumanMessage(content="As praças não estão sem iluminação")]
     )
     assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O quarteirão não está escuro")]
+    )
+    assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A praça não está mal iluminada")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="As ruas não estão mal iluminadas")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da sala estão uma sim uma não")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luminárias do prédio estão alternadas")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Metade das lâmpadas da loja apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Um trecho da garagem está sem luz")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A quadra da TV está sem sinal")]
     )
     assert not _should_inject_interactive_response_prompt(
         [HumanMessage(content="A lâmpada da cozinha queimou")]

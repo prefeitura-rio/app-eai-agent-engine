@@ -13,7 +13,8 @@ from engine.luminaria_interactive_prompt import (
 
 _LUMINARIA_PUBLIC_PLACE_PATTERN = (
     r"ruas?|avenidas?|travessas?|estradas?|becos?|vielas?|cal[cç]adas?|"
-    r"pra[cç]as?|parques?|quadras?|vias?\s+p[uú]blicas?|"
+    r"pra[cç]as?|parques?|quadras?|quarteir(?:[aã]o|[õo]es)|"
+    r"vias?\s+p[uú]blicas?|"
     r"t[uú]ne(?:l|is)|viadutos?|passarelas?|ciclovias?|escadarias?|orlas?|"
     r"esquinas?|"
     r"pontos?\s+de\s+[ôo]nibus|"
