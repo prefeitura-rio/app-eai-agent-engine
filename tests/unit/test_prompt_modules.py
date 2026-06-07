@@ -353,27 +353,35 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "não envie o Flow como primeira ação" in p
 
 
+def test_interactive_response_routes_luminaria_out_of_scope_before_flow():
+    """Falta de energia/semáforo não deve abrir Flow de luminária."""
+    p = interactive_response.MODULE_PROMPT
+    assert "Fora do escopo antes do Flow de luminária" in p
+    assert "falta de energia" in p
+    assert "semáforo apagado" in p
+    assert "0800 0210196" in p
+    assert "não abra Flow" in p
+
+
 def test_workflow_continuation_anchors_luminaria_deadlines_compactly():
     """Prazos de luminaria ficam ancorados fora do gate interativo."""
     p = workflow_continuation.MODULE_PROMPT
     assert "ate 3 dias corridos" in p
     assert "ate 4 dias corridos" in p
-    assert "acesa de dia" in p
-    assert "fraca" in p
-    assert "grupo de" in p
     assert "furto/roubo" in p
-    assert "fios de iluminacao publica" in p
-    assert "Nao aplique estes fatos a outros" in p
-    assert "sem chamar `google_search` apenas para confirmar prazo" in p
+    assert "retirada de risco imediata" in p
+    assert "Nao aplique a outros servicos" in p
+    assert "responda sem\n`google_search`" in p
 
 
 def test_workflow_continuation_routes_luminaria_out_of_scope_text():
-    """Falta de energia/semáforo não deve abrir reparo de luminária."""
+    """Triagem textual fora de escopo deve existir mesmo sem interativos."""
+    assert "Fora do escopo antes do Flow de luminária" in interactive_response.MODULE_PROMPT
     p = workflow_continuation.MODULE_PROMPT
     assert "falta de energia" in p
-    assert "semaforo" in p
+    assert "semaforo apagado" in p
     assert "0800 0210196" in p
-    assert "nao abra chamado de luminaria" in p
+    assert "nao abrir\nchamado de luminaria" in p
 
 
 def test_vision_inbound_prompt_has_safety_and_out_of_scope_routing():
