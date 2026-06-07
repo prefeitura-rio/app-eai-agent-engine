@@ -317,3 +317,113 @@ def test_interactive_retry_tool_after_error_wins_over_ai_with_tool_call():
 
     assert isinstance(filtered_result["messages"][-1], ToolMessage)
     assert filtered_result["messages"][-1].name == "build_whatsapp_flow_envelope"
+
+
+def test_interactive_filter_adds_assistant_preview_before_flow_tool():
+    result = {
+        "messages": [
+            HumanMessage(content="luminaria apagada"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "build_whatsapp_flow_envelope",
+                        "args": {
+                            "body": "Confirme os dados da luminária no formulário.",
+                            "flow_id": "4141008006029185",
+                        },
+                        "id": "flow-call",
+                        "type": "tool_call",
+                    },
+                ],
+            ),
+            ToolMessage(
+                content={"flow": "ok"},
+                name="build_whatsapp_flow_envelope",
+                tool_call_id="flow-call",
+            ),
+        ]
+    }
+
+    filtered_result = Agent._filter_current_interaction(object(), result)
+
+    assert result["messages"][-1].name == "build_whatsapp_flow_envelope"
+    assert isinstance(filtered_result["messages"][-2], AIMessage)
+    assert (
+        filtered_result["messages"][-2].content
+        == "Confirme os dados da luminária no formulário."
+    )
+    assert filtered_result["messages"][-2].additional_kwargs == {
+        "synthetic_interactive_preview": True
+    }
+    assert isinstance(filtered_result["messages"][-1], ToolMessage)
+    assert filtered_result["messages"][-1].name == "build_whatsapp_flow_envelope"
+
+
+def test_interactive_filter_extracts_preview_from_list_body_args():
+    result = {
+        "messages": [
+            HumanMessage(content="quero opções"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "send_whatsapp_list",
+                        "args": {"body": "Escolha uma opção na lista."},
+                        "id": "list-call",
+                        "type": "tool_call",
+                    },
+                ],
+            ),
+            ToolMessage(
+                content={"type": "text", "text": "Escolha uma opção na lista."},
+                name="send_whatsapp_list",
+                tool_call_id="list-call",
+            ),
+        ]
+    }
+
+    filtered_result = Agent._filter_current_interaction(object(), result)
+
+    assert isinstance(filtered_result["messages"][-2], AIMessage)
+    assert filtered_result["messages"][-2].content == "Escolha uma opção na lista."
+    assert isinstance(filtered_result["messages"][-1], ToolMessage)
+    assert filtered_result["messages"][-1].name == "send_whatsapp_list"
+
+
+def test_interactive_filter_does_not_add_preview_when_recovery_ai_wins():
+    result = {
+        "messages": [
+            HumanMessage(content="luminaria apagada"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "build_whatsapp_flow_envelope",
+                        "args": {"body": "Confirme os dados."},
+                        "id": "flow-call",
+                        "type": "tool_call",
+                    },
+                ],
+            ),
+            ToolMessage(
+                content="erro de validação",
+                name="build_whatsapp_flow_envelope",
+                status="error",
+                tool_call_id="flow-call",
+            ),
+            AIMessage(content="Pode tentar enviar novamente?"),
+        ]
+    }
+
+    filtered_result = Agent._filter_current_interaction(object(), result)
+
+    previews = [
+        message
+        for message in filtered_result["messages"]
+        if isinstance(message, AIMessage)
+        and message.additional_kwargs.get("synthetic_interactive_preview")
+    ]
+    assert previews == []
+    assert isinstance(filtered_result["messages"][-1], AIMessage)
+    assert filtered_result["messages"][-1].content == "Pode tentar enviar novamente?"

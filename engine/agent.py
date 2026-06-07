@@ -41,6 +41,7 @@ from vertexai.agent_engines import (
 from engine.custom_react_agent import create_react_agent
 from engine.audio_mode import inject_audio_directive
 from engine.interactive_tools import (
+    add_interactive_tool_preview_message,
     put_interactive_tool_messages_last,
     put_recovery_ai_after_interactive_tool_error,
 )
@@ -1607,6 +1608,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             filtered_result["messages"]
         ):
             put_interactive_tool_messages_last(filtered_result["messages"])
+            add_interactive_tool_preview_message(filtered_result["messages"])
         return filtered_result
 
     @interceptor(

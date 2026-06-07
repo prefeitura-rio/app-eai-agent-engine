@@ -365,6 +365,10 @@ def test_interactive_response_routes_luminaria_out_of_scope_before_flow():
 
 def test_workflow_continuation_anchors_luminaria_deadlines_compactly():
     """Prazos de luminaria ficam ancorados fora do gate interativo."""
+    interactive = interactive_response.MODULE_PROMPT
+    assert "Perguntas informativas sobre luminária NÃO usam `google_search`" in interactive
+    assert "Esta exceção tem precedência sobre a regra geral de buscar fonte oficial" in interactive
+
     p = workflow_continuation.MODULE_PROMPT
     assert "ate 3 dias corridos" in p
     assert "ate 4 dias corridos" in p

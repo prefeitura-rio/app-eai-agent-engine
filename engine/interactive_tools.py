@@ -1,4 +1,5 @@
-from typing import Iterable
+import json
+from typing import Any, Iterable
 
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -94,3 +95,112 @@ def put_interactive_tool_messages_last(messages: list) -> list:
         if id(message) not in interactive_ids
     ] + interactive
     return messages
+
+
+def add_interactive_tool_preview_message(messages: list) -> bool:
+    """Expose a text preview for evaluators while keeping the interactive last.
+
+    ``return_direct`` makes the successful ToolMessage the final citizen-facing
+    payload. The gateway/eval history, however, also expects an
+    ``assistant_message`` for textual scoring and operator inspection. Add the
+    preview only to the already-filtered response returned by ``Agent.query``;
+    callers invoke this after graph execution, so persisted LangGraph history is
+    not mutated.
+    """
+    if any(
+        isinstance(message, AIMessage)
+        and message.content
+        and not getattr(message, "tool_calls", None)
+        for message in messages
+    ):
+        return False
+
+    tool_index = _last_successful_interactive_tool_index(messages)
+    if tool_index is None:
+        return False
+
+    tool_message = messages[tool_index]
+    preview = _preview_text_for_interactive_tool(messages, tool_message)
+    if not preview:
+        return False
+
+    messages.insert(
+        tool_index,
+        AIMessage(
+            content=preview,
+            additional_kwargs={"synthetic_interactive_preview": True},
+        ),
+    )
+    return True
+
+
+def _last_successful_interactive_tool_index(messages: list) -> int | None:
+    for index in range(len(messages) - 1, -1, -1):
+        if is_successful_interactive_tool_message(messages[index]):
+            return index
+    return None
+
+
+def _preview_text_for_interactive_tool(
+    messages: list,
+    tool_message: ToolMessage,
+) -> str:
+    args = _tool_call_args_for_message(messages, tool_message)
+    for key in ("body", "text", "message", "title"):
+        value = args.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return _preview_text_from_tool_content(tool_message.content)
+
+
+def _tool_call_args_for_message(messages: list, tool_message: ToolMessage) -> dict:
+    tool_call_id = getattr(tool_message, "tool_call_id", None)
+    for message in messages:
+        if not isinstance(message, AIMessage):
+            continue
+        for call in getattr(message, "tool_calls", None) or []:
+            if call.get("id") == tool_call_id:
+                args = call.get("args") or {}
+                return args if isinstance(args, dict) else {}
+    return {}
+
+
+def _preview_text_from_tool_content(content: Any) -> str:
+    content = _decode_possible_json(content)
+    if isinstance(content, list) and content:
+        return _preview_text_from_tool_content(content[0])
+    if isinstance(content, dict):
+        for key in ("body", "text", "message", "title"):
+            value = content.get(key)
+            if isinstance(value, str) and value.strip():
+                nested = _decode_possible_json(value)
+                if nested is not value:
+                    nested_preview = _preview_text_from_tool_content(nested)
+                    if nested_preview:
+                        return nested_preview
+                return value.strip()
+        interactive_body = (
+            content.get("interactive", {})
+            .get("body", {})
+            .get("text")
+            if isinstance(content.get("interactive"), dict)
+            else None
+        )
+        if isinstance(interactive_body, str) and interactive_body.strip():
+            return interactive_body.strip()
+    if isinstance(content, str) and content.strip() and not content.strip().startswith("{"):
+        return content.strip()
+    return ""
+
+
+def _decode_possible_json(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped.startswith(("{", "[")):
+        return value
+    try:
+        return json.loads(stripped)
+    except (json.JSONDecodeError, TypeError):
+        return value
