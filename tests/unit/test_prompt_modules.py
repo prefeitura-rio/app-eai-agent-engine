@@ -358,9 +358,16 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "até 6 horas" in p
     assert "Serviço: Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "templates oficiais" in p
+    assert "preserve uma linha literal iniciada\npor `Serviço:`" in p
+    assert 'Não parafraseie `Serviço:` como "O serviço é"' in p
+    assert "preserve também a linha literal" in p
+    assert "Para risco imediato: Bombeiros (193), Polícia Militar (190), Defesa Civil (199) e Light (0800 0210196)." in p
+    assert "socorro por você.\nPara risco imediato: Bombeiros (193)" in p
+    assert "ponto de referência.\nServiço: Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "Bombeiros (193), Polícia Militar (190), Defesa Civil (199) e Light (0800 0210196)" in p
     assert "Cite literalmente os quatro canais" in p
     assert "não substitua por só Defesa Civil/Light" in p
+    assert "mantenha literais as linhas `Para risco imediato:` e `Serviço:`" in p
     assert "Não condicione Bombeiros a incêndio" in p
     assert "Bombeiros e Polícia Militar sempre aparecem" in p
     assert "Remoção do risco em até 6 horas" in p
@@ -408,6 +415,7 @@ def test_interactive_response_routes_luminaria_implantation_before_repair_flow()
     assert "Implantação de iluminação pública" in p
     assert "não abra Flow de reparo" in p
     assert "Serviço: Implantação de iluminação pública" in p
+    assert "A primeira linha da resposta deve ser exatamente `Serviço: Implantação de iluminação pública`" in p
     assert "não use `google_search` salvo se o cidadão pedir link/URL direto" in p
     assert "endereço + referência + descrição" in p
     assert "Rioluz avalia/executa" in p
@@ -434,8 +442,14 @@ def test_interactive_response_enriches_luminaria_flow_body():
     assert "NÃO chame `google_search` antes nem depois" in p
     assert "responda direto com os dados abaixo" in p
     assert "Só abra Flow se a mesma mensagem pedir abrir/registrar chamado para local concreto" in p
-    assert "Toda resposta informativa de luminária deve conter linha `Serviço: ...`" in p
+    assert "Toda resposta informativa de luminária deve conter linha literal `Serviço: ...`" in p
+    assert "responda preservando a linha literal" in p
+    assert "Serviço: Reparo de cabo de iluminação pública" in p
+    assert "como linha `Serviço:`" in p
     assert "canal/prazo/link sem título oficial é incompleto" in p
+    assert "3460-1746.\nServiço: Reparo de Luminária, da Rioluz." in p
+    assert "Rioluz.\nPrazo para defeitos comuns: até 3 dias corridos." in p
+    assert "Serviço: Reparo de cabo de iluminação pública.\nTelefone: 1746" in p
     assert "Prazo para defeitos comuns: até 3 dias corridos" in p
     assert "site ou app 1746" in p
     assert "Acesa de dia" in p
@@ -453,7 +467,7 @@ def test_interactive_response_enriches_luminaria_flow_body():
     ) in p
     assert "de forma anônima" in p
     assert "pedido anônimo" in p
-    assert "telefone 1746 e (21) 3460-1746 de fora do município" in p
+    assert "Telefone: 1746; de fora do município, (21) 3460-1746" in p
     assert "Em pergunta de cabo/furto, a resposta é incompleta" in p
     assert "retirada de risco imediata" in p
     assert "Rioluz" in p
