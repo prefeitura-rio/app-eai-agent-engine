@@ -6,13 +6,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import BaseTool
 
 
-INTERACTIVE_RESPONSE_TOOL_NAMES = frozenset(
-    {
-        "build_whatsapp_flow_envelope",
-        "send_whatsapp_buttons",
-        "send_whatsapp_list",
-    }
-)
+INTERACTIVE_RESPONSE_TOOL_NAMES = frozenset({"build_whatsapp_flow_envelope"})
 
 
 def mark_interactive_tools_return_direct(tools: Iterable[BaseTool]) -> list[BaseTool]:

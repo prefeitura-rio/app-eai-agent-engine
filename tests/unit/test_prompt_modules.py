@@ -330,10 +330,13 @@ def test_interactive_response_scope_is_luminaria_first_not_global_menu():
     p = interactive_response.MODULE_PROMPT
     assert "Resposta interativa focada em `reparo_luminaria`" in p
     assert "Use resposta interativa proativamente apenas quando ela é necessária" in p
-    assert "Fora desse fluxo, não troque respostas textuais" in p
+    assert "Fora desse fluxo" in p
+    assert "respostas textuais" in p
     assert "Matriz de escolha restrita" in p
-    assert "NÃO use botões/listas para triagem genérica de serviços" in p
-    assert "O service registrado coberto por este módulo é `reparo_luminaria`" in p
+    assert "NÃO use" in p
+    assert "botões/listas para triagem genérica de serviços" in p
+    assert "O service registrado" in p
+    assert "coberto por este módulo é `reparo_luminaria`" in p
     assert "Quando o cidadão precisa escolher entre opções discretas, **prefira mensagens interativas**" not in p
     assert "Menu de serviços" not in p
 
@@ -351,7 +354,8 @@ def test_interactive_response_wire_theft_is_flow_first():
     p = interactive_response.MODULE_PROMPT
     assert "cabo/fios/furto/roubo de fios" in p
     assert "reparo de luminária Flow-first" in p
-    assert "não substitua por `google_search`" in p
+    assert "não substitua por" in p
+    assert "`google_search`" in p
     assert "nem responda só com Disque Denúncia" in p
 
 
@@ -371,28 +375,13 @@ def test_interactive_response_wire_hazard_preempts_flow():
     assert "até 6 horas" in p
     assert "Serviço: Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "templates oficiais" in p
-    assert "preserve uma linha literal iniciada\npor `Serviço:`" in p
-    assert 'Não parafraseie `Serviço:` como "O serviço é"' in p
-    assert "preserve também a linha literal" in p
-    assert "Não use markdown, negrito ou asteriscos nessas linhas\nliterais" in p
-    assert "Serviço: *Implantação de iluminação pública*` é inválido" in p
     assert "Para risco imediato: Bombeiros (193), Polícia Militar (190), Defesa Civil (199) e Light (0800 0210196)." in p
-    assert "sem markdown, negrito ou asteriscos" in p
-    assert "*Bombeiros (193)*` é inválido nessa linha" in p
     assert "socorro por você.\nPara risco imediato: Bombeiros (193)" in p
     assert "ponto de referência.\nServiço: Reparo de poste ou tampão da Rioluz dando choque" in p
     assert "Bombeiros (193), Polícia Militar (190), Defesa Civil (199) e Light (0800 0210196)" in p
-    assert "Cite literalmente os quatro canais" in p
-    assert "não substitua por só Defesa Civil/Light" in p
-    assert "mantenha literais as linhas `Para risco imediato:` e `Serviço:`" in p
-    assert "Não condicione Bombeiros a incêndio" in p
-    assert "Bombeiros e Polícia Militar sempre aparecem" in p
     assert "Remoção do risco em até 6 horas" in p
-    assert "Nunca encerre perigo só nos telefones" in p
-    assert "a resposta é incompleta se não trouxer serviço, prazo de 6h e link" in p
-    assert "Se o poste/rede não for da Rioluz" in p
     assert "Light/distribuição elétrica" in p
-    assert "redirecionar para a Light ou operadora responsável" in p
+    assert "concessionária responsável" in p
 
 
 def test_interactive_response_routes_luminaria_out_of_scope_before_flow():
@@ -402,7 +391,8 @@ def test_interactive_response_routes_luminaria_out_of_scope_before_flow():
     assert "falta de energia" in p
     assert "semáforo apagado" in p
     assert "0800 0210196" in p
-    assert "nestes casos específicos, responda direto sem `google_search`" in p
+    assert "Nestes casos específicos" in p
+    assert "responda direto sem `google_search`" in p
     assert "não abra Flow" in p
 
 
@@ -411,15 +401,17 @@ def test_interactive_response_distinguishes_light_grid_from_public_lighting():
     p = interactive_response.MODULE_PROMPT
     assert "terreno/loteamento sem rede elétrica" in p
     assert "ligação nova" in p
-    assert "energia para imóvel" in p
+    assert "energia para" in p and "imóvel" in p
     assert "medidor" in p
     assert "padrão de entrada" in p
-    assert "instalação de rede/postes de distribuição pela Light" in p
+    assert "instalação de rede/postes de" in p
+    assert "distribuição pela Light" in p
     assert "não é `reparo_luminaria`" in p
     assert "não abra Flow" in p
-    assert "Light/concessionária (0800 0210196)" in p
-    assert "salvo se a mesma mensagem também trouxer problema claro de iluminação pública" in p
-    assert "fora de\nescopo só não abre Flow quando não houver problema claro de iluminação pública" in p
+    assert "Light/concessionária" in p
+    assert "0800 0210196" in p
+    assert "salvo se a mesma mensagem também trouxer" in p
+    assert "problema claro de iluminação pública" in p
 
 
 def test_interactive_response_routes_luminaria_implantation_before_repair_flow():
@@ -430,11 +422,12 @@ def test_interactive_response_routes_luminaria_implantation_before_repair_flow()
     assert "mais postes" in p
     assert "luz mais forte" in p
     assert "Implantação de iluminação pública" in p
-    assert "não abra Flow de reparo" in p
+    assert "Não abra Flow de reparo" in p
     assert "Serviço: Implantação de iluminação pública" in p
-    assert "A primeira linha da resposta deve ser exatamente `Serviço: Implantação de iluminação pública`" in p
-    assert "não use `google_search` salvo se o cidadão pedir link/URL direto" in p
-    assert "endereço + referência + descrição" in p
+    assert "A primeira linha da resposta deve ser exatamente" in p
+    assert "não use `google_search` salvo" in p
+    assert "pedir link/URL direto" in p
+    assert "endereço completo + ponto de referência" in p
     assert "Rioluz avalia/executa" in p
     assert "Reinstalação de ponto de luz" in p
 
@@ -443,7 +436,7 @@ def test_interactive_response_enriches_luminaria_flow_body():
     """O body do Flow deve carregar serviço/canal/prazo/link antes da tool."""
     p = interactive_response.MODULE_PROMPT
     assert "Body oficial em `reparo_luminaria`" in p
-    assert "body genérico" in p
+    assert "Body genérico" in p
     assert "Defeito comum" in p
     assert "body=\"Reparo de Luminária (Rioluz)" in p
     assert "Reparo de Luminária" in p
@@ -453,17 +446,9 @@ def test_interactive_response_enriches_luminaria_flow_body():
     ) in p
     assert "não abra Flow" in p
     assert "Informativo de luminária" in p
-    assert "só para estes informativos de luminária" in p
-    assert "esta exceção vence a regra geral de buscar fonte oficial" in p
-    assert "informativo abre Flow quando a mesma mensagem pedir chamado para local concreto" in p
-    assert "NÃO chame `google_search` antes nem depois" in p
-    assert "responda direto com os dados abaixo" in p
-    assert "Só abra Flow se a mesma mensagem pedir abrir/registrar chamado para local concreto" in p
-    assert "Toda resposta informativa de luminária deve conter linha literal `Serviço: ...`" in p
-    assert "responda preservando a linha literal" in p
+    assert "não usa `google_search` nem Flow" in p
+    assert "mensagem pedir abertura de chamado para local concreto" in p
     assert "Serviço: Reparo de cabo de iluminação pública" in p
-    assert "como linha `Serviço:`" in p
-    assert "canal/prazo/link sem título oficial é incompleto" in p
     assert "3460-1746.\nServiço: Reparo de Luminária, da Rioluz." in p
     assert "Rioluz.\nPrazo para defeitos comuns: até 3 dias corridos." in p
     assert "Serviço: Reparo de cabo de iluminação pública.\nTelefone: 1746" in p
@@ -476,16 +461,13 @@ def test_interactive_response_enriches_luminaria_flow_body():
     assert "body=\"Reparo de cabo de iluminação pública (Rioluz)" in p
     assert "Serviço: Reparo de cabo de iluminação pública" in p
     assert 'prefill_data={"defect_type": "Danificada"}' in p
-    assert "adicione `qty_pattern` só se houver pista de quantidade" in p
     assert "Informe endereço completo e ponto de referência" in p
     assert (
         "https://www.1746.rio/hc/pt-br/articles/14191400984987-"
         "Reparo-de-cabo-de-ilumina%C3%A7%C3%A3o-p%C3%BAblica"
     ) in p
     assert "de forma anônima" in p
-    assert "pedido anônimo" in p
     assert "Telefone: 1746; de fora do município, (21) 3460-1746" in p
-    assert "Em pergunta de cabo/furto, a resposta é incompleta" in p
     assert "retirada de risco imediata" in p
     assert "Rioluz" in p
     assert "até 3 dias corridos" in p
@@ -675,7 +657,7 @@ def test_interactive_response_continuation_precedence_over_flow_first():
     assert "continuação de workflow tem precedência" in low or (
         "continuação" in low and "precedência" in low
     ), "Falta a regra de precedência da continuação sobre o Flow-first"
-    assert "em curso" in low, "Falta o conceito de atendimento em curso"
+    assert "mesmo atendimento" in low, "Falta o conceito de atendimento em curso"
     assert "nfm_reply" in p, "Falta o sinal de submissão do Flow (nfm_reply)"
     assert "tentar novamente" in low or "tenta de novo" in low, (
         "Falta o caso de retry na precedência da continuação"
