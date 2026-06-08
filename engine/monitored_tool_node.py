@@ -36,6 +36,7 @@ from langgraph.runtime import Runtime
 from engine.utils import send_general_error, make_tool_source
 from engine.log import logger
 from engine.interactive_tools import (
+    ALL_INTERACTIVE_TOOL_NAMES,
     is_successful_interactive_tool_message,
     put_interactive_tool_messages_last,
 )
@@ -160,17 +161,30 @@ class MonitoredToolNode(ToolNode):
                 continue
             if "timestamp" not in message.additional_kwargs:
                 message.additional_kwargs["timestamp"] = current_time
-            if (
-                is_successful_interactive_tool_message(message)
-                and isinstance(message.content, list)
-                and message.content
-            ):
-                message.content = message.content[0]
-                logger.debug(
-                    "[Tool Execution] Normalized list response to single item "
-                    "for tool: {}",
-                    getattr(message, "name", "UNKNOWN"),
-                )
+            if isinstance(message.content, list) and message.content:
+                # Normaliza content em lista -> primeiro item. Este nó seta o
+                # timestamp acima, o que faz o `_add_timestamp_to_tool_messages`
+                # (agent.py) PULAR a própria normalização (seu guard "timestamp
+                # not in additional_kwargs" fica sempre falso aqui). Logo este é o
+                # ponto canônico — restringi-la ao Flow revertia silenciosamente o
+                # fix 4f65686 para toda tool NÃO-interativa (multi_step_service,
+                # google_search, …), que o adapter MCP entrega como `["texto"]`.
+                # EXCEÇÃO: interativas não-Flow (buttons/list) mantêm o content em
+                # lista — ali a lista É a estrutura voltada ao cidadão.
+                # Premissa: o adapter MCP (content_and_artifact) entrega bloco
+                # único; uma tool com MÚLTIPLOS blocos de texto perderia
+                # content[1:] aqui (comportamento herdado do 4f65686).
+                if (
+                    is_successful_interactive_tool_message(message)
+                    or getattr(message, "name", None)
+                    not in ALL_INTERACTIVE_TOOL_NAMES
+                ):
+                    message.content = message.content[0]
+                    logger.debug(
+                        "[Tool Execution] Normalized list response to single item "
+                        "for tool: {}",
+                        getattr(message, "name", "UNKNOWN"),
+                    )
 
         put_interactive_tool_messages_last(messages)
         return result

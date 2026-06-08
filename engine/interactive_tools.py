@@ -8,6 +8,18 @@ from langchain_core.tools import BaseTool
 
 INTERACTIVE_RESPONSE_TOOL_NAMES = frozenset({"build_whatsapp_flow_envelope"})
 
+# Tools interativas NÃO-Flow (botões/lista): o content delas É a estrutura
+# interativa voltada ao cidadão (lista de blocos), então NÃO deve ser normalizada
+# para o primeiro item. As tools NÃO-interativas (multi_step_service,
+# google_search, …), ao contrário, vêm do adapter MCP como `["texto"]` e precisam
+# da normalização content[0] (fix 4f65686).
+NON_FLOW_INTERACTIVE_TOOL_NAMES = frozenset(
+    {"send_whatsapp_buttons", "send_whatsapp_list"}
+)
+ALL_INTERACTIVE_TOOL_NAMES = (
+    INTERACTIVE_RESPONSE_TOOL_NAMES | NON_FLOW_INTERACTIVE_TOOL_NAMES
+)
+
 
 def mark_interactive_tools_return_direct(tools: Iterable[BaseTool]) -> list[BaseTool]:
     """Stop the ReAct loop after tools whose return is the citizen-facing message."""
