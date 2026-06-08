@@ -26,7 +26,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
 from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 from vertexai.agent_engines import (
     AsyncQueryable,
@@ -186,6 +186,44 @@ class IntVersionPostgresSaver(AsyncPostgresSaver):
         return result
 
 
+class _QuietOTLPExporter(SpanExporter):
+    """Wraps OTLPSpanExporter to prevent verbose stack traces when the collector is unreachable.
+
+    The BatchSpanProcessor calls logger.exception() on any exception raised by the exporter,
+    producing ~8 lines of urllib3/requests stack trace per failure. By catching the exception
+    here and returning FAILURE instead, the BatchSpanProcessor sees a clean failure result
+    and logs nothing. We emit a single throttled WARNING so the issue stays visible.
+    """
+
+    _LOG_EVERY = 50  # log once per N consecutive failures to avoid flooding
+
+    def __init__(self, exporter: SpanExporter) -> None:
+        self._exporter = exporter
+        self._consecutive_failures = 0
+
+    def export(self, spans) -> SpanExportResult:
+        try:
+            result = self._exporter.export(spans)
+            if self._consecutive_failures:
+                logger.info(f"[OTEL] Export recovered after {self._consecutive_failures} consecutive failure(s)")
+                self._consecutive_failures = 0
+            return result
+        except Exception as e:
+            self._consecutive_failures += 1
+            if self._consecutive_failures == 1 or self._consecutive_failures % self._LOG_EVERY == 0:
+                logger.warning(
+                    f"[OTEL] Export failed ({self._consecutive_failures}x): "
+                    f"{type(e).__name__}: {e}"
+                )
+            return SpanExportResult.FAILURE
+
+    def shutdown(self) -> None:
+        return self._exporter.shutdown()
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return self._exporter.force_flush(timeout_millis)
+
+
 class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
     """
     An agent for sync/async/streaming queries with state persisted in PostgreSQL.
@@ -268,7 +306,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         # Configurar BatchSpanProcessor com parâmetros otimizados para reduzir perda de spans
         self._batch_processor = BatchSpanProcessor(
-            otlp_exporter,
+            _QuietOTLPExporter(otlp_exporter),
             max_queue_size=8192,  # Aumentar buffer (padrão: 2048)
             schedule_delay_millis=1000,  # Flush mais frequente (padrão: 5000)
             export_timeout_millis=10000,  # Timeout menor (padrão: 30000)
@@ -1127,6 +1165,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 max_size=10,
                 timeout=30.0,
                 open=True,  # Auto-open on creation
+                check=AsyncConnectionPool.check_connection,  # Validate before use — discards idle-timeout'd connections
+                reconnect_timeout=60,  # Keep retrying to reconnect for up to 60s before raising
+                max_idle=300,  # Close connections idle for 5+ min before the DB kills them server-side
             )
             logger.info("[Agent Setup] ✓ Connection pool created")
 
