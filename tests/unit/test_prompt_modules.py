@@ -17,6 +17,7 @@ from src.prompt_modules import (
     audio_inbound,
     emoji_input,
     govbr_auth_gating,
+    interactive_general,
     interactive_response,
     media_inbound,
     session_close,
@@ -402,6 +403,60 @@ def test_interactive_response_is_dynamic_not_global_prompt():
     assert interactive_response not in ENABLED_MODULES
     assert interactive_response.MODULE_PROMPT not in augmented
     assert "interactive_response" not in version
+
+
+def test_interactive_general_in_enabled_modules_when_flag_on():
+    """#105 rework: a orientação interativa GERAL volta ESTÁTICA/sempre-on pros
+    fluxos não-luminária (corrige a regressão servicos). Gateada pelo mesmo
+    _interactive_response_enabled — pula se desligado."""
+    if not INTERACTIVE_RESPONSE_DYNAMIC_ENABLED:
+        import pytest
+
+        pytest.skip("ENABLE_INTERACTIVE_RESPONSE=false")
+    assert interactive_general in ENABLED_MODULES
+
+
+def test_interactive_general_matrix_in_global_compose():
+    """A matriz buttons/list entra no prompt global (de TODO serviço) — é o que
+    o #105 tirou e causou o colapso de answer_completeness/proactivity."""
+    if not INTERACTIVE_RESPONSE_DYNAMIC_ENABLED:
+        import pytest
+
+        pytest.skip("ENABLE_INTERACTIVE_RESPONSE=false")
+    augmented, _ = compose("BASE", "v1.0")
+    assert "prefira mensagens interativas" in augmented
+    assert "send_whatsapp_buttons" in augmented
+    assert "send_whatsapp_list" in augmented
+
+
+def test_interactive_general_has_no_luminaria_flow_specifics():
+    """Anti-contaminação: o módulo geral NÃO carrega os specifics de luminária
+    (flow_id, qty_pattern, defect_type) — esses ficam no dinâmico. (Pode citar
+    "luminária" só na linha-ponte de delegação.)"""
+    p = interactive_general.MODULE_PROMPT
+    assert "4141008006029185" not in p  # flow_id da luminária
+    assert "qty_pattern" not in p
+    assert "defect_type" not in p
+    assert "prefill_data" not in p
+
+
+def test_interactive_general_delegates_luminaria_to_dynamic():
+    """Linha-ponte: o geral manda explicitamente seguir o módulo de luminária
+    (Flow-first) pra esse fluxo — garante concordância, não contradição."""
+    low = interactive_general.MODULE_PROMPT.lower()
+    assert "luminária" in low
+    assert "flow-first" in low
+    assert "módulo específico" in low or "módulo de luminária" in low
+
+
+def test_luminaria_flow_specifics_stay_out_of_global_compose():
+    """O conteúdo PESADO de luminária (Flow-first determinístico) continua
+    dinâmico — NÃO vaza pro prompt global via o módulo geral restaurado.
+    (Obs: o flow_id 4141008006029185 aparece no global via `whatsapp_flow_inbound`,
+    que trata submissões de Flow de todo serviço — não é o conteúdo de luminária.)"""
+    augmented, _ = compose("BASE", "v1.0")
+    assert "Resposta interativa focada em `reparo_luminaria`" not in augmented
+    assert "SEMPRE comece pelo Flow" not in augmented
 
 
 def test_interactive_response_dynamic_gate_matches_luminaria_turns():

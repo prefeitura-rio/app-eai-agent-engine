@@ -37,6 +37,7 @@ from src.prompt_modules import (
     audio_response,
     emoji_input,
     govbr_auth_gating,
+    interactive_general,
     interactive_response,
     media_inbound,
     media_response,
@@ -161,10 +162,21 @@ if _govbr_auth_enabled:
     ENABLED_MODULES.append(govbr_auth_gating)
 if _session_reset_enabled:
     ENABLED_MODULES.append(session_reset)
+# `interactive_general`: orientação interativa GERAL (matriz buttons/list,
+# Flow genérico, anti-drop) — ESTÁTICA e sempre-on, pra TODOS os serviços. Restaura
+# o comportamento do baseline `33ef866` que o #105 perdeu ao tornar o
+# interactive_response exclusivo de luminária (regressão `servicos`:
+# answer_completeness 0.17→0.03, proactivity 0.56→0.39). Não contém conteúdo de
+# luminária — DELEGA luminária ao módulo dinâmico (abaixo). Mesmo gate dos demais
+# (`_interactive_response_enabled`) → kill-switch coerente entre os dois caminhos.
+if _interactive_response_enabled:
+    ENABLED_MODULES.append(interactive_general)
 
-# `interactive_response` é carregado dinamicamente pelo pre_model_hook apenas
-# em turnos que mencionam luminária/iluminação. Manter fora do prompt global
-# evita contaminação de `servicos`, `memory` e demais domínios.
+# `interactive_response` (conteúdo LUMINÁRIA, em luminaria_interactive_prompt) é
+# carregado DINAMICAMENTE pelo pre_model_hook apenas em turnos de luminária. Manter
+# o conteúdo PESADO de luminária fora do prompt global evita contaminação de
+# `servicos`/`memory`/demais domínios — enquanto o `interactive_general`
+# acima devolve a orientação GERAL (não-luminária) ao prompt global.
 INTERACTIVE_RESPONSE_DYNAMIC_ENABLED = _interactive_response_enabled
 
 # Observability — os gates opcionais resolvem em import-time e ficam invisíveis
@@ -222,5 +234,6 @@ __all__ = [
     "compose",
     "ENABLED_MODULES",
     "INTERACTIVE_RESPONSE_DYNAMIC_ENABLED",
+    "interactive_general",
     "interactive_response",
 ]
