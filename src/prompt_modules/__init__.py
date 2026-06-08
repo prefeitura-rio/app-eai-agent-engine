@@ -35,6 +35,7 @@ from loguru import logger
 from src.prompt_modules import (
     audio_inbound,
     audio_response,
+    emoji_input,
     govbr_auth_gating,
     interactive_response,
     media_inbound,
@@ -145,6 +146,7 @@ _session_reset_enabled = (
 ENABLED_MODULES = [
     workflow_continuation,
     session_close,
+    emoji_input,
     media_inbound,
     vision_inbound,
     audio_inbound,
