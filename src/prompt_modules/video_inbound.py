@@ -36,6 +36,18 @@ O `analysis` retornado tem o seguinte schema:
 
 ### Workflows triggerable a partir da análise do vídeo
 
+Antes de seguir `analysis.workflow_sugerido`, aplique a triagem de escopo:
+se a descrição ou `transcricao_audio` indicar cabo/fio de internet, telefonia,
+TV a cabo, fibra ou operadora (Claro/Net/Vivo/Tim/Oi etc.), **não** trate como
+`reparo_luminaria` e não mande Flow. Oriente a operadora responsável, salvo se o
+mesmo vídeo também mostrar/mencionar claramente iluminação pública/Rioluz.
+Também não trate como `reparo_luminaria` quando descrição ou `transcricao_audio`
+indicar luminária/lâmpada/luz/refletor de loja, mercado, bar, restaurante,
+shopping, escritório, clínica, prédio, garagem, portaria, quintal, sala, quarto,
+cozinha, varanda ou fachada privada. Só siga para luminária quando houver luz
+pública/Rioluz, poste da rua, calçada, praça, via pública ou em frente/perto de
+um ponto privado mas claramente no espaço público.
+
 Use `analysis.workflow_sugerido` pra decidir o próximo passo:
 
 - `reparo_luminaria` → confirme e **mande o Flow primeiro**:
@@ -44,6 +56,8 @@ Use `analysis.workflow_sugerido` pra decidir o próximo passo:
   direto nem valide endereço antes: o workflow (e o endereço, mesmo o que o vídeo
   mencionar) só vêm depois do `nfm_reply` do Flow. (Só se não houver Flow disponível,
   aí sim `multi_step_service(service_name="reparo_luminaria")`.)
+  Para barulho, ruído, chiado, zumbido, estalo ou reator roncando em luminária
+  pública, preencha `defect_type="Com ruído"`.
 - `poda_de_arvore` → confirme + chame
   `multi_step_service(service_name="poda_de_arvore")`.
 - `nenhum` → use `analysis.descricao` (e `transcricao_audio` se houver)

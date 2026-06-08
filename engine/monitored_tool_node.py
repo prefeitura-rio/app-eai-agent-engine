@@ -25,6 +25,7 @@ observabilidade. A recuperação de UX fica com `Agent.query` (rede de seguranç
 """
 
 import asyncio
+from datetime import datetime, timezone
 from typing import Any, List, Tuple
 
 from langchain_core.messages import ToolMessage
@@ -34,6 +35,11 @@ from langgraph.runtime import Runtime
 
 from engine.utils import send_general_error, make_tool_source
 from engine.log import logger
+from engine.interactive_tools import (
+    ALL_INTERACTIVE_TOOL_NAMES,
+    is_successful_interactive_tool_message,
+    put_interactive_tool_messages_last,
+)
 
 # Retém referência forte dos reports fire-and-forget. asyncio só mantém weakref
 # do task de create_task — sem isso, se o caller retorna antes do report
@@ -60,7 +66,7 @@ class MonitoredToolNode(ToolNode):
             raise
         for tool_name, content in self._extract_tool_errors(result):
             await self._report(tool_name, content, config)
-        return result
+        return self._postprocess_tool_messages(result)
 
     def _func(self, input: Any, config: RunnableConfig, runtime: Runtime) -> Any:
         try:
@@ -73,7 +79,7 @@ class MonitoredToolNode(ToolNode):
         errors = self._extract_tool_errors(result)
         if errors:
             self._report_sync(errors, config)
-        return result
+        return self._postprocess_tool_messages(result)
 
     # ------------------------------------------------------------------ helpers
 
@@ -142,6 +148,53 @@ class MonitoredToolNode(ToolNode):
             return errors
         except Exception:
             return []
+
+    def _postprocess_tool_messages(self, result: Any) -> Any:
+        """Normalize ToolMessages before the graph can return directly."""
+        messages = self._result_messages(result)
+        if not messages:
+            return result
+
+        current_time = datetime.now(timezone.utc).isoformat()
+        for message in messages:
+            if not isinstance(message, ToolMessage):
+                continue
+            if "timestamp" not in message.additional_kwargs:
+                message.additional_kwargs["timestamp"] = current_time
+            if isinstance(message.content, list) and message.content:
+                # Normaliza content em lista -> primeiro item. Este nó seta o
+                # timestamp acima, o que faz o `_add_timestamp_to_tool_messages`
+                # (agent.py) PULAR a própria normalização (seu guard "timestamp
+                # not in additional_kwargs" fica sempre falso aqui). Logo este é o
+                # ponto canônico — restringi-la ao Flow revertia silenciosamente o
+                # fix 4f65686 para toda tool NÃO-interativa (multi_step_service,
+                # google_search, …), que o adapter MCP entrega como `["texto"]`.
+                # EXCEÇÃO: interativas não-Flow (buttons/list) mantêm o content em
+                # lista — ali a lista É a estrutura voltada ao cidadão.
+                # Premissa: o adapter MCP (content_and_artifact) entrega bloco
+                # único; uma tool com MÚLTIPLOS blocos de texto perderia
+                # content[1:] aqui (comportamento herdado do 4f65686).
+                if (
+                    is_successful_interactive_tool_message(message)
+                    or getattr(message, "name", None)
+                    not in ALL_INTERACTIVE_TOOL_NAMES
+                ):
+                    message.content = message.content[0]
+                    logger.debug(
+                        "[Tool Execution] Normalized list response to single item "
+                        "for tool: {}",
+                        getattr(message, "name", "UNKNOWN"),
+                    )
+
+        put_interactive_tool_messages_last(messages)
+        return result
+
+    def _result_messages(self, result: Any) -> list[Any]:
+        if isinstance(result, dict):
+            return result.get(self._messages_key, []) or []
+        if isinstance(result, list):
+            return result
+        return []
 
     async def _report(self, tool_name: str, content: str, config: Any) -> None:
         try:

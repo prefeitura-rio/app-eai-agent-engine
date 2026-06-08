@@ -8,15 +8,21 @@ o end-to-end (prompt fetched → composto → entregue ao agent), usar smoke
 tests pós-deploy em staging.
 """
 
-from src.prompt_modules import compose, ENABLED_MODULES
+from src.prompt_modules import (
+    compose,
+    ENABLED_MODULES,
+    INTERACTIVE_RESPONSE_DYNAMIC_ENABLED,
+)
 from src.prompt_modules import (
     audio_inbound,
     emoji_input,
     govbr_auth_gating,
+    interactive_general,
     interactive_response,
     media_inbound,
     session_close,
     session_reset,
+    video_inbound,
     vision_inbound,
     workflow_continuation,
 )
@@ -324,6 +330,1892 @@ def test_interactive_response_prefills_qty_pattern():
     # mapeamento de linguagem natural pros IDs canônicos
     for canonical in ("uma", "bloco", "intercaladas"):
         assert canonical in p, f"ID canônico de quantidade '{canonical}' ausente"
+    p_lower = p.lower()
+    for expression in (
+        "só uma",
+        "um poste",
+        "duas ou mais",
+        "várias",
+        "metade",
+        "quarteirão",
+        "rua inteira",
+        "uma sim uma não",
+    ):
+        assert expression in p_lower
+
+
+def test_interactive_response_maps_locations_to_valid_flow_values():
+    """Locais reconhecidos pelo gate devem virar valores válidos do Flow.
+
+    O WhatsApp Flow aceita um conjunto fechado; sem guidance explícita o modelo
+    tende a inventar `location="Avenida"`/`"Ponto de ônibus"` e gerar payload
+    inválido.
+    """
+    p = interactive_response.MODULE_PROMPT
+    assert "`location`: Calçada, Fachada, Monumento, Parque, Praça" in p
+    for source in (
+        "alameda",
+        "logradouro",
+        "túnel",
+        "viaduto",
+        "ponto de",
+        "estação de BRT",
+        "estacionamento público",
+        '"em frente"',
+        '"perto"',
+        '"próximo"',
+        '"na altura"',
+        '"defronte"',
+    ):
+        assert source in p
+    for canonical in (
+        '"Rua"',
+        '"Parque"',
+        '"Praça"',
+        '"Quadra de esportes"',
+        '"Calçada"',
+        '"Fachada"',
+        '"Não sei"',
+    ):
+        assert canonical in p
+    assert "Nunca invente outro valor" in p
+
+
+def test_interactive_response_scope_is_luminaria_first_not_global_menu():
+    """Interativo não deve virar padrão global para todos os serviços."""
+    p = interactive_response.MODULE_PROMPT
+    assert "Resposta interativa focada em `reparo_luminaria`" in p
+    assert "Use resposta interativa proativamente apenas quando ela é necessária" in p
+    assert "Fora desse fluxo" in p
+    assert "respostas textuais" in p
+    assert "Matriz de escolha restrita" in p
+    assert "NÃO use" in p
+    assert "botões/listas para triagem genérica de serviços" in p
+    assert "O service registrado" in p
+    assert "coberto por este módulo é `reparo_luminaria`" in p
+    assert "Quando o cidadão precisa escolher entre opções discretas, **prefira mensagens interativas**" not in p
+    assert "Menu de serviços" not in p
+
+
+def test_interactive_response_is_dynamic_not_global_prompt():
+    """Guidance pesada de luminária não entra no system prompt global."""
+    augmented, version = compose("BASE", "v1.0")
+    assert interactive_response not in ENABLED_MODULES
+    assert interactive_response.MODULE_PROMPT not in augmented
+    assert "interactive_response" not in version
+
+
+def test_interactive_general_in_enabled_modules_when_flag_on():
+    """#105 rework: a orientação interativa GERAL volta ESTÁTICA/sempre-on pros
+    fluxos não-luminária (corrige a regressão servicos). Gateada pelo mesmo
+    _interactive_response_enabled — pula se desligado."""
+    if not INTERACTIVE_RESPONSE_DYNAMIC_ENABLED:
+        import pytest
+
+        pytest.skip("ENABLE_INTERACTIVE_RESPONSE=false")
+    assert interactive_general in ENABLED_MODULES
+
+
+def test_interactive_general_matrix_in_global_compose():
+    """A matriz buttons/list entra no prompt global (de TODO serviço) — é o que
+    o #105 tirou e causou o colapso de answer_completeness/proactivity."""
+    if not INTERACTIVE_RESPONSE_DYNAMIC_ENABLED:
+        import pytest
+
+        pytest.skip("ENABLE_INTERACTIVE_RESPONSE=false")
+    augmented, _ = compose("BASE", "v1.0")
+    assert "prefira mensagens interativas" in augmented
+    assert "send_whatsapp_buttons" in augmented
+    assert "send_whatsapp_list" in augmented
+
+
+def test_interactive_general_has_no_luminaria_flow_specifics():
+    """Anti-contaminação: o módulo geral NÃO carrega os specifics de luminária
+    (flow_id, qty_pattern, defect_type) — esses ficam no dinâmico. (Pode citar
+    "luminária" só na linha-ponte de delegação.)"""
+    p = interactive_general.MODULE_PROMPT
+    assert "4141008006029185" not in p  # flow_id da luminária
+    assert "qty_pattern" not in p
+    assert "defect_type" not in p
+    assert "prefill_data" not in p
+
+
+def test_interactive_general_delegates_luminaria_to_dynamic():
+    """Linha-ponte: o geral manda explicitamente seguir o módulo de luminária
+    (Flow-first) pra esse fluxo — garante concordância, não contradição."""
+    low = interactive_general.MODULE_PROMPT.lower()
+    assert "luminária" in low
+    assert "flow-first" in low
+    assert "módulo específico" in low or "módulo de luminária" in low
+
+
+def test_luminaria_flow_specifics_stay_out_of_global_compose():
+    """O conteúdo PESADO de luminária (Flow-first determinístico) continua
+    dinâmico — NÃO vaza pro prompt global via o módulo geral restaurado.
+    (Obs: o flow_id 4141008006029185 aparece no global via `whatsapp_flow_inbound`,
+    que trata submissões de Flow de todo serviço — não é o conteúdo de luminária.)"""
+    augmented, _ = compose("BASE", "v1.0")
+    assert "Resposta interativa focada em `reparo_luminaria`" not in augmented
+    assert "SEMPRE comece pelo Flow" not in augmented
+
+
+def test_interactive_response_dynamic_gate_matches_luminaria_turns():
+    """O pre_model_hook injeta o módulo só em turnos de luminária."""
+    if not INTERACTIVE_RESPONSE_DYNAMIC_ENABLED:
+        import pytest
+
+        pytest.skip("ENABLE_INTERACTIVE_RESPONSE=false")
+
+    from engine.luminaria_prompt_gate import _should_inject_interactive_response_prompt
+    from langchain_core.messages import HumanMessage
+
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da minha rua está apagada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua está escura porque a iluminação pública falhou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A iluminação da minha rua apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da praça apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem duas luminárias apagadas")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As lâmpadas da rua queimaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As lâmpadas do poste queimaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da rua apagaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da praça apagaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes dos postes apagaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da avenida estão piscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Como falar com Rio Luz?")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero atendimento da Rio-Luz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A avenida está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está escuro na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está escuro na minha rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tá escuro na nossa rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está escuro aqui na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tá muito escuro na avenida")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Sem luz na praça")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Sem iluminação na calçada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está no breu no ponto de ônibus")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está na escuridão no beco")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Sem claridade na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está mal iluminado no parque")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tá escuro na esquina")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua está no breu")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça ficou um breu")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A avenida está sem claridade")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O beco está na escuridão")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A calçada está sem visibilidade de noite")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O logradouro está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A alameda está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rotatória está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do estacionamento público apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O parque está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O beco está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O beco está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A quadra ficou escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O túnel está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes do túnel apagaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O viaduto está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A passarela está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da ciclovia apagaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A escadaria está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A orla está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Rua das Flores está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Rua Dois está no breu")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Avenida Brasil ficou no escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A R. das Flores está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="R. Dois está sem luz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Av. Brasil está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Pca. São Salvador está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Pça. XV está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Estr. do Galeão está no breu")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Praça São Salvador está muito escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A passarela do BRT está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O ponto de ônibus está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O ponto de ônibus está na escuridão")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O ponto de ônibus está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A estação de BRT está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça não tem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Falta luz no poste da Rua A")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As ruas do bairro estão escuras")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Várias ruas estão sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As praças estão escuras")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As avenidas ficaram no escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O quarteirão inteiro está escuro")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Os quarteirões estão sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As passarelas estão às escuras")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As ciclovias estão sem luz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Os becos estão escuros")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da rua estão uma sim uma não")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luminárias da avenida estão alternadas")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Metade das lâmpadas da praça apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Um trecho da rua está sem luz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A quadra inteira está sem iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Várias lâmpadas da rua queimaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Só uma lâmpada do poste apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da esquina está apagada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da esquina apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A esquina está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada em frente ao número 50 queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada em frente ao num 33 queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente ao nº 50 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada em frente ao n° 120 queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente ao n. 80 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente ao nro 50 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada em frente ao nr 120 queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente ao 45 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada perto do nº 200 está piscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz próximo ao número 50 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada próxima ao nr 120 queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz próximo ao mercado apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada próxima da escola queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz na altura do número 50 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada na altura do mercado queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz defronte ao número 50 apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada defronte da igreja queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Luz em frente minha casa apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Lâmpada frente minha casa queimada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz frente meu portão apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da Tv. Alice queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente ao mercado apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente a igreja apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente da igreja apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada em frente à farmácia está apagada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente ao restaurante apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente a creche está apagada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz em frente a UPA apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz na porta da minha casa apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada na porta da escola queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz ao lado da igreja está piscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada atrás do mercado está queimada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do lado da UPA apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz perto da minha casa apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada perto do bar está queimada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada perto da padaria está queimada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz perto da igreja fica piscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária pública em frente à loja apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da calçada em frente ao restaurante apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do estacionamento da praça apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária do estacionamento do parque está piscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da rua em frente ao mercado está piscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz pública na fachada do prédio apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz pública em frente ao condomínio apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária pública em frente ao prédio apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da rua em frente ao condomínio está apagado")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da calçada do prédio apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O braço do poste está quebrado")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O braço do poste quebrou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O refletor da praça quebrou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O braço do poste está bambo")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O suporte do poste está prestes a cair")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A haste da luminária da rua está instável")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da esquina está quase caindo")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A fotocélula da rua queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O relé da praça queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O relé do poste está com defeito")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O reator da avenida está defeituoso")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O soquete do poste quebrou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste não acende")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste não acende")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste não liga")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz pública não está funcionando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa trocar a lâmpada da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que substituir a luminária da praça")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero pedir troca da luz do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa repor a lâmpada do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que trocar o reator do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa substituir a fotocélula da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero trocar o relé da praça")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Trocar a luminária da rua por luz mais forte")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da rua está fraca")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste está baixa")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A iluminação da rua está baixa")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste está fraquejando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da rua fica fraquejando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste está falhando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste falha toda hora")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da rua falha toda hora")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste está sem acender")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste está fraca")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste está com luz fraca")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária está fraca")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua está mal iluminada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça está mal iluminada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A iluminação da rua está fraca")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste fica acesa de dia")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária fica acesa durante o dia")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste fica aceso de dia")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste apaga e acende toda hora")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da rua fica apagando e acendendo")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste está oscilando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da rua estourou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da praça estourou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste explodiu")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste pifou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da rua está com problema")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da rua parou de funcionar")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da rua fica apagando direto")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da esquina vive apagando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária está em meia luz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da praça está em meia fase")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da esquina fica intermitente")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da rua está fazendo barulho")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária do poste está com ruído")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste está fazendo zumbido")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da praça está chiando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste faz estalo")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O reator da luminária está roncando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A fotocélula do poste está fazendo barulho")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio caído com faísca perto do poste da Rioluz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da rua está faiscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste deu curto")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da praça deu curto")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto no poste da praça")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto na luminária da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem curto no poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto no poste em frente minha casa")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste soltando faísca")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem cabo caído na rua dando choque")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio pendurado no poste da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem cabo baixo na rua perto do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Fio desencapado na iluminação pública")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste está com energia dando choque")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de energia dando choque na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de energia da Light dando choque na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O cabo da iluminação pública caiu na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O cabo da Rioluz arrebentou no poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Fio da Rioluz está solto na calçada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O fio da luminária da rua está faiscando")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não sei se é Rioluz, mas a luminária da rua apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não quero só informar, quero abrir reparo de luminária")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste queimou, acho que é da Light")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da rua apagou e não sei se é Light ou Rioluz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz pública apagou, talvez seja Light")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da rua apagou e o vizinho disse que é Light")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua está escura, não sei se é Light ou Rioluz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero manutenção da luz do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Preciso de manutenção na lâmpada da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que consertar a luz do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero conserto da lâmpada do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa arrumar a luz da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero reparo na luz do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste está piscando e falam que é Light")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Roubaram os fios da iluminação pública")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Furtaram o cabo da luminária da rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Levaram a fiação do poste")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Cortaram os fios da Rioluz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da rua foi vandalizado")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da praça foi depredada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quebraram a luminária da calçada de propósito")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Preciso podar a árvore e a luminária da rua apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem galho na árvore e a luz pública está apagada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O semáforo está ruim e a lâmpada do poste queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Meu cabo de internet caiu e a luminária da rua está apagada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O fio do telefone caiu e a luz da rua apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV a cabo está fora e a rua está escura")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Preciso podar uma árvore e o poste da rua apagou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero pedir mais postes na minha rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua precisa de mais postes")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça precisa de luminária nova")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero instalar luminária pública na rua")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua está sem postes de iluminação")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa reinstalar ponto de luz na calçada")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tiraram o poste de luz da rua e não recolocaram")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A viela precisa de ponto de luz")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste queimou")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da calçada está torto")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste caiu com fios expostos")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A fiação do poste está exposta")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste está energizado")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste está dando curto")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem curto-circuito no poste da praça")]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste de madeira da rua caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Como faço para solicitar poda de árvore?")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Preciso podar uma árvore encostando no poste da rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Meu cabo de internet arrebentou dentro de casa")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Meu cabo de internet caiu na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do quarto queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A iluminação da sala está ruim")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da casa apagaram")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da sala estão piscando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes do quarto queimaram")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da sala está fraca")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da sala está baixa")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do quarto está fraca")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do quarto está falhando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do quarto falha toda hora")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A cozinha está mal iluminada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A sala está mal iluminada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV fica acesa de dia")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da varanda fica acesa de dia")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV apaga e acende toda hora")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da sala fica apagando e acendendo")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do quarto está oscilando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da sala estourou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da loja estourou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da cozinha explodiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV pifou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do quarto fica apagando direto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do escritório vive apagando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da garagem está em meia luz")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A tela do celular fica piscando de madrugada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da sala está fazendo barulho")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do quarto está com ruído")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A geladeira está fazendo zumbido")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV está chiando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da varanda faz estalo")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O reator da sala está roncando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Meu quarto está escuro")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Meu quarto está no breu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A sala está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A sala está na escuridão")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A escada da minha casa está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O quintal está sem visibilidade de noite")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A imagem da TV está sem claridade")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A garagem está sem iluminação")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A garagem está sem claridade")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está escuro no quarto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está escuro no meu quarto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Sem luz na garagem")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Sem iluminação na sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está no breu no quintal")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está na escuridão na sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Está mal iluminado na cozinha")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Rua das Flores não está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A Av. Brasil não está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não está escuro na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não está escuro na minha rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não está sem luz na praça")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não está sem iluminação na calçada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua não está no breu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça não está sem claridade")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A avenida não está na escuridão")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O logradouro não está escuro")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Qual a cor da luz do poste?")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste é amarela")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da rua incomoda meu quarto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero saber quem colocou a luz do poste")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz pública está funcionando normal")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste não está apagada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste não queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem luz no poste da rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A alameda do condomínio está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rotatória da garagem está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A estação de metrô está sem iluminação")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O ponto de internet está sem luz")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O ônibus está sem luz")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça não está sem iluminação")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Falta luz na rua toda por causa da Light")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da Light caiu na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rede da Light caiu na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O medidor da Light está com problema")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Preciso de ligação nova da Light")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de energia da Light caído na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste de energia da Light deu curto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rede elétrica da rua caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As salas de aula estão escuras")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As garagens estão sem iluminação")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As escadas do prédio estão escuras")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As ruas não estão escuras")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As praças não estão sem iluminação")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O quarteirão não está escuro")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça não está mal iluminada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As ruas não estão mal iluminadas")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luzes da sala estão uma sim uma não")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="As luminárias do prédio estão alternadas")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Metade das lâmpadas da loja apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Um trecho da garagem está sem luz")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A quadra da TV está sem sinal")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da cozinha queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Lâmpada minha casa queimada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da varanda apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada em frente ao espelho queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Lâmpada frente minha cama queimada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz próxima da cama apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada próxima do espelho queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV próxima ao número 50 apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz na altura da sala apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV em frente ao número 50 apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da sala em frente ao número 50 queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Meu número de casa é 50")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz perto da cama apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A esquina não está escura")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da rua é baixo")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do poste do condomínio queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do poste do condomínio apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da garagem está piscando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste do estacionamento privado caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste do meu portão caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste do nosso portão está torto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da minha cerca está bambo")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da portaria do prédio apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária do jardim de casa queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste do quintal caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da cerca caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste do varal quebrou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da antena entortou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da placa caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste do alambrado está solto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste da rede de vôlei caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste de madeira do sítio caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da loja apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do mercado queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do bar está piscando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da farmácia está piscando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da igreja queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da padaria está fraca")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da creche apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da UPA está com problema")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da porta da minha casa apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da porta da escola queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz lateral da igreja está piscando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada dos fundos do mercado queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária do prédio apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada do escritório queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária do restaurante está fazendo barulho")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da fachada da loja apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O refletor do estacionamento do mercado queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária do estacionamento do mercado apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária do estacionamento do restaurante está piscando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária do estacionamento da clínica está fraca")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O braço da cadeira quebrou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O suporte da TV quebrou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O globo da sala quebrou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A tampa da caixa d água caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O refletor do quintal queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A haste do portão entortou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O suporte da TV está bambo")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A haste do portão está instável")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A antena está quase caindo")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A fotocélula da garagem queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O relé do portão queimou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O soquete da cozinha quebrou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O reator da sala está defeituoso")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero manutenção da luz da sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Preciso consertar a lâmpada do quarto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que arrumar a luz da loja")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero conserto da TV")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A TV não liga")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A lâmpada da sala não acende")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz da cozinha não funciona")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz do corredor do prédio não acende")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa trocar a lâmpada da sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que substituir a luminária da loja")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero trocar a luz do quarto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa repor a lâmpada do escritório")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem que trocar o reator da sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa substituir a fotocélula da garagem")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luz acabou na minha casa")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O semáforo apagou no cruzamento")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O semáforo da praça apagou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de pipa preso no poste da rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de varal preso no poste da rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem arame farpado preso no poste da rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de faixa preso no poste")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O poste de telefonia caiu na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O fio da Claro caiu na calçada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de fibra caído na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tem fio de fibra caído no poste")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O cabo da Vivo no poste arrebentou")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O cabo de internet está exposto no poste")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O fio da Claro está exposto na calçada")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A tomada da sala está dando curto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A tomada da sala deu curto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto na tomada da sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto no chuveiro")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto na extensão da loja")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Curto no quadro de energia do prédio")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O quadro de energia do prédio está com curto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Meu chuveiro está faiscando")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A extensão da loja deu curto")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O quadro de energia do prédio está energizado")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não é luz pública, é a lâmpada da minha casa")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não é luminária pública, é a luz da loja")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Não quero reparo de luminária, quero poda de árvore")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A rua não precisa de iluminação")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A praça não precisa de mais postes")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Roubaram meu celular na rua")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Furtaram o cabo da internet")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Levaram a fiação da minha casa")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Cortaram os fios da Claro")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="O portão foi vandalizado")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A luminária da sala foi quebrada de propósito")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero pedir mais postes de energia para a Light")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Preciso de poste para internet no meu terreno")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Quero instalar luminária no quintal")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A garagem precisa de luminária nova")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Precisa reinstalar a lâmpada da sala")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Tiraram o poste do meu portão")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="Minha internet da Rio Luz caiu")]
+    )
+    assert not _should_inject_interactive_response_prompt(
+        [HumanMessage(content="A fibra da Rio-Luz caiu")]
+    )
+
+
+def test_interactive_response_dynamic_prompt_keeps_system_order():
+    """Prompt dinâmico entra como SystemMessage antes da conversa."""
+    from engine.luminaria_prompt_gate import _inject_interactive_response_prompt
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    messages = [
+        SystemMessage(content="memória"),
+        HumanMessage(content="A luminária apagou"),
+    ]
+
+    injected = _inject_interactive_response_prompt(messages)
+
+    assert [type(message).__name__ for message in injected] == [
+        "SystemMessage",
+        "SystemMessage",
+        "HumanMessage",
+    ]
+    assert injected[1].content == interactive_response.MODULE_PROMPT
+
+
+def test_interactive_response_dynamic_prompt_preserves_trailing_directives():
+    """Diretivas transitórias no fim continuam com maior precedência."""
+    from engine.luminaria_prompt_gate import _inject_interactive_response_prompt
+    from engine.session_boundary import CLOSE_DIRECTIVE
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    close = SystemMessage(content=CLOSE_DIRECTIVE)
+    messages = [
+        SystemMessage(content="memória"),
+        HumanMessage(content="A luminária apagou, era só isso"),
+        close,
+    ]
+
+    injected = _inject_interactive_response_prompt(messages)
+
+    assert [type(message).__name__ for message in injected] == [
+        "SystemMessage",
+        "SystemMessage",
+        "HumanMessage",
+        "SystemMessage",
+    ]
+    assert injected[1].content == interactive_response.MODULE_PROMPT
+    assert injected[-1] is close
+
+
+def test_interactive_response_dynamic_gate_uses_latest_human_turn_only():
+    """Histórico antigo de luminária não contamina o próximo serviço."""
+    from engine.luminaria_prompt_gate import _should_inject_interactive_response_prompt
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    assert not _should_inject_interactive_response_prompt(
+        [
+            HumanMessage(content="A luminária da rua está apagada"),
+            AIMessage(content="[Flow de luminária]"),
+            HumanMessage(content="Agora quero solicitar poda de árvore"),
+        ]
+    )
+    assert _should_inject_interactive_response_prompt(
+        [
+            HumanMessage(content="Como faço para solicitar poda de árvore?"),
+            AIMessage(content="Posso te orientar."),
+            HumanMessage(content="Também tem uma luminária apagada na rua"),
+        ]
+    )
+
+
+def test_interactive_response_dynamic_gate_reads_multipart_text_blocks():
+    """Mensagens multimodais preservam texto suficiente para o gate."""
+    from engine.luminaria_prompt_gate import _should_inject_interactive_response_prompt
+    from langchain_core.messages import HumanMessage
+
+    assert _should_inject_interactive_response_prompt(
+        [
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": "A luminária da rua apagou"},
+                    {"type": "image_url", "image_url": {"url": "https://example/img"}},
+                ]
+            )
+        ]
+    )
+
+
+def test_interactive_response_dynamic_gate_skips_whatsapp_flow_submission():
+    """Submissão do Flow é tratada pelo módulo global whatsapp_flow_inbound."""
+    from engine.luminaria_prompt_gate import _should_inject_interactive_response_prompt
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    flow_submission = (
+        "[SYSTEM] O cidadão preencheu o formulário WhatsApp. Dados recebidos: "
+        '{"defect_type":"Apagada","qty_pattern":"uma","location":"Rua"}. '
+        "AÇÃO OBRIGATÓRIA: Chame a ferramenta multi_step_service imediatamente "
+        "com service_name='reparo_luminaria' e payload contendo os dados recebidos "
+        "(adicione _source='whatsapp_flow')."
+    )
+
+    assert not _should_inject_interactive_response_prompt(
+        [
+            HumanMessage(content="A luminária da rua está apagada"),
+            AIMessage(content="[Flow de luminária]"),
+            HumanMessage(content=flow_submission),
+        ]
+    )
+
+
+def test_interactive_response_maps_wire_theft_to_valid_defect_type():
+    """Furto/cabo/fios deve usar ID canônico do Flow, não valor inventado."""
+    p = interactive_response.MODULE_PROMPT
+    assert 'defect_type="Danificada"' in p
+    assert "furto/roubo" in p
+    assert "Nunca use `defect_type` fora dessa lista" in p
+
+
+def test_interactive_response_maps_common_defects_to_valid_defect_type():
+    """Defeitos comuns também devem usar IDs fechados do Flow.
+
+    O Flow não aceita valores como `Fraca`, `Intermitente` ou `Sem claridade`.
+    """
+    p = interactive_response.MODULE_PROMPT
+    expected = {
+        'defect_type="Apagada"': ("apagada", "sem claridade", "sem visibilidade"),
+        'defect_type="Piscando"': ("piscando", "oscilando", "uma sim uma não"),
+        'defect_type="Acesa de dia"': ("acesa de dia", "durante o dia"),
+        'defect_type="Danificada"': (
+            "fraca",
+            "mal iluminada",
+            "fraquejando",
+            "falhando",
+            "falha",
+        ),
+    }
+    for canonical, symptoms in expected.items():
+        assert canonical in p
+        for symptom in symptoms:
+            assert symptom in p
+
+
+def test_interactive_response_maps_noise_to_valid_defect_type():
+    """Ruído/barulho deve usar ID canônico do Flow."""
+    p = interactive_response.MODULE_PROMPT
+    assert 'defect_type="Com ruído"' in p
+    for symptom in ("barulho", "ruído", "chiado", "zumbido", "estalo"):
+        assert symptom in p
+
+
+def test_interactive_response_maps_physical_defects_to_valid_defect_type():
+    """Componentes físicos instáveis usam IDs canônicos do Flow."""
+    p = interactive_response.MODULE_PROMPT
+    assert 'defect_type="Danificada"' in p
+    assert 'defect_type="Pendurada"' in p
+    for component in ("braço", "haste", "suporte", "globo", "fotocélula", "relé"):
+        assert component in p
+    for symptom in ("bambo", "instável", "danificado", "quase caindo"):
+        assert symptom in p
+    assert "luminária/lâmpada pendurada" in p
+
+
+def test_interactive_response_wire_theft_is_flow_first():
+    """Roubo/furto de fios de poste não deve desviar só para denúncia."""
+    p = interactive_response.MODULE_PROMPT
+    assert "cabo/fios/furto/roubo de fios" in p
+    assert "reparo de luminária Flow-first" in p
+    for intent in ("manutenção", "arrumar", "consertar"):
+        assert intent in p
+    assert "não substitua por" in p
+    assert "`google_search`" in p
+    assert "nem responda só com Disque Denúncia" in p
+
+
+def test_interactive_response_wire_hazard_preempts_flow():
+    """Fio perigoso deve orientar segurança antes de qualquer formulário."""
+    p = interactive_response.MODULE_PROMPT
+    assert "Perigo elétrico" in p
+    for hazard in (
+        "fio caído",
+        "exposto",
+        "energizado",
+        "faísca",
+        "faiscando",
+        "soltando faísca",
+        "curto",
+        "choque",
+        "poste caído",
+    ):
+        assert hazard in p
+    assert "Bombeiros (193)" in p
+    assert "Polícia Militar (190)" in p
+    assert "Defesa Civil (199)" in p
+    assert "Light (0800 0210196)" in p
+    assert "Eu não consigo acionar socorro por você" in p
+    assert "preempta out-of-scope, implantação e Flow" in p
+    assert "Reparo de poste ou tampão da Rioluz dando choque" in p
+    assert "até 6 horas" in p
+    assert "Serviço: Reparo de poste ou tampão da Rioluz dando choque" in p
+    assert "templates oficiais" in p
+    assert "Para risco imediato: Bombeiros (193), Polícia Militar (190), Defesa Civil (199) e Light (0800 0210196)." in p
+    assert "socorro por você.\nPara risco imediato: Bombeiros (193)" in p
+    assert "ponto de referência.\nServiço: Reparo de poste ou tampão da Rioluz dando choque" in p
+    assert "Bombeiros (193), Polícia Militar (190), Defesa Civil (199) e Light (0800 0210196)" in p
+    assert "Remoção do risco em até 6 horas" in p
+    assert "Light/distribuição elétrica" in p
+    assert "concessionária responsável" in p
+
+
+def test_interactive_response_routes_luminaria_out_of_scope_before_flow():
+    """Falta de energia/semáforo não deve abrir Flow de luminária."""
+    p = interactive_response.MODULE_PROMPT
+    assert "Fora de escopo de luminária" in p
+    assert "falta de energia" in p
+    assert "semáforo apagado" in p
+    assert "cabo/fio de internet, telefonia, TV a cabo" in p
+    assert "fibra ou operadora" in p
+    assert "operadora responsável" in p
+    assert "0800 0210196" in p
+    assert "Nestes casos específicos" in p
+    assert "responda direto sem `google_search`" in p
+    assert "não abra Flow" in p
+
+
+def test_interactive_response_distinguishes_light_grid_from_public_lighting():
+    """Rede elétrica da Light não deve virar implantação municipal."""
+    p = interactive_response.MODULE_PROMPT
+    assert "terreno/loteamento sem rede elétrica" in p
+    assert "ligação nova" in p
+    assert "energia para" in p and "imóvel" in p
+    assert "medidor" in p
+    assert "padrão de entrada" in p
+    assert "instalação de rede/postes de" in p
+    assert "distribuição pela Light" in p
+    assert "não é `reparo_luminaria`" in p
+    assert "não abra Flow" in p
+    assert "Light/concessionária" in p
+    assert "0800 0210196" in p
+    assert "salvo se a mesma mensagem também trouxer" in p
+    assert "problema claro de iluminação pública" in p
+
+
+def test_interactive_response_routes_luminaria_implantation_before_repair_flow():
+    """Novo ponto/poste/luz mais forte é implantação, não Flow de reparo."""
+    p = interactive_response.MODULE_PROMPT
+    assert "Implantação" in p
+    assert "novo ponto de luz" in p
+    assert "mais postes" in p
+    assert "rua/praça/parque/quadra/calçada/avenida/travessa/beco/viela/túnel" in p
+    assert "viaduto/passarela/ciclovia/escadaria/orla/ponto de ônibus/estação de BRT" in p
+    assert "luz mais forte" in p
+    assert "Implantação de iluminação pública" in p
+    assert "Não abra Flow de reparo" in p
+    assert "Serviço: Implantação de iluminação pública" in p
+    assert "A primeira linha da resposta deve ser exatamente" in p
+    assert "não use `google_search` salvo" in p
+    assert "pedir link/URL direto" in p
+    assert "endereço completo + ponto de referência" in p
+    assert "Rioluz avalia/executa" in p
+    assert "Reinstalação de ponto de luz" in p
+
+
+def test_interactive_response_enriches_luminaria_flow_body():
+    """O body do Flow deve carregar serviço/canal/prazo/link antes da tool."""
+    p = interactive_response.MODULE_PROMPT
+    assert "Body oficial em `reparo_luminaria`" in p
+    assert "Body genérico" in p
+    assert "Defeito comum" in p
+    assert "body=\"Reparo de Luminária (Rioluz)" in p
+    assert "Reparo de Luminária" in p
+    assert (
+        "https://www.1746.rio/hc/pt-br/articles/14187518715931-"
+        "Reparo-de-Lumin%C3%A1ria"
+    ) in p
+    assert "não abra Flow" in p
+    assert "Informativo de luminária" in p
+    assert "não usa `google_search` nem Flow" in p
+    assert "mensagem pedir abertura de chamado para local concreto" in p
+    assert "Toda resposta informativa de" in p
+    assert "linha literal `Serviço: ...`" in p
+    assert "canal/prazo/link sem" in p
+    assert "Serviço: Reparo de cabo de iluminação pública" in p
+    assert "3460-1746.\nServiço: Reparo de Luminária, da Rioluz." in p
+    assert "Rioluz.\nPrazo para defeitos comuns: até 3 dias corridos." in p
+    assert "Serviço: Reparo de cabo de iluminação pública.\nTelefone: 1746" in p
+    assert "Prazo para defeitos comuns: até 3 dias corridos" in p
+    assert "site ou app 1746" in p
+    assert "Acesa de dia" in p
+    assert "bloco apagado" in p
+    assert "Reparo de cabo de iluminação pública" in p
+    assert "Não altere os títulos oficiais" in p
+    assert "body=\"Reparo de cabo de iluminação pública (Rioluz)" in p
+    assert "Serviço: Reparo de cabo de iluminação pública" in p
+    assert 'prefill_data={"defect_type": "Danificada"}' in p
+    assert "Informe endereço completo e ponto de referência" in p
+    assert (
+        "https://www.1746.rio/hc/pt-br/articles/14191400984987-"
+        "Reparo-de-cabo-de-ilumina%C3%A7%C3%A3o-p%C3%BAblica"
+    ) in p
+    assert "de forma anônima" in p
+    assert "Telefone: 1746; de fora do município, (21) 3460-1746" in p
+    assert "retirada de risco imediata" in p
+    assert "Rioluz" in p
+    assert "até 3 dias corridos" in p
+    assert "até 4 dias corridos" in p
+
+
+def test_luminaria_deadlines_stay_out_of_global_workflow_continuation():
+    """Prazos de luminária ficam no módulo dinâmico, não no global."""
+    interactive = interactive_response.MODULE_PROMPT
+    assert "Informativo" in interactive
+    assert "não usa `google_search` nem Flow" in interactive
+
+    p = workflow_continuation.MODULE_PROMPT
+    assert "ate 3 dias corridos" not in p
+    assert "ate 4 dias corridos" not in p
+    assert "Nao aplique a outros servicos" not in p
+
+
+def test_luminaria_out_of_scope_stays_out_of_global_workflow_continuation():
+    """Triagem textual fora de escopo existe só no módulo dinâmico."""
+    assert "Fora de escopo" in interactive_response.MODULE_PROMPT
+    p = workflow_continuation.MODULE_PROMPT
+    assert "semaforo apagado" not in p
+    assert "nao abrir\nchamado de luminaria" not in p
 
 
 def test_vision_inbound_prompt_has_safety_and_out_of_scope_routing():
@@ -339,6 +2231,60 @@ def test_vision_inbound_prompt_has_safety_and_out_of_scope_routing():
         "Falta a noção de risco iminente / perigo na análise visual"
     )
     assert "escopo" in low, "Falta a noção de fora de escopo na análise visual"
+
+
+def test_analyzable_media_prompts_reject_telecom_before_luminaria_flow():
+    """Mídia/transcrição de cabo de telecom não deve virar Flow de luminária."""
+    prompts = {
+        "vision": vision_inbound.MODULE_PROMPT,
+        "audio": audio_inbound.MODULE_PROMPT,
+        "video": video_inbound.MODULE_PROMPT,
+    }
+    for name, prompt in prompts.items():
+        low = prompt.lower()
+        assert "internet" in low, f"{name}: falta internet como fora de escopo"
+        assert "telefonia" in low, f"{name}: falta telefonia como fora de escopo"
+        assert "fibra" in low, f"{name}: falta fibra como fora de escopo"
+        assert "operadora" in low, f"{name}: falta operadora responsavel"
+        assert "não mande flow" in low or "não abra chamado de luminária" in low, (
+            f"{name}: falta bloquear Flow/chamado de luminária para telecom"
+        )
+
+
+def test_analyzable_media_prompts_reject_private_luminaria_assets():
+    """Mídia/transcrição de ativo privado não deve virar reparo de luminária."""
+    prompts = {
+        "vision": vision_inbound.MODULE_PROMPT,
+        "audio": audio_inbound.MODULE_PROMPT,
+        "video": video_inbound.MODULE_PROMPT,
+    }
+    for name, prompt in prompts.items():
+        low = prompt.lower()
+        for private_place in ("loja", "restaurante", "prédio", "garagem", "sala"):
+            assert private_place in low, f"{name}: falta ativo privado {private_place}"
+        assert "não é reparo de iluminação pública" in low or "não trate como `reparo_luminaria`" in low, (
+            f"{name}: falta bloquear ativo privado antes do Flow"
+        )
+        assert "rioluz" in low and "luz" in low and "pública" in low, (
+            f"{name}: falta override público"
+        )
+        assert "em frente/perto" in low, f"{name}: falta preservar referência pública"
+
+
+def test_analyzable_media_prompts_map_noise_to_flow_defect_type():
+    """Mídia/transcrição com ruído de luminária deve prefillar `Com ruído`."""
+    prompts = {
+        "vision": vision_inbound.MODULE_PROMPT,
+        "audio": audio_inbound.MODULE_PROMPT,
+        "video": video_inbound.MODULE_PROMPT,
+    }
+    for name, prompt in prompts.items():
+        assert 'defect_type="Com ruído"' in prompt, (
+            f"{name}: falta mapeamento canonico de ruido"
+        )
+        low = prompt.lower()
+        for symptom in ("barulho", "ruído", "chiado", "zumbido", "estalo"):
+            assert symptom in low, f"{name}: falta sintoma de ruido {symptom}"
 
 
 # ---------- módulo audio_inbound ----------
@@ -505,7 +2451,7 @@ def test_interactive_response_continuation_precedence_over_flow_first():
     assert "continuação de workflow tem precedência" in low or (
         "continuação" in low and "precedência" in low
     ), "Falta a regra de precedência da continuação sobre o Flow-first"
-    assert "em curso" in low, "Falta o conceito de atendimento em curso"
+    assert "mesmo atendimento" in low, "Falta o conceito de atendimento em curso"
     assert "nfm_reply" in p, "Falta o sinal de submissão do Flow (nfm_reply)"
     assert "tentar novamente" in low or "tenta de novo" in low, (
         "Falta o caso de retry na precedência da continuação"

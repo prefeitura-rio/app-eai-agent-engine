@@ -21,7 +21,7 @@ from langchain_core.tools import BaseTool
 from langchain_google_vertexai import ChatVertexAI
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from psycopg_pool import AsyncConnectionPool, ConnectionPool
+from psycopg_pool import AsyncConnectionPool
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
@@ -40,8 +40,17 @@ from vertexai.agent_engines import (
 # use custom graph without _validate_chat_history
 from engine.custom_react_agent import create_react_agent
 from engine.audio_mode import inject_audio_directive
+from engine.interactive_tools import (
+    add_interactive_tool_preview_message,
+    put_interactive_tool_messages_last,
+    put_recovery_ai_after_interactive_tool_error,
+)
 from engine.session_boundary import apply_session_reset, inject_close_directive
 from engine.log import logger
+from engine.luminaria_prompt_gate import (
+    _inject_interactive_response_prompt,
+    _should_inject_interactive_response_prompt,
+)
 
 # Error monitoring utilities (safe fallback if not available)
 from engine.utils import (
@@ -1121,6 +1130,21 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # recente/forte; só entra em llm_input_messages (não-persistente).
         final_state = inject_close_directive(state, final_state)
 
+        # Step 4.7: WhatsApp Flow de luminária — prompt pesado e específico,
+        # injetado só em turnos com sinais de luminária/iluminação. Manter fora
+        # do system prompt global evita contaminação de outros serviços/evals.
+        message_key = (
+            "llm_input_messages"
+            if "llm_input_messages" in final_state
+            else "messages"
+        )
+        gated_messages = final_state.get(message_key, [])
+        if _should_inject_interactive_response_prompt(gated_messages):
+            final_state = {
+                **final_state,
+                message_key: _inject_interactive_response_prompt(gated_messages),
+            }
+
         # Step 5: Store the messages that will be sent to LLM for token counting later
         # The prompt_runnable will prepend system prompt to these messages
         if "llm_input_messages" in final_state:
@@ -1599,6 +1623,11 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             return result
         filtered_result = result.copy()
         filtered_result["messages"] = messages[last_human_index:]
+        if not put_recovery_ai_after_interactive_tool_error(
+            filtered_result["messages"]
+        ):
+            put_interactive_tool_messages_last(filtered_result["messages"])
+            add_interactive_tool_preview_message(filtered_result["messages"])
         return filtered_result
 
     @interceptor(

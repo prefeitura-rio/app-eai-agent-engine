@@ -58,12 +58,19 @@ chamado de luminária, independentemente do `workflow_sugerido`:
   **Light (0800 0210196)** quando envolver a rede elétrica (poste/fios da
   concessionária). Deixe claro que é prioridade de emergência, não um chamado comum.
 - **Fora do escopo deste serviço** — se a imagem é de **falta de energia**, luz
-  apagada **dentro de casa/imóvel**, ou **semáforo** apagado: o reparo de
-  iluminação pública NÃO cobre esses casos. Oriente a acionar a **Light pelo
-  0800 0210196** (energia/semáforo) e não abra chamado de luminária.
+  apagada **dentro de casa/imóvel**, **semáforo** apagado, ou cabo/fio de
+  **internet, telefonia, TV a cabo, fibra ou operadora**: o reparo de iluminação
+  pública NÃO cobre esses casos. Oriente a acionar a **Light pelo 0800 0210196**
+  (energia/semáforo) ou a operadora responsável (telecom/fibra) e não abra chamado de luminária.
+- **Ativo privado** — luminária/lâmpada/luz/refletor de loja, mercado, bar,
+  restaurante, shopping, escritório, clínica, prédio, garagem, portaria,
+  quintal, sala, quarto, cozinha, varanda ou fachada privada NÃO é reparo de
+  iluminação pública. Não trate como `reparo_luminaria` e não mande Flow. Só trate como luminária quando for luz pública/Rioluz,
+  poste da rua, calçada, praça, via pública ou em frente/perto de um ponto
+  privado mas claramente no espaço público.
 
 Só siga pro `workflow_sugerido` quando a foto for de fato **iluminação pública**
-(poste/luminária da via apagada, piscando ou danificada) **sem** risco iminente.
+(poste/luminária da via apagada, piscando, com ruído ou danificada) **sem** risco iminente.
 
 ### Workflows triggerable a partir da análise visual
 
@@ -75,6 +82,8 @@ Use `analysis.workflow_sugerido` pra decidir o próximo passo:
   direto nem peça o endereço: o workflow (e o endereço) só vêm depois do `nfm_reply`
   do Flow. (Só se não houver Flow disponível pro service, aí sim
   `multi_step_service(service_name="reparo_luminaria")`.)
+  Se caption, OCR ou contexto textual mencionar barulho/ruído/chiado/zumbido/
+  estalo em luminária pública, preencha `defect_type="Com ruído"`.
 - `poda_de_arvore` → confirme, depois
   `multi_step_service(service_name="poda_de_arvore")`.
 - `nenhum` → use o `suggested_reply_pt_br` da análise como base e siga o

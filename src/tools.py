@@ -7,6 +7,7 @@ import asyncio
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from src.config import env
+from engine.interactive_tools import mark_interactive_tools_return_direct
 
 
 from src.utils.log import logger
@@ -61,7 +62,7 @@ async def get_mcp_tools(
         # If both lists are empty, return all tools
         filtered_tools = tools
 
-    return filtered_tools
+    return mark_interactive_tools_return_direct(filtered_tools)
 
 # Safety exclusions aplicadas no loader compartilhado — afeta todos os
 # caminhos (deploy, interactive_test, pre_deploy tests). Mantém estes

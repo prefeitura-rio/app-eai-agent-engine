@@ -5,7 +5,8 @@ from langchain_core.tools import BaseTool
 import os
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from engine.log import logger
-import json
+
+from engine.interactive_tools import mark_interactive_tools_return_direct
 
 
 async def get_mcp_tools(
@@ -105,7 +106,7 @@ async def get_mcp_tools(
             tools = await client.get_tools()
             logger.info(f"[MCP Tools] Successfully fetched {len(tools)} tools from server")
         except Exception as get_tools_error:
-            logger.error(f"[MCP Tools] ERROR during get_tools() call:")
+            logger.error("[MCP Tools] ERROR during get_tools() call:")
             logger.error(f"[MCP Tools]   Error Type: {type(get_tools_error).__name__}")
             logger.error(f"[MCP Tools]   Error Message: {str(get_tools_error)}")
             logger.error(f"[MCP Tools]   Error Details: {repr(get_tools_error)}")
@@ -135,7 +136,7 @@ async def get_mcp_tools(
             f"Error type: {type(e).__name__}, Message: {str(e)}",
             exc_info=True
         )
-        logger.error(f"[MCP Tools] Full exception details:", exc_info=True)
+        logger.error("[MCP Tools] Full exception details:", exc_info=True)
         raise
 
     # Apply filtering logic
@@ -159,7 +160,7 @@ async def get_mcp_tools(
         logger.info(f"[MCP Tools] Final tools to be loaded: {final_tool_names}")
         logger.info(f"[MCP Tools] Successfully completed MCP tools loading. Total tools: {len(filtered_tools)}")
         
-        return filtered_tools
+        return mark_interactive_tools_return_direct(filtered_tools)
         
     except Exception as e:
         logger.error(
