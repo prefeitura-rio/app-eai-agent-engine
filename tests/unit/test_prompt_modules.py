@@ -11,6 +11,7 @@ tests pós-deploy em staging.
 from src.prompt_modules import compose, ENABLED_MODULES
 from src.prompt_modules import (
     audio_inbound,
+    emoji_input,
     govbr_auth_gating,
     interactive_response,
     media_inbound,
@@ -475,6 +476,27 @@ def test_workflow_continuation_prompt_handles_sgrc_retry():
     assert "nunca volte pro flow" in p  # proíbe explicitamente reabrir o Flow
 
 
+def test_workflow_continuation_prompt_enriches_address_from_history():
+    """No passo de endereço, reaproveitar fragmentos já ditos no histórico (em
+    vez de re-perguntar) e passar a string consolidada no payload — o "basta
+    chamar a tool" do feedback do Bruno (POC1 #5)."""
+    p = workflow_continuation.MODULE_PROMPT.lower()
+    assert "histórico" in p
+    assert "endereço" in p
+    assert "basta chamar a tool" in p
+    assert "só o que falta" in p  # pede só o campo faltante, não o endereço todo
+    assert "multi_step_service" in p
+
+
+def test_workflow_continuation_address_history_respects_flow_first():
+    """A captura do histórico vale só pós-submissão do Flow (nfm_reply) — nunca
+    pra pré-preencher/validar endereço antes do Flow na luminária."""
+    p = workflow_continuation.MODULE_PROMPT
+    low = p.lower()
+    assert "nfm_reply" in p, "Falta o sinal de submissão do Flow"
+    assert "flow-first" in low, "Falta a salvaguarda explícita do Flow-first"
+
+
 def test_interactive_response_continuation_precedence_over_flow_first():
     """O Flow-first NÃO pode reabrir o Flow quando há atendimento de luminária
     em curso (pós-nfm_reply): a continuação tem precedência."""
@@ -642,3 +664,62 @@ def test_session_reset_after_session_close_when_enabled():
 
         pytest.skip("session_reset desligado via env")
     assert names.index("session_close") < names.index("session_reset")
+
+
+# ---------- emoji_input (interpretação de emoji na entrada) ----------
+
+
+def test_emoji_input_module_has_required_attributes():
+    """emoji_input segue o contrato MODULE_NAME/MODULE_PROMPT."""
+    assert hasattr(emoji_input, "MODULE_NAME")
+    assert hasattr(emoji_input, "MODULE_PROMPT")
+    assert isinstance(emoji_input.MODULE_NAME, str)
+    assert isinstance(emoji_input.MODULE_PROMPT, str)
+
+
+def test_emoji_input_module_name_is_stable():
+    """MODULE_NAME vira sufixo no version (e em logs OTel) — não pode mudar
+    silenciosamente."""
+    assert emoji_input.MODULE_NAME == "emoji_input"
+
+
+def test_emoji_input_enabled_by_default():
+    """Sempre ativo (sem flag): não chama tool, não há risco de tool não-bound —
+    mesmo critério de workflow_continuation / session_close."""
+    assert emoji_input in ENABLED_MODULES
+
+
+def test_emoji_input_before_media_modules_in_enabled():
+    """Regra conversacional geral entra antes dos módulos de mídia que produzem
+    respostas de etapa (mesma lógica de session_close)."""
+    names = [m.MODULE_NAME for m in ENABLED_MODULES]
+    assert "emoji_input" in names
+    assert names.index("emoji_input") < names.index("media_inbound")
+
+
+def test_emoji_input_interprets_confirmation_and_negation():
+    """Guard: emoji de confirmação/negação deve ser interpretado como sim/não no
+    contexto — núcleo do feedback do Bruno (POC1 #6)."""
+    p = emoji_input.MODULE_PROMPT
+    low = p.lower()
+    assert "👍" in p
+    assert "confirmação" in low
+    assert "negação" in low
+    assert "contexto" in low  # sempre lendo pelo contexto do último turno
+
+
+def test_emoji_input_is_conservative():
+    """Conservador: emoji decorativo não é comando e, quando ambíguo, pergunta —
+    evita sobre-interpretar num canal oficial."""
+    p = emoji_input.MODULE_PROMPT.lower()
+    assert "decorativo" in p and "não é comando" in p
+    assert "ambígu" in p and "pergunta curta" in p
+
+
+def test_emoji_input_scoped_to_input_not_output():
+    """O módulo é só sobre ENTRADA — deve AFIRMAR que não muda o uso de emoji na
+    saída (regido pelo prompt base / audio_response). Pina a cláusula de saída em
+    si: sem ela, alguém poderia remover o escopo sem o teste perceber."""
+    p = emoji_input.MODULE_PROMPT.lower()
+    assert "entrada" in p
+    assert "próprias respostas" in p  # cláusula que isola o escopo da SAÍDA

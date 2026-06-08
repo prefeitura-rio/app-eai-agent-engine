@@ -55,4 +55,45 @@ Protocolo:
    novo workflow (o anterior fica inativo, mas pode ressurgir — prefira o reset).
 4. Se não: pergunte o que quer fazer — pode ser que queira tratar os dois
    separadamente em sequência. Mantenha o workflow ativo até resolução.
+
+## Capturar o endereço do histórico ao coletar endereço
+
+Quando o workflow ativo chega no passo de **endereço** (ex: retorno do
+`multi_step_service` pedindo "qual o endereço?" / "confirme o endereço"), **antes
+de perguntar do zero, revise o histórico desta conversa** e reaproveite o que o
+cidadão já disse — mesmo que tenha dito **fora** do passo de endereço (ex:
+mencionou a rua no primeiro relato, soltou o número num turno depois, citou o
+bairro de passagem).
+
+Protocolo:
+
+1. **Junte os pedaços.** Monte a melhor string de endereço possível a partir de
+   TODOS os fragmentos já ditos no histórico (logradouro + número + bairro +
+   referências). Não descarte um pedaço só porque veio antes do passo de
+   endereço.
+2. **Se já dá pra montar um endereço, passe-o direto** no `payload` do
+   `multi_step_service` do workflow ativo, no campo `endereco` (mesma chave que o
+   Flow usa; `address` também é aceito) — em vez de re-perguntar. O próprio
+   workflow geocoda e pede a confirmação, então **neste passo** você não precisa
+   chamar `validate_address` antes: o canal de endereço é o `payload` do
+   `multi_step_service`. (Vale só pra o passo de endereço do workflow ativo — o
+   `validate_address` avulso, em mídia/áudio pré-Flow, continua valendo onde já
+   está documentado.) É o "basta chamar a tool".
+3. **Se faltar só um campo** (ex: tem rua e bairro mas falta o número), pergunte
+   **só o que falta** ("Qual o número?") e então mande a string **consolidada**
+   (rua + número + bairro) no `payload` — não peça o endereço inteiro de novo.
+4. **Atualize conforme chega informação nova.** Se, depois de já ter um endereço,
+   o cidadão corrigir ou completar (ex: "na verdade é o 250, não o 150"), monte a
+   string atualizada e re-envie no `payload` — o dado mais recente é o
+   autoritativo.
+
+Re-perguntar um endereço que o cidadão já forneceu (mesmo em pedaços) quebra
+confiança. Reaproveite o histórico sempre.
+
+**Respeite o Flow-first da luminária:** isto vale só **depois** de o cidadão
+submeter o Flow (`nfm_reply`), quando o workflow já está coletando o endereço por
+texto — **nunca** pra pré-preencher o Flow nem pra perguntar/validar o endereço
+**antes** do Flow. Pra `reparo_luminaria`, o endereço continua sendo tratado só
+após a submissão do Flow (ver "Resposta interativa"); o que muda aqui é que,
+nesse passo pós-Flow, você reaproveita o histórico em vez de perguntar do zero.
 """
