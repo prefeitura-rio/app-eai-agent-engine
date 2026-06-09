@@ -497,6 +497,24 @@ def test_luminaria_flow_specifics_stay_out_of_global_compose():
     assert "SEMPRE comece pelo Flow" not in augmented
 
 
+def test_interactive_general_has_no_wire_theft_antisearch_leak():
+    """Anti-regressão #104 (equipments): o roteamento de fios/furto de luminária
+    — em especial a SUPRESSÃO de busca ("não substitua por google_search") e o
+    desvio do Disque Denúncia — foi o vetor que regrediu `equipments` quando vivia
+    no módulo GLOBAL sempre-on. O dataset equipments (academias/quadras/praças/
+    postos) PRECISA de `google_search` pra categorizar; uma diretiva global
+    anti-busca enfraquecia justamente `equipments_categories`/`equipments_tools`.
+    Esse conteúdo deve viver SÓ no dinâmico de luminária (gated por turno) —
+    NUNCA aqui. (A ponte de delegação pode citar "luminária", mas não a rota de
+    fios/furto nem a supressão de busca.)"""
+    p = interactive_general.MODULE_PROMPT
+    low = p.lower()
+    assert "furto" not in low
+    assert "roubo de fios" not in low
+    assert "google_search" not in p  # o token (e portanto a supressão "não use google_search") fica fora do geral
+    assert "Disque" not in p
+
+
 def test_interactive_response_dynamic_gate_matches_luminaria_turns():
     """O pre_model_hook injeta o módulo só em turnos de luminária."""
     if not INTERACTIVE_RESPONSE_DYNAMIC_ENABLED:
