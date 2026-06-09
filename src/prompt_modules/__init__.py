@@ -39,6 +39,7 @@ from src.prompt_modules import (
     govbr_auth_gating,
     interactive_general,
     interactive_response,
+    luminaria_service_facts,
     media_inbound,
     media_response,
     session_close,
@@ -144,7 +145,17 @@ _session_reset_enabled = (
     and "reset_session_state" not in _excluded_tools
 )
 
+# `luminaria_service_facts`: fatos oficiais do reparo de luminaria (prazos 3/4
+# dias corridos, Light 0800 p/ falta de energia, e — central — preservar
+# LITERALMENTE prazo/defeito/local/quantidade/endereco em retomadas). ESTÁTICO e
+# sempre-on, e ANTES de workflow_continuation, pra que retomadas factuais ("qual o
+# prazo mesmo?") peguem o fix mesmo fora do gate dinâmico de luminária. Conteúdo
+# auto-escopado por contexto ("use quando o contexto recente for luminária";
+# "se a retomada falar de outro serviço, não aplique"). Re-land do #104 — fix do
+# `critical_fact_accuracy` (eval #104: 0.70-0.73 vs baseline 0.68 sobre o mesmo
+# v180; o engine sem ele ficava em 0.60).
 ENABLED_MODULES = [
+    luminaria_service_facts,
     workflow_continuation,
     session_close,
     emoji_input,

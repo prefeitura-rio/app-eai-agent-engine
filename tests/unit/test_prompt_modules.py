@@ -19,6 +19,7 @@ from src.prompt_modules import (
     govbr_auth_gating,
     interactive_general,
     interactive_response,
+    luminaria_service_facts,
     media_inbound,
     session_close,
     session_reset,
@@ -106,6 +107,43 @@ def test_compose_with_no_modules_is_passthrough(monkeypatch):
 
 
 # ---------- contract dos módulos individuais ----------
+
+
+def test_luminaria_service_facts_module_name_is_stable():
+    """MODULE_NAME vira sufixo no version e deve ser estavel."""
+    assert luminaria_service_facts.MODULE_NAME == "luminaria_service_facts"
+    assert isinstance(luminaria_service_facts.MODULE_PROMPT, str)
+
+
+def test_luminaria_service_facts_prompt_anchors_official_deadlines():
+    """Prazos de luminaria nao podem depender de busca livre instavel."""
+    p = luminaria_service_facts.MODULE_PROMPT.lower()
+    assert "3 dias corridos" in p
+    assert "4 dias corridos" in p
+    assert "acesa de dia" in p
+    assert "furto/roubo de fios" in p
+    assert "nunca troque" in p
+    assert "dias uteis" in p
+    assert "nao chame google_search" in p
+
+
+def test_luminaria_service_facts_preserves_luminaria_followups_only():
+    """Retomadas ficam protegidas sem ativar regra geral fora de luminaria."""
+    p = luminaria_service_facts.MODULE_PROMPT.lower()
+    assert "retomadas dentro deste contexto" in p
+    assert "preserve" in p
+    assert "prazo" in p
+    assert "defeito" in p
+    assert "endereco" in p
+    assert "outro servico" in p
+    assert "nao aplique" in p
+
+
+def test_luminaria_service_facts_ordered_before_workflow_modules():
+    """Facts de luminaria devem anteceder regras operacionais de Flow/workflow."""
+    assert ENABLED_MODULES.index(luminaria_service_facts) < ENABLED_MODULES.index(
+        workflow_continuation
+    )
 
 
 def test_media_inbound_module_has_required_attributes():
