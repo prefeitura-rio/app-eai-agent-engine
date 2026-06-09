@@ -38,6 +38,66 @@ def test_on_phrases(text):
 
 
 # --------------------------------------------------------------------------- #
+# Acessibilidade (POC1 #296) — cidadão que não lê → áudio contínuo durável
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "text",
+    [
+        "não sei ler",
+        "nao sei ler",
+        "eu não sei ler nem escrever",
+        "não sei lê",
+        "não consigo ler",
+        "não leio",
+        "sou analfabeto",
+        "sou analfabeta",
+        "tenho dificuldade de ler",
+        "tenho dificuldade pra ler",
+        "sou deficiente visual",
+    ],
+)
+def test_accessibility_phrases_enable_continuous_audio(text):
+    assert derive_audio_mode([_h(text)]) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # "não enxergo" descreve o escuro do poste neste bot — NÃO é sinal de
+        # leitura, então deliberadamente não liga áudio (evita falso-positivo no
+        # fluxo principal de luminária).
+        "minha luminária tá apagada e não enxergo nada na rua",
+        "não enxergo o poste daqui",
+        "não sei o número do poste",
+    ],
+)
+def test_dark_streetlight_phrases_do_not_enable_audio(text):
+    assert derive_audio_mode([_h(text)]) is False
+
+
+def test_accessibility_persists_across_neutral_turns():
+    """Necessidade de acessibilidade não 'reverte sozinha' (José Maurício):
+    a diretiva é derivada do histórico todo turno e persiste sem re-pedido."""
+    history = [
+        _h("não sei ler, me responde falando"),
+        _h("é na rua das laranjeiras"),
+        _h("perto do número 250"),
+    ]
+    assert derive_audio_mode(history) is True
+
+
+def test_accessibility_can_be_turned_off_explicitly():
+    """Se um ajudante passar a ler, 'volta pra texto' ainda desliga (newest wins)."""
+    history = [_h("não sei ler"), _h("pode voltar pra texto agora")]
+    assert derive_audio_mode(history) is False
+
+
+def test_reading_a_document_is_not_accessibility_trigger():
+    """'quero ler o edital' é pedido de conteúdo, não sinal de que não sabe ler."""
+    assert derive_audio_mode([_h("quero ler o edital")]) is False
+
+
+# --------------------------------------------------------------------------- #
 # derive_audio_mode — OFF / não-contínuo
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(

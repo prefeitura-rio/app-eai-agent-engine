@@ -18,8 +18,10 @@ Por que assim:
 
 Distinção importante: um pedido pontual ("me responde com áudio") **não** liga o
 modo contínuo — isso é tratado por turno pelo prompt module ``audio_response``.
-O modo contínuo só liga com marcadores de continuidade ("sempre", "fica",
-"continua", "só áudio", "não precisa escrever").
+O modo contínuo liga com marcadores de continuidade ("sempre", "fica",
+"continua", "só áudio", "não precisa escrever") OU com sinais de acessibilidade
+("não sei ler", "analfabeto", "deficiente visual" — o cidadão que não lê precisa
+de áudio por necessidade, não preferência).
 """
 
 import re
@@ -55,6 +57,21 @@ _ON_PATTERNS = [
     r"nao precisa.{0,12}escrever",
     r"para de escrever",
     r"(responde|responda|me responde|fala).{0,15}sempre.{0,15}(falando|audio|voz)",
+    # Acessibilidade: cidadão que NÃO LÊ (analfabetismo / baixa visão) precisa de
+    # áudio CONTÍNUO — é necessidade, não preferência pontual, por isso liga o modo
+    # durável (reinjetado todo turno, não "reverte sozinho"). Viés pró-áudio é
+    # proposital num serviço público: o custo de não atender quem não lê supera o
+    # de gerar um áudio a mais (reversível com "volta pra texto"). POC1 #296.
+    r"nao sei ler\b",
+    r"nao sei le\b",  # coloquial "não sei lê"
+    r"nao consigo ler\b",
+    r"\bnao leio\b",
+    r"\banalfabet",  # analfabeto/a/ismo
+    r"dificuldade.{0,15}(de |pra |para )?ler\b",
+    # "deficiente visual" é inequívoco; deliberadamente NÃO incluímos "nao enxergo"
+    # — neste bot (luminária) "não enxergo nada na rua" descreve o escuro do poste,
+    # não dificuldade de leitura → seria falso-positivo no fluxo principal.
+    r"deficiente visual",
 ]
 
 _OFF_PATTERNS = [
