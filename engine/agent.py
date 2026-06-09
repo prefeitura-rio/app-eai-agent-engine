@@ -3,7 +3,6 @@ import asyncio
 import hashlib
 import json
 import random
-import warnings
 from datetime import datetime, timezone
 from functools import wraps
 from os import getenv
@@ -67,7 +66,10 @@ from engine.utils import (
 )
 
 # Vertex AI doesn't support the JSON Schema `additionalProperties` key — safe to ignore.
-warnings.filterwarnings("ignore", message="Key 'additionalProperties' is not supported in schema", category=UserWarning)
+# This comes from logging.warning() in langchain_google_vertexai, not warnings.warn(),
+# so filterwarnings has no effect; silencing the logger directly is the only option.
+import logging as _logging
+_logging.getLogger("langchain_google_vertexai.functions_utils").setLevel(_logging.ERROR)
 
 
 class IntVersionPostgresSaver(AsyncPostgresSaver):
