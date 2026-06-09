@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import json
 import random
+import warnings
 from datetime import datetime, timezone
 from functools import wraps
 from os import getenv
@@ -64,6 +65,9 @@ from engine.utils import (
     RESPONSE_FILTER,
     RESPONSE_FILTER_FILTER,
 )
+
+# Vertex AI doesn't support the JSON Schema `additionalProperties` key — safe to ignore.
+warnings.filterwarnings("ignore", message="Key 'additionalProperties' is not supported in schema", category=UserWarning)
 
 
 class IntVersionPostgresSaver(AsyncPostgresSaver):
@@ -436,9 +440,15 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             ):
                 message.additional_kwargs["timestamp"] = current_time
                 
-                # Normalize tool response: extract first item if content is a list
+                # Normalize MCP tool response: extract text string from list-of-dicts
+                # MCP returns [{'type': 'text', 'text': '...', 'id': '...'}]; ToolMessage.content
+                # must be str (or list[str|dict]) — a bare dict triggers Pydantic serialization warnings.
                 if isinstance(message.content, list) and len(message.content) > 0:
-                    message.content = message.content[0]
+                    first = message.content[0]
+                    if isinstance(first, dict) and first.get("type") == "text" and "text" in first:
+                        message.content = first["text"]
+                    else:
+                        message.content = first
                     logger.debug(f"[Tool Execution] Normalized list response to single item for tool: {message.name if hasattr(message, 'name') else 'UNKNOWN'}")
                 
                 updates.append(message)
@@ -1164,11 +1174,12 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 min_size=1,
                 max_size=10,
                 timeout=30.0,
-                open=True,  # Auto-open on creation
-                check=AsyncConnectionPool.check_connection,  # Validate before use — discards idle-timeout'd connections
-                reconnect_timeout=60,  # Keep retrying to reconnect for up to 60s before raising
-                max_idle=300,  # Close connections idle for 5+ min before the DB kills them server-side
+                open=False,
+                check=AsyncConnectionPool.check_connection,
+                reconnect_timeout=60,
+                max_idle=300,
             )
+            await self._conn_pool.open()
             logger.info("[Agent Setup] ✓ Connection pool created")
 
         # Create checkpointer with persistent pool
