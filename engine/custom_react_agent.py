@@ -1,3 +1,4 @@
+import datetime
 import inspect
 from typing import (
     Any,
@@ -132,14 +133,35 @@ def _get_prompt_runnable(prompt: Optional[Prompt]) -> Runnable:
             lambda state: _get_state_value(state, "messages"), name=PROMPT_RUNNABLE_NAME
         )
     elif isinstance(prompt, str):
-        _system_message: BaseMessage = SystemMessage(content=prompt)
+        def _make_timestamped_str(p: str) -> Callable:
+            def _fn(state) -> list[BaseMessage]:
+                current_timestamp = datetime.datetime.now(
+                    tz=datetime.timezone(datetime.timedelta(hours=-3))
+                ).strftime("%d-%m-%Y às %H:%M")
+                content = f"Data e Horário: {current_timestamp}\n{p}"
+                _system_message: BaseMessage = SystemMessage(content=content)
+                preview = "\n".join(content.splitlines()[:2])[:50]
+                logger.info(f"[SYSTEM PROMPT] {preview!r}")
+                return [_system_message] + _get_state_value(state, "messages")
+            return _fn
         prompt_runnable = RunnableCallable(
-            lambda state: [_system_message] + _get_state_value(state, "messages"),
+            _make_timestamped_str(prompt),
             name=PROMPT_RUNNABLE_NAME,
         )
     elif isinstance(prompt, SystemMessage):
+        def _make_timestamped_sys(p: SystemMessage) -> Callable:
+            def _fn(state) -> list[BaseMessage]:
+                current_timestamp = datetime.datetime.now(
+                    tz=datetime.timezone(datetime.timedelta(hours=-3))
+                ).strftime("%d-%m-%Y às %H:%M")
+                content = f"Data e Horário: {current_timestamp}\n{p.content}"
+                _stamped = SystemMessage(content=content)
+                preview = "\n".join(content.splitlines()[:2])[:50]
+                logger.info(f"[SYSTEM PROMPT] {preview!r}")
+                return [_stamped] + _get_state_value(state, "messages")
+            return _fn
         prompt_runnable = RunnableCallable(
-            lambda state: [prompt] + _get_state_value(state, "messages"),
+            _make_timestamped_sys(prompt),
             name=PROMPT_RUNNABLE_NAME,
         )
     elif inspect.iscoroutinefunction(prompt):

@@ -3,7 +3,10 @@ import asyncio
 import hashlib
 import json
 import random
+import socket
+import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from functools import wraps
 from os import getenv
 from typing import Any, AsyncIterable, Iterator, List
@@ -64,6 +67,12 @@ from engine.utils import (
     RESPONSE_FILTER,
     RESPONSE_FILTER_FILTER,
 )
+
+# Vertex AI doesn't support the JSON Schema `additionalProperties` key — safe to ignore.
+# This comes from logging.warning() in langchain_google_vertexai, not warnings.warn(),
+# so filterwarnings has no effect; silencing the logger directly is the only option.
+import logging as _logging
+_logging.getLogger("langchain_google_vertexai.functions_utils").setLevel(_logging.ERROR)
 
 
 class IntVersionPostgresSaver(AsyncPostgresSaver):
@@ -189,19 +198,34 @@ class IntVersionPostgresSaver(AsyncPostgresSaver):
 class _QuietOTLPExporter(SpanExporter):
     """Wraps OTLPSpanExporter to prevent verbose stack traces when the collector is unreachable.
 
-    The BatchSpanProcessor calls logger.exception() on any exception raised by the exporter,
-    producing ~8 lines of urllib3/requests stack trace per failure. By catching the exception
-    here and returning FAILURE instead, the BatchSpanProcessor sees a clean failure result
-    and logs nothing. We emit a single throttled WARNING so the issue stays visible.
+    Adds a circuit breaker: after _MAX_FAILURES consecutive failures the exporter enters a
+    cooldown of _COOLDOWN_SECONDS, skipping export attempts entirely during that window.
+    This prevents background threads from piling up 3-second timeouts every second when the
+    collector host is unreachable from the current network environment (e.g. Vertex AI).
     """
 
-    _LOG_EVERY = 50  # log once per N consecutive failures to avoid flooding
+    _MAX_FAILURES = 5          # enter cooldown after this many consecutive failures
+    _COOLDOWN_SECONDS = 300    # skip exports for 5 min, then retry once to check recovery
 
-    def __init__(self, exporter: SpanExporter) -> None:
+    def __init__(self, exporter: SpanExporter, endpoint: str = "") -> None:
         self._exporter = exporter
+        self._endpoint = endpoint
         self._consecutive_failures = 0
+        self._cooldown_until: float = 0.0  # monotonic timestamp; 0 = not in cooldown
 
     def export(self, spans) -> SpanExportResult:
+        now = time.monotonic()
+
+        # Circuit breaker: skip silently during cooldown window
+        if self._cooldown_until and now < self._cooldown_until:
+            return SpanExportResult.FAILURE
+
+        # Cooldown just expired — reset and try once
+        if self._cooldown_until and now >= self._cooldown_until:
+            self._cooldown_until = 0.0
+            self._consecutive_failures = 0
+            logger.info("[OTEL] Cooldown expired, resuming export attempts")
+
         try:
             result = self._exporter.export(spans)
             if self._consecutive_failures:
@@ -210,10 +234,17 @@ class _QuietOTLPExporter(SpanExporter):
             return result
         except Exception as e:
             self._consecutive_failures += 1
-            if self._consecutive_failures == 1 or self._consecutive_failures % self._LOG_EVERY == 0:
+            endpoint_hint = f" (endpoint: {self._endpoint})" if self._endpoint else ""
+            if self._consecutive_failures == 1:
                 logger.warning(
-                    f"[OTEL] Export failed ({self._consecutive_failures}x): "
-                    f"{type(e).__name__}: {e}"
+                    f"[OTEL] Export failed (1st){endpoint_hint}: {type(e).__name__}: {e}"
+                )
+            if self._consecutive_failures >= self._MAX_FAILURES:
+                self._cooldown_until = time.monotonic() + self._COOLDOWN_SECONDS
+                logger.warning(
+                    f"[OTEL] {self._consecutive_failures} consecutive failures{endpoint_hint} — "
+                    f"pausing exports for {self._COOLDOWN_SECONDS}s. "
+                    f"Check if the collector is reachable from this network environment."
                 )
             return SpanExportResult.FAILURE
 
@@ -284,12 +315,37 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._memory_cache = {}
         self._memory_needs_refresh = False  # Flag set when upsert_user_memory is called
 
+    @staticmethod
+    def _probe_otel_endpoint(endpoint: str, timeout: float = 2.0) -> bool:
+        """TCP-level connectivity check (no HTTPS handshake). Returns True if reachable."""
+        try:
+            parsed = urlparse(endpoint)
+            host = parsed.hostname or ""
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except Exception:
+            return False
+
     def _set_up_opentelemetry(self):
         if self._opentelemetry_setup_complete:
             return
+
+        # Probe before setting up — warn immediately if the collector is unreachable
+        if self._otlp_endpoint:
+            reachable = self._probe_otel_endpoint(self._otlp_endpoint)
+            if reachable:
+                logger.info(f"[OTEL] Collector reachable: {self._otlp_endpoint}")
+            else:
+                logger.warning(
+                    f"[OTEL] Collector NOT reachable at startup: {self._otlp_endpoint} — "
+                    f"exports will fail until network access is available. "
+                    f"Circuit breaker will pause retries after {_QuietOTLPExporter._MAX_FAILURES} failures."
+                )
+
         provider = TracerProvider(
             resource=Resource.create({"service.name": self._otpl_service}),
-            sampler=ALWAYS_ON,  # Garantir 100% de sampling
+            sampler=ALWAYS_ON,
         )
         otlp_exporter = OTLPSpanExporter(
             endpoint=self._otlp_endpoint,
@@ -302,15 +358,15 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 if self._otlp_header
                 else None
             ),
+            timeout=3,  # fail fast: 3s instead of the 10s default
         )
 
-        # Configurar BatchSpanProcessor com parâmetros otimizados para reduzir perda de spans
         self._batch_processor = BatchSpanProcessor(
-            _QuietOTLPExporter(otlp_exporter),
-            max_queue_size=8192,  # Aumentar buffer (padrão: 2048)
-            schedule_delay_millis=1000,  # Flush mais frequente (padrão: 5000)
-            export_timeout_millis=10000,  # Timeout menor (padrão: 30000)
-            max_export_batch_size=256,  # Lotes menores para reduzir latência (padrão: 512)
+            _QuietOTLPExporter(otlp_exporter, endpoint=self._otlp_endpoint),
+            max_queue_size=8192,
+            schedule_delay_millis=5000,  # flush every 5s (was 1s — 1s caused 10 concurrent timeout threads)
+            export_timeout_millis=4000,   # slightly above exporter timeout of 3s
+            max_export_batch_size=256,
         )
         provider.add_span_processor(self._batch_processor)
         trace.set_tracer_provider(provider)
@@ -436,9 +492,15 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
             ):
                 message.additional_kwargs["timestamp"] = current_time
                 
-                # Normalize tool response: extract first item if content is a list
+                # Normalize MCP tool response: extract text string from list-of-dicts
+                # MCP returns [{'type': 'text', 'text': '...', 'id': '...'}]; ToolMessage.content
+                # must be str (or list[str|dict]) — a bare dict triggers Pydantic serialization warnings.
                 if isinstance(message.content, list) and len(message.content) > 0:
-                    message.content = message.content[0]
+                    first = message.content[0]
+                    if isinstance(first, dict) and first.get("type") == "text" and "text" in first:
+                        message.content = first["text"]
+                    else:
+                        message.content = first
                     logger.debug(f"[Tool Execution] Normalized list response to single item for tool: {message.name if hasattr(message, 'name') else 'UNKNOWN'}")
                 
                 updates.append(message)
@@ -1164,11 +1226,12 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 min_size=1,
                 max_size=10,
                 timeout=30.0,
-                open=True,  # Auto-open on creation
-                check=AsyncConnectionPool.check_connection,  # Validate before use — discards idle-timeout'd connections
-                reconnect_timeout=60,  # Keep retrying to reconnect for up to 60s before raising
-                max_idle=300,  # Close connections idle for 5+ min before the DB kills them server-side
+                open=False,
+                check=AsyncConnectionPool.check_connection,
+                reconnect_timeout=60,
+                max_idle=300,
             )
+            await self._conn_pool.open()
             logger.info("[Agent Setup] ✓ Connection pool created")
 
         # Create checkpointer with persistent pool
