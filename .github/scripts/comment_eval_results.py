@@ -16,6 +16,17 @@ DATASET_TO_EVAL = {
 # usa % (escala grande)
 PERCENT_METRICS = {
     "token_usage_total",
+    "token_usage_billed",
+}
+
+# métricas INFORMATIVAS — renderizadas no comentário (com variação %), mas NUNCA
+# travam o gate. `token_usage_billed` é o token de input faturado real (do
+# usage_statistics): sobe legitimamente quando o prompt melhora, então é
+# visibilidade de custo, não bloqueio. Sem este skip, um raw-count novo cairia no
+# fallback `delta > 0.05` (sempre verdadeiro p/ contagem de milhares) e reprovaria
+# todo deploy.
+INFORMATIONAL_METRICS = {
+    "token_usage_billed",
 }
 
 # usa delta absoluto (escala pequena)
@@ -101,6 +112,12 @@ def is_regression(metric, base_val, cur_val):
     # Compare using the same 2-decimal precision shown in the report so
     # threshold-edge values do not fail because of floating-point noise.
     delta = round(cur_val - base_val, 2)
+
+    # -------------------------
+    # MÉTRICAS INFORMATIVAS — nunca travam o gate (só visibilidade)
+    # -------------------------
+    if metric in INFORMATIONAL_METRICS:
+        return False, None
 
     # -------------------------
     # REGRA CRÍTICA (casos especiais)
@@ -230,7 +247,14 @@ for eval_name in evals_selected:
             lines.append(
                 f"| {metric} | NA | {cur_val} | NA | NA | {err_r1} | {err_r2} | {err_r3} |"
             )
-            failures.append({"eval": eval_name, "metric": metric, "reason": "no_baseline"})
+            # Métricas informativas (ex.: token_usage_billed) NUNCA travam — inclusive
+            # pelo path de baseline-ausente, que dispara no 1º deploy após a métrica
+            # nascer (o baseline da versão anterior ainda não a contém). Renderiza a
+            # linha NA, mas não registra failure.
+            if metric not in INFORMATIONAL_METRICS:
+                failures.append(
+                    {"eval": eval_name, "metric": metric, "reason": "no_baseline"}
+                )
             continue
 
         delta = round(cur_val - base_val, 2)
