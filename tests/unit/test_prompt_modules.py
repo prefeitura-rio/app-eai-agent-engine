@@ -127,6 +127,17 @@ def test_luminaria_service_facts_prompt_anchors_official_deadlines():
     assert "nao chame google_search" in p
 
 
+def test_workflow_continuation_proibe_duplicata_e_confirma_anonimo_propria():
+    """Anti-duplicata do multi_step_service interativo + não inventar uma
+    confirmação anônima própria (queixas do device-test 2026-06-16)."""
+    p = workflow_continuation.MODULE_PROMPT.lower()
+    # regra: não escrever texto acompanhando o interactive_sent (evita 2ª msg)
+    assert "interactive_sent" in p
+    assert "duplicada" in p
+    # exemplo de confirmação que o agente NÃO deve inventar (workflow já confirma)
+    assert "confirma o envio" in p
+
+
 def test_luminaria_service_facts_preserves_luminaria_followups_only():
     """Retomadas ficam protegidas sem ativar regra geral fora de luminaria."""
     p = luminaria_service_facts.MODULE_PROMPT.lower()
