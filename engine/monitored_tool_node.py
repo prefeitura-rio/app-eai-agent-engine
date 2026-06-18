@@ -36,8 +36,7 @@ from langgraph.runtime import Runtime
 from engine.utils import send_general_error, make_tool_source
 from engine.log import logger
 from engine.interactive_tools import (
-    ALL_INTERACTIVE_TOOL_NAMES,
-    is_successful_interactive_tool_message,
+    NON_FLOW_INTERACTIVE_TOOL_NAMES,
     put_interactive_tool_messages_last,
 )
 
@@ -170,14 +169,18 @@ class MonitoredToolNode(ToolNode):
                 # fix 4f65686 para toda tool NÃO-interativa (multi_step_service,
                 # google_search, …), que o adapter MCP entrega como `["texto"]`.
                 # EXCEÇÃO: interativas não-Flow (buttons/list) mantêm o content em
-                # lista — ali a lista É a estrutura voltada ao cidadão.
+                # lista — ali a lista É a estrutura voltada ao cidadão. O teste é por
+                # NOME (NON_FLOW_INTERACTIVE_TOOL_NAMES), NÃO por
+                # is_successful_interactive_tool_message: com a Feature 1 (botões/lista
+                # proativos) essas tools passaram a contar como interativas
+                # bem-sucedidas (return_direct + preview), e amarrar a normalização ao
+                # is_successful as normalizaria por engano. O nome desacopla os dois.
                 # Premissa: o adapter MCP (content_and_artifact) entrega bloco
                 # único; uma tool com MÚLTIPLOS blocos de texto perderia
                 # content[1:] aqui (comportamento herdado do 4f65686).
                 if (
-                    is_successful_interactive_tool_message(message)
-                    or getattr(message, "name", None)
-                    not in ALL_INTERACTIVE_TOOL_NAMES
+                    getattr(message, "name", None)
+                    not in NON_FLOW_INTERACTIVE_TOOL_NAMES
                 ):
                     message.content = message.content[0]
                     logger.debug(

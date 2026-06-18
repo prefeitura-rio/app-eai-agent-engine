@@ -22,19 +22,30 @@ ALL_INTERACTIVE_TOOL_NAMES = (
 
 
 def mark_interactive_tools_return_direct(tools: Iterable[BaseTool]) -> list[BaseTool]:
-    """Stop the ReAct loop after tools whose return is the citizen-facing message."""
+    """Stop the ReAct loop after tools whose return is the citizen-facing message.
+
+    Cobre Flow (``build_whatsapp_flow_envelope``) E os interativos não-Flow
+    (``send_whatsapp_buttons`` / ``send_whatsapp_list``): o envelope que essas tools
+    retornam JÁ É a mensagem entregue ao cidadão, então o turno encerra ali. Sem o
+    ``return_direct``, o LLM podia escrever texto depois — e esse texto descartaria o
+    interativo no caminho engine→gateway→Mule (Feature 1: botões/listas proativos).
+    """
     tool_list = list(tools)
     for tool in tool_list:
-        if tool.name in INTERACTIVE_RESPONSE_TOOL_NAMES:
+        if tool.name in ALL_INTERACTIVE_TOOL_NAMES:
             tool.return_direct = True
     return tool_list
 
 
 def is_successful_interactive_tool_message(message: object) -> bool:
-    """Whether a ToolMessage is a successful citizen-facing interactive envelope."""
+    """Whether a ToolMessage is a successful citizen-facing interactive envelope.
+
+    Inclui Flow + botões/lista (``ALL_INTERACTIVE_TOOL_NAMES``): todos são respostas
+    interativas voltadas ao cidadão que encerram o turno (preview p/ eval +
+    reposicionamento como última mensagem)."""
     return (
         isinstance(message, ToolMessage)
-        and message.name in INTERACTIVE_RESPONSE_TOOL_NAMES
+        and message.name in ALL_INTERACTIVE_TOOL_NAMES
         and getattr(message, "status", None) != "error"
     )
 
@@ -43,7 +54,7 @@ def is_failed_interactive_tool_message(message: object) -> bool:
     """Whether a ToolMessage is a failed citizen-facing interactive envelope."""
     return (
         isinstance(message, ToolMessage)
-        and message.name in INTERACTIVE_RESPONSE_TOOL_NAMES
+        and message.name in ALL_INTERACTIVE_TOOL_NAMES
         and getattr(message, "status", None) == "error"
     )
 

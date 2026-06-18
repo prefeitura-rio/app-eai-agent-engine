@@ -38,7 +38,9 @@ def list_service_options() -> list[dict[str, str]]:
     return [{"name": "luminaria"}, {"name": "poda"}]
 
 
-def test_interactive_tools_return_direct_only_for_interactive_messages():
+def test_interactive_tools_return_direct_for_all_interactive_messages():
+    """Feature 1: Flow E botões/lista recebem return_direct (encerram o turno); as
+    não-interativas (google_search) não."""
     tools = mark_interactive_tools_return_direct(
         [
             build_whatsapp_flow_envelope,
@@ -50,8 +52,8 @@ def test_interactive_tools_return_direct_only_for_interactive_messages():
 
     by_name = {tool.name: tool for tool in tools}
     assert by_name["build_whatsapp_flow_envelope"].return_direct is True
-    assert by_name["send_whatsapp_buttons"].return_direct is False
-    assert by_name["send_whatsapp_list"].return_direct is False
+    assert by_name["send_whatsapp_buttons"].return_direct is True
+    assert by_name["send_whatsapp_list"].return_direct is True
     assert by_name["google_search"].return_direct is False
 
 
@@ -136,9 +138,12 @@ def test_interactive_return_direct_keeps_interactive_tool_message_last():
     assert result["messages"][-1].name == "build_whatsapp_flow_envelope"
 
 
-def test_non_flow_interactive_tool_does_not_return_direct_or_normalize_content():
+def test_non_flow_interactive_tool_returns_direct_and_keeps_list_content():
+    """Feature 1: send_whatsapp_list recebe return_direct (encerra o loop após a
+    tool), MAS seu content em lista (a estrutura interativa voltada ao cidadão) é
+    preservado — não normalizado para content[0]."""
     tools = mark_interactive_tools_return_direct([send_whatsapp_list])
-    assert tools[0].return_direct is False
+    assert tools[0].return_direct is True
     model = _InteractiveToolCallingModel(
         tool_calls_to_emit=[
             {
@@ -153,7 +158,7 @@ def test_non_flow_interactive_tool_does_not_return_direct_or_normalize_content()
     graph = create_react_agent(model=model, tools=tools)
     result = graph.invoke({"messages": [HumanMessage(content="opções")]})
 
-    assert model.calls == 2
+    assert model.calls == 1  # return_direct encerra o loop após a tool
     tool_message = next(
         m for m in result["messages"] if isinstance(m, ToolMessage)
     )
@@ -161,7 +166,7 @@ def test_non_flow_interactive_tool_does_not_return_direct_or_normalize_content()
     assert tool_message.content == [
         {"type": "text", "text": "Escolha uma opção"}
     ]
-    assert isinstance(result["messages"][-1], AIMessage)
+    assert result["messages"][-1] is tool_message  # o interativo é a última mensagem
 
 
 def test_non_interactive_tool_list_content_is_not_normalized_in_tool_node():
@@ -412,7 +417,7 @@ def test_interactive_filter_falls_back_to_tool_content_when_args_have_no_text():
     assert filtered_result["messages"][-1].name == "build_whatsapp_flow_envelope"
 
 
-def test_interactive_filter_does_not_add_preview_for_list_body_args():
+def test_interactive_filter_adds_preview_for_list_body_args():
     result = {
         "messages": [
             HumanMessage(content="quero opções"),
@@ -461,14 +466,17 @@ def test_interactive_filter_does_not_add_preview_for_list_body_args():
         if isinstance(message, AIMessage)
         and message.additional_kwargs.get("synthetic_interactive_preview")
     ]
-    assert previews == []
-    assert isinstance(filtered_result["messages"][-2], AIMessage)
-    assert filtered_result["messages"][-2].content == ""
+    # Feature 1: a lista agora conta como interativa bem-sucedida → ganha o preview
+    # sintético (body + títulos das rows) pro eval/operador; o interativo segue last.
+    assert len(previews) == 1
+    assert "Escolha uma opção na lista." in previews[0].content
+    assert "Luminária" in previews[0].content
+    assert "Poste caído" in previews[0].content
     assert isinstance(filtered_result["messages"][-1], ToolMessage)
     assert filtered_result["messages"][-1].name == "send_whatsapp_list"
 
 
-def test_interactive_filter_does_not_add_preview_for_button_titles():
+def test_interactive_filter_adds_preview_for_button_titles():
     result = {
         "messages": [
             HumanMessage(content="continuar?"),
@@ -505,9 +513,12 @@ def test_interactive_filter_does_not_add_preview_for_button_titles():
         if isinstance(message, AIMessage)
         and message.additional_kwargs.get("synthetic_interactive_preview")
     ]
-    assert previews == []
-    assert isinstance(filtered_result["messages"][-2], AIMessage)
-    assert filtered_result["messages"][-2].content == ""
+    # Feature 1: os botões agora contam como interativa bem-sucedida → ganham o
+    # preview sintético (body + títulos dos botões); o interativo segue last.
+    assert len(previews) == 1
+    assert "Quer continuar o atendimento?" in previews[0].content
+    assert "Sim" in previews[0].content
+    assert "Não" in previews[0].content
     assert isinstance(filtered_result["messages"][-1], ToolMessage)
     assert filtered_result["messages"][-1].name == "send_whatsapp_buttons"
 
