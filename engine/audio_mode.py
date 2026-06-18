@@ -32,18 +32,27 @@ from langchain_core.messages import SystemMessage
 from engine.session_boundary import current_session_messages
 from engine.text_match import is_human, message_text, normalize
 
-# Diretiva reinjetada todo turno quando o modo contínuo está ligado. Já embute a
-# regra de precedência (resumo falado em áudio + detalhes em texto) para resolver
-# o conflito com a regra "conteúdo estruturado vai em texto" do prompt module.
+# Diretiva reinjetada todo turno quando o modo contínuo está ligado. Embute a regra
+# crítica (Feature 2b): em modo áudio o WhatsApp entrega o áudio ISOLADO — o texto
+# que acompanha a resposta NÃO chega ao cidadão (Mule, webhook-flow.xml: áudio sem
+# prelúdio textual). Logo a resposta COMPLETA precisa estar falada no áudio; não
+# adianta resumir e deixar os detalhes no texto (eles se perderiam). Isso também
+# resolve o conflito com a regra "conteúdo estruturado vai em texto" do prompt module
+# (aqui a diretiva tem precedência). O 2º balão de texto pra dado crítico
+# (protocolo/URL) é trabalho deferido (gargalo Meta: 1 tipo por mensagem) — por ora
+# o próprio áudio carrega tudo.
 AUDIO_MODE_DIRECTIVE = (
     "MODO ÁUDIO CONTÍNUO ATIVO. O cidadão pediu para receber as respostas SEMPRE "
-    "em áudio até pedir o contrário. Neste turno: componha a resposta em texto "
-    "natural (sem markdown nem emoji) e chame a tool "
-    "generate_audio_response(text=<resposta>), anexando o audio_base64. "
-    "Se a resposta for longa ou tiver dados estruturados (lista rua-por-rua, "
-    "números de protocolo, links), NÃO caia só para texto: mande o ÁUDIO de um "
-    "resumo falado curto E mantenha os detalhes no texto. Só pare de gerar áudio "
-    "quando o cidadão pedir explicitamente (ex.: 'volta pra texto')."
+    "em áudio até pedir o contrário (ex.: 'volta pra texto'). Neste modo o ÁUDIO é a "
+    "ÚNICA mensagem entregue ao cidadão — o texto que acompanha a resposta NÃO chega "
+    "(o WhatsApp entrega o áudio isolado). Por isso: componha a resposta COMPLETA em "
+    "texto natural falável (sem markdown nem emoji) e chame "
+    "generate_audio_response(text=<resposta completa>), anexando o audio_base64. "
+    "TUDO que o cidadão precisa saber tem que estar FALADO no áudio — NÃO mande um "
+    "resumo curto deixando os detalhes só no texto, eles se perderiam. Se houver "
+    "dado crítico (número de protocolo, CEP, link), fale-o de forma clara e pausada "
+    "no próprio áudio (ex.: protocolo dígito a dígito). Só pare de gerar áudio "
+    "quando o cidadão pedir explicitamente."
 )
 
 # Padrões normalizados (sem acento, minúsculo). OFF é checado antes de ON por

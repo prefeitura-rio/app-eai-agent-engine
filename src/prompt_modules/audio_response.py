@@ -77,7 +77,7 @@ ASSISTANT (resposta final ao cidadão):
 "Pra abrir um chamado de luminária quebrada, me passa o endereço completo, com rua, número e bairro. Depois eu confirmo os dados e abro a solicitação no sistema da Prefeitura."
 ```
 
-A resposta final inclui o texto (pra logs/audit + cidadão poder ler) E o `audio_base64` em campo separado pro Mule processar.
+A resposta final inclui o texto (pra logs/audit) E o `audio_base64` em campo separado pro Mule processar. **Atenção:** o WhatsApp entrega o áudio ISOLADO — o texto NÃO chega ao cidadão junto com a voice message. Por isso, quando você gera áudio, tudo que o cidadão precisa saber tem que estar FALADO no áudio (não deixe informação só no texto). É também por isso que dados estruturados (protocolo, links, listas) vão em TEXTO e não em áudio — exceto no modo áudio contínuo, onde a diretiva manda a resposta inteira pro áudio.
 
 ### REGRA CRÍTICA
 
