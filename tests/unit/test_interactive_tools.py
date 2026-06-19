@@ -5,7 +5,10 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from engine.custom_react_agent import create_react_agent
 from engine.agent import Agent
-from engine.interactive_tools import mark_interactive_tools_return_direct
+from engine.interactive_tools import (
+    mark_interactive_tools_return_direct,
+    is_mss_interactive_sent_message,
+)
 
 
 @tool
@@ -36,6 +39,46 @@ def send_whatsapp_list(body: str) -> list[dict[str, str]]:
 def list_service_options() -> list[dict[str, str]]:
     """Mock non-interactive tool returning a structured list."""
     return [{"name": "luminaria"}, {"name": "poda"}]
+
+
+def test_is_mss_interactive_sent_message_detects_interactive_sent():
+    """Bug 2026-06-19 (dupla confirmação): quando multi_step_service volta
+    `status: interactive_sent` (gate ENABLE_INTERACTIVE_CONFIRM enviou os botões
+    out-of-band), o turno deve encerrar. Aceita content str OU lista de blocos
+    `[{type:text,text}]` (formato do adapter MCP); ignora TYPE B (description),
+    outras tools, e retornos com erro."""
+    sent_str = ToolMessage(
+        content='{"status":"interactive_sent","next_step":"await_user_selection"}',
+        name="multi_step_service",
+        tool_call_id="a",
+    )
+    sent_list = ToolMessage(
+        content=[{"type": "text", "text": '{"status":"interactive_sent"}'}],
+        name="multi_step_service",
+        tool_call_id="b",
+    )
+    type_b = ToolMessage(
+        content='{"description":"Confirme o endereço","payload_schema":{}}',
+        name="multi_step_service",
+        tool_call_id="c",
+    )
+    other_tool = ToolMessage(
+        content='{"status":"interactive_sent"}',
+        name="google_search",
+        tool_call_id="d",
+    )
+    errored = ToolMessage(
+        content='{"status":"interactive_sent"}',
+        name="multi_step_service",
+        tool_call_id="e",
+        status="error",
+    )
+    assert is_mss_interactive_sent_message(sent_str) is True
+    assert is_mss_interactive_sent_message(sent_list) is True
+    assert is_mss_interactive_sent_message(type_b) is False
+    assert is_mss_interactive_sent_message(other_tool) is False
+    assert is_mss_interactive_sent_message(errored) is False
+    assert is_mss_interactive_sent_message(AIMessage(content="x")) is False
 
 
 def test_interactive_tools_return_direct_for_all_interactive_messages():

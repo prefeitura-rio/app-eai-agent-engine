@@ -51,6 +51,7 @@ from langgraph.typing import ContextT
 from langgraph.warnings import LangGraphDeprecatedSinceV10
 from engine.log import logger
 from engine.monitored_tool_node import MonitoredToolNode
+from engine.interactive_tools import is_mss_interactive_sent_message
 
 # Error monitoring utilities (safe fallback if not available)
 from engine.utils import (
@@ -1015,10 +1016,24 @@ def create_react_agent(
                 and getattr(m, "status", None) != "error"
             ):
                 return END
+            # multi_step_service NÃO é return_direct (multi-uso), mas quando volta
+            # `interactive_sent` o MCP já enviou os botões ao cidadão out-of-band →
+            # o turno encerra aqui. Sem isso o LLM re-chama o workflow e/ou escreve
+            # texto, gerando confirmação duplicada (bug 2026-06-19).
+            if is_mss_interactive_sent_message(m):
+                return END
 
         # handle a case of parallel tool calls where
         # the tool w/ `return_direct` was executed in a different `Send`
         if isinstance(m, AIMessage) and m.tool_calls:
+            # LIMITAÇÃO CONHECIDA (parallel Send v2): se o LLM chamar
+            # multi_step_service JUNTO com outra tool no MESMO AIMessage, a branch da
+            # tool irmã roda este router sem o ToolMessage `interactive_sent` da MSS no
+            # seu estado (Send separado) → cai em entrypoint e re-invoca o agente. O
+            # check `is_mss_interactive_sent_message` acima cobre o caso SEQUENCIAL
+            # (padrão do confirm de endereço/identificação no POC, onde a MSS é chamada
+            # sozinha). Fechar o caso paralelo exigiria return_direct by-name +
+            # extração da `description` da MSS (TYPE B) — mudança maior, adiada.
             has_direct_tool_error = any(
                 message.name in should_return_direct
                 and getattr(message, "status", None) == "error"
@@ -1032,12 +1047,16 @@ def create_react_agent(
 
         return entrypoint
 
-    if should_return_direct:
-        workflow.add_conditional_edges(
-            "tools", route_tool_responses, path_map=[entrypoint, END]
-        )
-    else:
-        workflow.add_edge("tools", entrypoint)
+    # route_tool_responses é SEMPRE registrado: além das tools `return_direct`
+    # (should_return_direct), ele encerra o turno em retornos `interactive_sent` do
+    # multi_step_service (que NÃO está em should_return_direct). Sem isso, num tool-set
+    # SEM tools interativas, o interativo já enviado out-of-band seria seguido de
+    # re-chamada do LLM → confirmação duplicada (bug 2026-06-19). Com should_return_direct
+    # vazio, route_tool_responses só retorna `entrypoint` (idêntico ao edge incondicional
+    # anterior) OU END pelo check do MSS interactive_sent.
+    workflow.add_conditional_edges(
+        "tools", route_tool_responses, path_map=[entrypoint, END]
+    )
 
     # Finally, we compile it!
     # This compiles it into a LangChain Runnable,

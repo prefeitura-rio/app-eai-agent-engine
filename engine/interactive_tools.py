@@ -59,6 +59,47 @@ def is_failed_interactive_tool_message(message: object) -> bool:
     )
 
 
+def _tool_message_text(message: ToolMessage) -> str:
+    """Extrai o texto JSON do ``content`` de um ToolMessage de forma robusta:
+    aceita ``str``, lista de blocos ``[{'type':'text','text':...}]`` (formato do
+    adapter MCP) ou ``dict``."""
+    content = message.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list) and content:
+        first = content[0]
+        if isinstance(first, dict):
+            return str(first.get("text", "") or "")
+        return str(first)
+    if isinstance(content, dict):
+        return str(content.get("text", "") or "")
+    return str(content) if content is not None else ""
+
+
+def is_mss_interactive_sent_message(message: object) -> bool:
+    """Whether a ``multi_step_service`` ToolMessage signals an interactive já enviado
+    out-of-band (``status: interactive_sent``) — turno deve encerrar.
+
+    O ``multi_step_service`` NÃO está em ``ALL_INTERACTIVE_TOOL_NAMES`` (é multi-uso:
+    nem todo retorno é terminal), então não pode ser ``return_direct`` sempre. Mas
+    quando o gate ``ENABLE_INTERACTIVE_CONFIRM`` faz o MCP enviar os botões DIRETO pro
+    cidadão, o retorno traz ``status: interactive_sent`` + instrução "não escreva". Aí
+    o turno DEVE encerrar (a mensagem ao cidadão já saiu): sem isso o LLM re-chama o
+    workflow e/ou escreve texto, gerando confirmação duplicada (bug 2026-06-19)."""
+    if not isinstance(message, ToolMessage) or message.name != "multi_step_service":
+        return False
+    if getattr(message, "status", None) == "error":
+        return False
+    text = _tool_message_text(message)
+    if "interactive_sent" not in text:
+        return False
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return False
+    return isinstance(data, dict) and data.get("status") == "interactive_sent"
+
+
 def put_recovery_ai_after_interactive_tool_error(messages: list) -> bool:
     """Prefer the model recovery text after a failed interactive tool call."""
     saw_failed_interactive = False
