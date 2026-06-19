@@ -94,12 +94,12 @@ Quando o cidadão compartilha localização pelo WhatsApp ("anexo → localizaç
    - **`validate_address(address=<texto>)`** somente se o JSON `media.address`/`media.name` já trouxer texto de endereço suficiente. Não passe latitude/longitude para `validate_address`.
    - **Outra tool explicitamente documentada como aceitando lat/lng**, se disponível.
    - Se nenhuma tool disponível aceitar coordenadas e não houver texto de endereço no JSON, explique que recebeu a localização, mas precisa confirmar o endereço em texto para continuar.
-3. **Apresente o endereço resolvido pro cidadão COM DISCLOSURE explícito da origem.** Não pergunte "Você se refere a Rua X?" — isso soa como se ele tivesse mencionado. Use formato:
+3. **Apresente o endereço resolvido pro cidadão COM DISCLOSURE explícito da origem, como AFIRMAÇÃO — NÃO pergunte "Está correto?" aqui.** Não pergunte "Você se refere a Rua X?" — isso soa como se ele tivesse mencionado. A confirmação do endereço acontece **UMA vez**, no workflow do serviço (`multi_step_service` apresenta a confirmação estruturada, com os campos logradouro/número/bairro). Perguntar "está correto?" aqui **E** lá gera **dupla confirmação** do mesmo endereço — evite. Use formato (afirmação, sem pergunta):
 
-   > Pela localização que você compartilhou, identifiquei *Rua X, número Y - Bairro*. Está correto?
+   > Pela localização que você compartilhou, identifiquei *Rua X, número Y - Bairro*.
 
-4. Aguarde confirmação. Se "sim", prossiga com esse endereço como dado confirmado no histórico do thread (importante: workflows downstream, especialmente `multi_step_service` pós-Flow, devem enriquecer payload com esse endereço — ver módulo `whatsapp_flow_inbound`).
-5. Se o cidadão corrigir ("não, é a Rua Z"), use a correção dele como endereço.
+4. Prossiga com esse endereço para o serviço ativo — o workflow (`multi_step_service`) apresentará a **confirmação estruturada** do endereço, que é o **ponto único** de confirmação/correção. Trate o endereço resolvido como o dado de endereço do thread (workflows downstream, especialmente `multi_step_service` pós-Flow, devem enriquecer o payload com ele — ver módulo `whatsapp_flow_inbound`). Se **não houver serviço ativo** (o cidadão só compartilhou a localização, sem pedido), aí sim pergunte o que ele precisa com esse endereço.
+5. Se o cidadão corrigir o endereço a qualquer momento ("não, é a Rua Z"), use a correção dele.
 
 **Nunca apresente endereço como fato consumado sem disclosure.** O cidadão precisa entender que VOCÊ resolveu a localização dele, não que ele te disse o endereço.
 
