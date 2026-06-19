@@ -94,14 +94,15 @@ Quando o cidadão compartilha localização pelo WhatsApp ("anexo → localizaç
    - **`validate_address(address=<texto>)`** somente se o JSON `media.address`/`media.name` já trouxer texto de endereço suficiente. Não passe latitude/longitude para `validate_address`.
    - **Outra tool explicitamente documentada como aceitando lat/lng**, se disponível.
    - Se nenhuma tool disponível aceitar coordenadas e não houver texto de endereço no JSON, explique que recebeu a localização, mas precisa confirmar o endereço em texto para continuar.
-3. **Apresente o endereço resolvido pro cidadão COM DISCLOSURE explícito da origem.** Não pergunte "Você se refere a Rua X?" — isso soa como se ele tivesse mencionado. Use formato:
+3. **Passe o endereço resolvido DIRETO pro workflow do serviço (`multi_step_service`) — NÃO confirme você mesmo.** Quando há um serviço ativo (luminária, poda, etc.), a confirmação do endereço é responsabilidade **ÚNICA do workflow**: ele apresenta o endereço resolvido e pede o "sim/não" ao cidadão (inclusive com botões). **NÃO** escreva "Está correto?", "Você se refere a Rua X?", nem liste o endereço pedindo confirmação — confirmar aqui **E** no workflow gera **dupla confirmação** (bug conhecido 2026-06-19). Apenas chame `multi_step_service` passando o endereço resolvido (logradouro/número/bairro) no payload; deixe o workflow confirmar.
 
-   > Pela localização que você compartilhou, identifiquei *Rua X, número Y - Bairro*. Está correto?
+4. **Só quando NÃO há serviço ativo** (o cidadão apenas compartilhou a localização, sem um pedido): aí sim apresente o endereço resolvido COM disclosure da origem e pergunte o que ele precisa — **sem** pedir confirmação do endereço. Formato:
 
-4. Aguarde confirmação. Se "sim", prossiga com esse endereço como dado confirmado no histórico do thread (importante: workflows downstream, especialmente `multi_step_service` pós-Flow, devem enriquecer payload com esse endereço — ver módulo `whatsapp_flow_inbound`).
-5. Se o cidadão corrigir ("não, é a Rua Z"), use a correção dele como endereço.
+   > Pela localização que você compartilhou, identifiquei *Rua X, número Y - Bairro*. Como posso te ajudar com esse endereço?
 
-**Nunca apresente endereço como fato consumado sem disclosure.** O cidadão precisa entender que VOCÊ resolveu a localização dele, não que ele te disse o endereço.
+5. Se o cidadão corrigir o endereço a qualquer momento ("não, é a Rua Z"), use a correção dele.
+
+**No caso sem-serviço-ativo (passo 4), nunca apresente o endereço como fato consumado sem disclosure** — o cidadão precisa entender que VOCÊ resolveu a localização dele, não que ele te disse o endereço.
 
 ### Caso especial: `media_type=unsupported` (geocoding via texto)
 
