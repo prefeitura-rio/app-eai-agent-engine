@@ -100,6 +100,114 @@ def is_mss_interactive_sent_message(message: object) -> bool:
     return isinstance(data, dict) and data.get("status") == "interactive_sent"
 
 
+# Tools cujo RETORNO já É a mensagem voltada ao cidadão e o Mule vira ``agentMedia``
+# (webhook-flow.xml: canonicalToolReturn {send_whatsapp_media, build_whatsapp_flow_envelope,
+# send_whatsapp_buttons, send_whatsapp_list} + audioTR generate_audio_response). As
+# interativas Flow/botões/lista já estão em ALL_INTERACTIVE_TOOL_NAMES; aqui ficam as
+# de mídia pura. Usado pelo guard de turno-vazio pra NÃO injetar fallback quando a
+# saída ao cidadão já saiu por uma dessas (evitaria duplicar/descartar).
+MEDIA_RETURN_TOOL_NAMES = frozenset({"send_whatsapp_media", "generate_audio_response"})
+
+
+def _media_tool_succeeded(message: ToolMessage) -> bool:
+    """Mídia realmente disponível? Tools de mídia podem retornar falha a nível de DADO
+    (``{"status":"error"/"deferred"/"failed"}``) num ToolMessage normal — aí não há
+    mídia pro cidadão e o fallback NÃO deve ser suprimido."""
+    text = _tool_message_text(message)
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return True  # não-JSON: conservador (assume saída; não injeta por cima de mídia)
+    if isinstance(data, dict):
+        return str(data.get("status", "")).lower() not in ("error", "deferred", "failed")
+    return True
+
+
+def _is_citizen_facing_tool_message(message: object) -> bool:
+    """ToolMessage cujo retorno é a mensagem ao cidadão: interativo (Flow/botões/lista
+    via return_direct), ``interactive_sent`` out-of-band, ou mídia (áudio/imagem/…)
+    de SUCESSO. Tools INTERNAS (google_search, validate_address, multi_step_service
+    não-terminal) NÃO contam — após elas, um turno vazio AINDA é no-response e merece
+    o fallback."""
+    if is_successful_interactive_tool_message(message):
+        return True
+    if is_mss_interactive_sent_message(message):
+        return True
+    return (
+        isinstance(message, ToolMessage)
+        and getattr(message, "status", None) != "error"
+        and message.name in MEDIA_RETURN_TOOL_NAMES
+        and _media_tool_succeeded(message)
+    )
+
+
+# Fallback p/ turno bem-sucedido mas SEM nada voltado ao cidadão (ver
+# ensure_non_empty_assistant_turn). Genérico de propósito: o turno-vazio pode
+# ocorrer em qualquer contexto, não só luminária.
+EMPTY_TURN_FALLBACK_MESSAGE = (
+    "Desculpe, não consegui entender sua última mensagem. 😕 "
+    "Pode reformular ou me dizer de outro jeito o que você precisa?"
+)
+
+
+def _ai_message_has_visible_text(message: object) -> bool:
+    """AIMessage com TEXTO final voltado ao cidadão: SEM tool_calls (preâmbulo de tool
+    não é resposta final) e com texto de verdade (str não-vazia ou bloco ``type:text``
+    — exclui blocos de thinking quando include_thoughts=True)."""
+    if not isinstance(message, AIMessage) or getattr(message, "tool_calls", None):
+        return False
+    content = message.content
+    if isinstance(content, str):
+        return bool(content.strip())
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, str) and block.strip():
+                return True
+            if (
+                isinstance(block, dict)
+                and block.get("type", "text") == "text"
+                and str(block.get("text", "")).strip()
+            ):
+                return True
+    return False
+
+
+def ensure_non_empty_assistant_turn(messages: list) -> bool:
+    """Garante que um turno bem-sucedido NUNCA termine sem nada pro cidadão.
+
+    Bug confirmado (device-test 2026-06-20): com um Flow card pendente, o LLM às
+    vezes emite um AIMessage VAZIO (sem content, sem tool_calls) e o grafo encerra o
+    turno — o Mule então pula o envio (``outbound_skipped_empty`` /
+    ``completed_no_assistant_message``) e o cidadão fica sem resposta. A rede de
+    segurança do #89 só cobre EXCEÇÃO; sucesso-vazio passava batido.
+
+    Injeta um fallback SOMENTE quando o turno não produziu NADA voltado ao cidadão:
+    nenhum texto de assistente E nenhuma tool VOLTADA AO CIDADÃO (interativo via
+    return_direct, ``interactive_sent`` out-of-band, ou mídia). Tools internas
+    (busca, geocode, multi_step_service não-terminal) NÃO contam — um turno vazio
+    depois delas ainda é no-response. NÃO injeta quando há saída ao cidadão (evita
+    duplicar/descartar). Espelha o discriminador de skip do Mule (sem texto + sem
+    interactive + sem mídia). Roda só no RESULTADO FINAL de ``Agent.query`` /
+    ``async_query`` (NÃO em chunks de streaming, que podem ser estados intermediários
+    só com o HumanMessage), na cópia já filtrada (não polui o checkpoint).
+
+    Retorna True se injetou o fallback.
+    """
+    if not isinstance(messages, list):
+        return False
+    if any(_ai_message_has_visible_text(message) for message in messages):
+        return False  # já há texto final pro cidadão (não conta preâmbulo de tool/thinking)
+    if any(_is_citizen_facing_tool_message(message) for message in messages):
+        return False  # interativo / mídia / out-of-band já é a saída ao cidadão
+    messages.append(
+        AIMessage(
+            content=EMPTY_TURN_FALLBACK_MESSAGE,
+            additional_kwargs={"synthetic_empty_turn_fallback": True},
+        )
+    )
+    return True
+
+
 def put_recovery_ai_after_interactive_tool_error(messages: list) -> bool:
     """Prefer the model recovery text after a failed interactive tool call."""
     saw_failed_interactive = False

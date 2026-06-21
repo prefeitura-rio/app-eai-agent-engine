@@ -42,6 +42,7 @@ from engine.custom_react_agent import create_react_agent
 from engine.audio_mode import inject_audio_directive
 from engine.interactive_tools import (
     add_interactive_tool_preview_message,
+    ensure_non_empty_assistant_turn,
     put_interactive_tool_messages_last,
     put_recovery_ai_after_interactive_tool_error,
 )
@@ -1506,6 +1507,12 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         try:
             result = await self._graph.ainvoke(**kwargs)
             filtered_result = self._filter_current_interaction(result)
+            # Resultado FINAL (não streaming): garante que o turno nunca saia 100%
+            # vazio (no-response device-confirmado 2026-06-20). Só aqui — não em
+            # _filter_current_interaction, que é compartilhado com chunks de streaming
+            # (que podem ser estados intermediários só com o HumanMessage).
+            if isinstance(filtered_result, dict):
+                ensure_non_empty_assistant_turn(filtered_result.get("messages"))
 
             # Simple tracing
             self._trace_conversation(filtered_result, **kwargs)
@@ -1565,6 +1572,12 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         try:
             result = self._graph.invoke(**kwargs)
             filtered_result = self._filter_current_interaction(result)
+            # Resultado FINAL (não streaming): garante que o turno nunca saia 100%
+            # vazio (no-response device-confirmado 2026-06-20). Só aqui — não em
+            # _filter_current_interaction, que é compartilhado com chunks de streaming
+            # (que podem ser estados intermediários só com o HumanMessage).
+            if isinstance(filtered_result, dict):
+                ensure_non_empty_assistant_turn(filtered_result.get("messages"))
 
             # Simple tracing
             self._trace_conversation(filtered_result, **kwargs)
