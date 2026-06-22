@@ -1291,7 +1291,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         if type == "history":
             # Bypass filtering for history requests
             try:
-                self._graph.update_state(
+                await self._graph.aupdate_state(
                     config=kwargs.get("config", {}), values=kwargs.get("input", {})
                 )
                 return {
