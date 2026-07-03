@@ -35,6 +35,7 @@ from loguru import logger
 from src.prompt_modules import (
     audio_inbound,
     audio_response,
+    document_inbound,
     emoji_input,
     govbr_auth_gating,
     interactive_general,
@@ -163,6 +164,7 @@ ENABLED_MODULES = [
     vision_inbound,
     audio_inbound,
     video_inbound,
+    document_inbound,
     whatsapp_flow_inbound,
 ]
 if _audio_response_enabled:
