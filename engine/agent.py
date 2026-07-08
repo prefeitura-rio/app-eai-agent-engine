@@ -291,9 +291,19 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._otlp_endpoint = getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
         self._otlp_header = getenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
 
-        self._graph = None
+        # Grafos SEPARADOS por modo de execucao. Compartilhar um unico self._graph
+        # entre o setup async (AsyncPostgresSaver) e o sync (PostgresSaver) causava
+        # clobber: uma chamada sync sobrescrevia o grafo async, e as invocacoes
+        # async seguintes reusavam esse grafo com saver sincrono -> PostgresSaver
+        # nao implementa aget_tuple (async) -> NotImplementedError -> fallback.
+        self._graph_async = None
+        self._graph_sync = None
         self._checkpointer = None  # Store checkpointer instance
         self._conn_pool = None  # Store async connection pool
+        # Checkpointer sync + seu context manager: guardados p/ NAO serem coletados
+        # (o __exit__ no GC fechava a conexao -> "the connection is closed").
+        self._sync_checkpointer = None
+        self._sync_checkpointer_ctx = None
         self._setup_complete_async = False
         self._setup_complete_sync = False
         self._opentelemetry_setup_complete = False
@@ -1125,7 +1135,12 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self,
         checkpointer: AsyncPostgresSaver | PostgresSaver | None = None,
     ):
-        """Create and configure the React Agent."""
+        """Create and configure the React Agent.
+
+        Retorna o grafo em vez de gravar em self._graph, para o caller decidir
+        onde guardar (self._graph_async vs self._graph_sync) e evitar o clobber
+        entre os setups sync e async.
+        """
         llm = ChatVertexAI(
             model_name=self._model,
             temperature=self._temperature,
@@ -1134,11 +1149,11 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         )
         # llm_with_tools = llm.bind_tools(tools=self._tools, parallel_tool_calls=False)
         llm_with_tools = llm.bind_tools(tools=self._tools)
-        
+
         # Wrap tools with logging
         wrapped_tools = self._wrap_tools_with_logging(self._tools)
 
-        self._graph = create_react_agent(
+        return create_react_agent(
             model=llm_with_tools,
             tools=wrapped_tools,
             prompt=self._system_prompt,
@@ -1239,7 +1254,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         await checkpointer.setup()
         logger.info("[Agent Setup] ✓ Checkpointer connected and setup complete")
 
-        self._create_react_agent(checkpointer=checkpointer)
+        self._graph_async = self._create_react_agent(checkpointer=checkpointer)
         logger.info("[Agent Setup] ✓ React agent created successfully (async)")
         logger.info("[Agent Setup] ========== Agent Setup Complete ==========")
 
@@ -1251,7 +1266,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         self._set_up_opentelemetry()
 
         if self._setup_complete_sync:
-            return self._graph
+            return self._graph_sync
 
         # Load MCP tools at runtime if not already loaded
         if not self._tools:
@@ -1266,14 +1281,18 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         # Create connection string for standard Postgres
         conn_string = f"postgresql://{self._database_user}:{self._database_password}@{self._database_host}:{self._database_port}/{self._database_name}"
 
-        # Pass the context manager generator directly to create_react_agent
-        checkpointer_ctx = PostgresSaver.from_conn_string(conn_string)
-        checkpointer = checkpointer_ctx.__enter__()
-        checkpointer.setup()
+        # Guardar o context manager e o checkpointer em self._ p/ NAO serem
+        # coletados: sem isso, o local `checkpointer_ctx` era coletado ao retornar
+        # e o __exit__ fechava a conexao -> "the connection is closed" no proximo uso.
+        self._sync_checkpointer_ctx = PostgresSaver.from_conn_string(conn_string)
+        self._sync_checkpointer = self._sync_checkpointer_ctx.__enter__()
+        self._sync_checkpointer.setup()
 
-        self._create_react_agent(checkpointer=checkpointer)
+        self._graph_sync = self._create_react_agent(
+            checkpointer=self._sync_checkpointer
+        )
         self._setup_complete_sync = True
-        return self._graph
+        return self._graph_sync
 
     @interceptor(
         source=make_source(GRAPH_INVOCATION, GRAPH_ASYNC_QUERY),
@@ -1283,7 +1302,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         """Asynchronous query execution with filtered current interaction."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
         await self._ensure_async_setup()
-        if self._graph is None:
+        if self._graph_async is None:
             raise ValueError(
                 "Graph is not initialized. Call _ensure_async_setup first."
             )
@@ -1291,7 +1310,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         if type == "history":
             # Bypass filtering for history requests
             try:
-                await self._graph.aupdate_state(
+                await self._graph_async.aupdate_state(
                     config=kwargs.get("config", {}), values=kwargs.get("input", {})
                 )
                 return {
@@ -1301,7 +1320,7 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 }
             except Exception as e:
                 return {"status_code": 500, "status": "error", "message": str(e)}
-        result = await self._graph.ainvoke(**kwargs)
+        result = await self._graph_async.ainvoke(**kwargs)
         filtered_result = self._filter_current_interaction(result)
 
         # Simple tracing
@@ -1319,11 +1338,11 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
 
         async def async_generator() -> AsyncIterable[Any]:
             await self._ensure_async_setup()
-            if self._graph is None:
+            if self._graph_async is None:
                 raise ValueError(
                     "Graph is not initialized. Call _ensure_async_setup first."
                 )
-            async for chunk in self._graph.astream(**kwargs):
+            async for chunk in self._graph_async.astream(**kwargs):
                 filtered_chunk = self._filter_streaming_chunk(chunk)
                 yield dumpd(filtered_chunk)
 
@@ -1337,10 +1356,10 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         """Synchronous query execution with filtered current interaction."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
         self._ensure_sync_setup()
-        if self._graph is None:
+        if self._graph_sync is None:
             raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
 
-        result = self._graph.invoke(**kwargs)
+        result = self._graph_sync.invoke(**kwargs)
         filtered_result = self._filter_current_interaction(result)
 
         # Simple tracing
@@ -1356,9 +1375,9 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
         """Synchronous streaming query execution with filtered chunks."""
         kwargs = self._combined_pre_invoke_hook(**kwargs)
         self._ensure_sync_setup()
-        if self._graph is None:
+        if self._graph_sync is None:
             raise ValueError("Graph is not initialized. Call _ensure_sync_setup first.")
-        for chunk in self._graph.stream(**kwargs):
+        for chunk in self._graph_sync.stream(**kwargs):
             filtered_chunk = self._filter_streaming_chunk(chunk)
             yield dumpd(filtered_chunk)
 
@@ -1403,7 +1422,19 @@ class Agent(AsyncQueryable, AsyncStreamQueryable, Queryable, StreamQueryable):
                 logger.warning(f"[Agent Cleanup] Error closing connection pool: {e}")
             finally:
                 self._conn_pool = None
-        
+
+        # Close sync checkpointer context manager if it exists (evita vazar a
+        # conexao sincrona quando o path sync foi usado).
+        if self._sync_checkpointer_ctx is not None:
+            try:
+                self._sync_checkpointer_ctx.__exit__(None, None, None)
+                logger.info("[Agent Cleanup] Sync checkpointer closed")
+            except Exception as e:
+                logger.warning(f"[Agent Cleanup] Error closing sync checkpointer: {e}")
+            finally:
+                self._sync_checkpointer_ctx = None
+                self._sync_checkpointer = None
+
         # Force flush telemetry spans
         if self._batch_processor:
             self._batch_processor.force_flush(timeout_millis=5000)
